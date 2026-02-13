@@ -33,8 +33,6 @@
 #include "slam_params.hpp"
 #include "ros_visualizer.hpp"
 
-#include "logger.hpp"
-
 #include "camera_calibration.hpp"
 #include "feature_extractor.hpp"
 #include "feature_tracker.hpp"

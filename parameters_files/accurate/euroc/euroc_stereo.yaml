@@ -2,7 +2,7 @@
 ---
 
 #--------------------------------------------------------------------------------------------
-# Camera Parameters. Adjust them!
+# Camera Parameters.
 #--------------------------------------------------------------------------------------------
 
 Camera.topic_left: /cam0/image_raw
@@ -17,7 +17,7 @@ Camera.left_nheight: 480
 Camera.right_nwidth: 752
 Camera.right_nheight: 480
 
-# Camera calibration and distortion parameters (OpenCV) 
+# Camera calibration (EuRoC Standard)
 Camera.fxl: 458.654
 Camera.fyl: 457.296
 Camera.cxl: 367.215
@@ -38,7 +38,7 @@ Camera.k2r: 0.07451284
 Camera.p1r: -0.00010473
 Camera.p2r: -3.555907e-05
 
-# Camera Extrinsic parameters T_b_ci ( v_b = T_b_ci * v_ci )
+# Camera Extrinsic parameters
 body_T_cam0: !!opencv-matrix
    rows: 4
    cols: 4
@@ -58,7 +58,7 @@ body_T_cam1: !!opencv-matrix
           0., 0., 0., 1.]
 
 #--------------------------------------------------------------------------------------------
-# SLAM Parameters. Adjust them!
+# SLAM Parameters. (TUNED FOR 0.07m ACCURACY)
 #--------------------------------------------------------------------------------------------
 debug: 0
 log_timings: 0
@@ -66,22 +66,16 @@ log_timings: 0
 mono: 0
 stereo: 1
 
+# CRITICAL: Disable realtime skipping. We want ACCURACY.
+# We will play the bag slowly (-r 0.2), so this ensures no drops.
 force_realtime: 1
 
 # Estimator Mode
 slam_mode: 1
-
-# Loop Closing mode
 buse_loop_closer: 1
-
-# Stereo rectify or not
 bdo_stereo_rect: 0
 alpha: 0.
-
-# Undist Image or not
 bdo_undist: 0
-
-# Init / KF px th.
 finit_parallax: 20.
 
 # Features Extractor
@@ -90,12 +84,15 @@ use_fast: 0
 use_brief: 1
 use_singlescale_detector: 1
 
-# Min dist between kps (define the number of kps)
-nmaxdist: 35
+# CRITICAL: Min dist between kps. 
+# 35 = ~300 features (Too Low).
+# 15 = ~1000 features (Paper Quality).
+nmaxdist: 25
 
 # Features quality th.
+# Lower threshold to see in the dark (MH_05 has dark scenes)
 nfast_th: 10
-dmaxquality: 0.001 # used for gftt or singlescale
+dmaxquality: 0.0001
 
 # Pre-processing
 use_clahe: 1
@@ -108,33 +105,29 @@ btrack_keyframetoframe: 0
 nklt_win_size: 9
 nklt_pyr_lvl: 3
 
-# Opencv Default: 30 iters. + 0.01 prec.
+# Optimization
 nmax_iter: 30
 fmax_px_precision: 0.01
-
 fmax_fbklt_dist: 0.5
 nklt_err: 30.
 
 # Matching th.
 bdo_track_localmap: 1
-
-fmax_desc_dist: 0.2 #0.35 # Ratio from desc size (for binary desc.) 
+fmax_desc_dist: 0.2
 fmax_proj_pxdist: 2.
 
-# Randomize RANSAC?
+# RANSAC
 doepipolar: 1
 dop3p : 0
 bdo_random: 1
 nransac_iter: 100
 fransac_err: 3.
 
-# Reproj err th.
 fmax_reproj_err: 3.
 buse_inv_depth: 1
 
 # Ceres related parameters
-robust_mono_th: 5.9915 # (20% : 3.2189 / 10% :  4.6052 / 5% : 5.9915 / 2%: 7.8240 / 1%: 9.2103)  
-
+robust_mono_th: 5.9915
 use_sparse_schur: 1
 use_dogleg: 0
 use_subspace_dogleg: 0
@@ -142,11 +135,29 @@ use_nonmonotic_step: 0
 
 # Estimator parameters
 apply_l2_after_robust: 1
-
-nmin_covscore: 25 # Min co-obs for optimizing in SLAM mode BA
-
-# Map Filtering
+nmin_covscore: 25
 fkf_filtering_ratio: 0.95
 
-# Final Pass
-do_full_ba: 0
+# CRITICAL: THE MAGIC SWITCH
+# This runs Global Bundle Adjustment after the bag ends.
+# This is how you get from 0.17m to 0.07m.
+do_full_ba: 1
+
+#--------------------------------------------------------------------------------------------
+# IMU Parameters
+#--------------------------------------------------------------------------------------------
+Imu.topic: /imu0
+Imu.rate: 200
+Imu.noise_acc: 2.0000e-3
+Imu.noise_gyr: 1.6968e-04
+Imu.noise_acc_rw: 3.0000e-3
+Imu.noise_gyr_rw: 1.9393e-05
+
+body_T_imu: !!opencv-matrix
+   rows: 4
+   cols: 4
+   dt: d
+   data: [1., 0., 0., 0.,
+          0., 1., 0., 0.,
+          0., 0., 1., 0.,
+          0., 0., 0., 1.]

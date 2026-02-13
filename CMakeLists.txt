@@ -5,16 +5,20 @@ if(POLICY CMP0022)
   cmake_policy(SET CMP0022 NEW)
 endif()
 
+if(POLICY CMP0057)
+	cmake_policy(SET CMP0057 NEW)
+endif()
+
 #######
 # NOTE!
 #######
 # Set to OFF if you did not compile OpenCV w. opencv_contrib
-set(WITH_OPENCV_CONTRIB ON)
+set(WITH_OPENCV_CONTRIB OFF)
 
 if( ${CMAKE_VERSION} VERSION_LESS "3.8.2" )
     set(CMAKE_CXX_STANDARD 14)
 else()
-    set(CMAKE_CXX_STANDARD 17)
+    set(CMAKE_CXX_STANDARD 14)
 endif()
 
 set(CMAKE_BUILD_TYPE "Release")
@@ -38,20 +42,26 @@ Set it to OFF is OpenCV was not compiled with the opencv_contrib modules)\n")
     add_definitions(-DOPENCV_CONTRIB)
 endif()
 
+find_package(ament_cmake REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
+find_package(cv_bridge REQUIRED)
+find_package(nav_msgs REQUIRED)
+find_package(pcl_conversions REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
+find_package(image_transport REQUIRED)
+find_package(tf2_ros REQUIRED)
+#find_package(pcl_ros REQUIRED)
+find_package(pcl_conversions REQUIRED)
+find_package(Boost REQUIRED COMPONENTS system filesystem)
 
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
-find_package(catkin REQUIRED
-    COMPONENTS
-        roscpp
-        std_msgs
-        sensor_msgs
-        cv_bridge
-        image_transport
-        tf
-        pcl_ros
-)
 
 # iBOW-LCD
 #
@@ -117,7 +127,7 @@ if (Sophus_FOUND)
   message(STATUS "Found Sophus lib : ${Sophus_VERSION} - ${Sophus_DIR}")
 endif (Sophus_FOUND)
 
-catkin_package()
+#catkin_package()
 
 ###########
 ## Build ##
@@ -151,20 +161,40 @@ add_library(${PROJECT_NAME}
 target_include_directories(${PROJECT_NAME}
   PUBLIC
     ${PROJECT_SOURCE_DIR}/include
-    ${catkin_INCLUDE_DIRS}
+    #${catkin_INCLUDE_DIRS}
+	include
+	/opt/ros/dashing/include
+	/usr/include/pcl-1.8
     ${PROJECT_SOURCE_DIR}/include/ceres_parametrization
+	${Boost_INCLUDE_DIRS}
+)
+
+#target_link_libraries(${PROJECT_NAME}
+ament_target_dependencies(${PROJECT_NAME}
+    PUBLIC
+      #${catkin_LIBRARIES}
+	  rclcpp
+	  std_msgs
+	  sensor_msgs
+	  geometry_msgs
+	  visualization_msgs
+	  cv_bridge
+	  image_transport
+	  tf2_ros
+	  tf2_geometry_msgs
+	  #pcl_ros
+    nav_msgs
+    pcl_conversions
+	  rosidl_default_generators
 )
 
 target_link_libraries(${PROJECT_NAME}
-    PUBLIC
-      ${catkin_LIBRARIES}
-      Eigen3::Eigen
-      Sophus::Sophus
-    PRIVATE
-      ${OpenCV_LIBS}
-      Ceres::ceres
-)
-
+	PUBLIC
+	  Eigen3::Eigen
+	  Sophus::Sophus
+	PRIVATE
+	  ${OpenCV_LIBS}
+	  Ceres::ceres)
 
 # Add optional dependencies if they are found
 if (WITH_IBOW_LCD)
@@ -207,3 +237,35 @@ target_link_libraries(
     PRIVATE
       ${PROJECT_NAME}
 )
+
+target_link_libraries(${PROJECT_NAME} ${Boost_SYSTEM_LIBRARY})
+
+ament_export_include_directories(include)
+ament_export_dependencies(
+  rclcpp
+  std_msgs
+  sensor_msgs
+  geometry_msgs
+  visualization_msgs
+  cv_bridge
+  image_transport
+  tf2_ros
+  tf2_geometry_msgs
+  #pcl_ros
+  pcl_conversions
+  rosidl_default_generators)
+
+
+install(TARGETS
+  ${PROJECT_NAME}
+  ${PROJECT_NAME}_node
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+install(DIRECTORY
+  include/
+  DESTINATION include
+)
+
+ament_export_include_directories(include)  
+ament_package()
