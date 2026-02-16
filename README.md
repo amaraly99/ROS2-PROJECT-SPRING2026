@@ -77,8 +77,15 @@ rosdep install --from-paths src --ignore-src -r -y
 ```
 
 ---
+### 5. Build Thirdparty Libraries
 
-### 5. Build the Workspace
+```bash
+cd ov2slam_ros/
+./build_thirdparty.sh
+```
+---
+
+### 6. Build the Workspace
 
 ```bash
 colcon build \
