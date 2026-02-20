@@ -191,14 +191,3 @@ RMSE ≈ 0.06 m
 
 Observed stable range: 0.06 – 0.08 m.
 
----
-
-# Determinism Note
-
-Deviating from:
-
-* 1× playback rate
-* Proper simulated time
-* Explicit clock trigger
-
-may prevent Global Bundle Adjustment from
