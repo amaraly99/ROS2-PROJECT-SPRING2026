@@ -43,7 +43,7 @@ rm -rf Thirdparty/*/build Thirdparty/*/install
 
 ---
 
-### 3. Build Ceres Solver (SuiteSparse Disabled)
+<!---### 3. Build Ceres Solver (SuiteSparse Disabled)
 
 ```bash
 cd ./ov2slam_ros/ov2slam/Thirdparty/ceres-solver
@@ -63,9 +63,9 @@ cmake .. \
 make -j"$(nproc)"
 ```
 
----
+------>
 
-### 4. Resolve ROS Dependencies
+### 3. Resolve ROS Dependencies
 
 ```bash
 cd ~/ros2_ws
@@ -77,15 +77,16 @@ rosdep install --from-paths src --ignore-src -r -y
 ```
 
 ---
-### 5. Build Thirdparty Libraries
+### 4. Build Thirdparty Libraries
 
 ```bash
 cd ov2slam_ros/
 ./build_thirdparty.sh
 ```
+**WARNING** when building ceres, check for the flag saying CERES_USE_EIGEN_SPARSE, if it's not enabled then you need to manually install Eigen3 in order to do sparse matrix calculations (or else you will receive an error from OV2SLAM saying Function tolerance reached)
 ---
 
-### 6. Build the Workspace
+### 5. Build the Workspace
 
 ```bash
 colcon build \
@@ -104,66 +105,13 @@ source install/setup.bash
 
 ---
 
-### 1. Visualization CPU Optimization (“Silent Mode”)
-
-**File:**
-`src/ov2slam_ros/src/ov2slam.cpp`
-
-**Function:**
-`visualizeFinalKFsTraj`
-
-**Rationale:**
-Publishing the full keyframe history causes unnecessary CPU load on embedded systems and can prevent the final optimization phase from running. Replace the loop with a constant-time operation.
-
-```cpp
-void SlamManager::visualizeFinalKFsTraj()
-{
-    // Exit early if no subscribers are listening
-    if (prosviz_->pub_final_kfs_traj_->get_subscription_count() == 0)
-        return;
-
-    // Publish only the latest keyframe
-    int last_kf_id = pcurframe_->kfid_;
-    auto pkf = pmap_->getKeyframe(last_kf_id);
-    if (pkf != nullptr) {
-        prosviz_->pubFinalKFsTraj(pkf->getTwc(), pkf->img_time_);
-    }
-}
-```
-
----
-
-### 2. Validated YAML Configuration
-
-**File:**
-`src/ov2slam_ros/parameters_files/accurate/euroc/euroc_stereo.yaml`
-
-```yaml
-# Camera intrinsics/extrinsics omitted for brevity
-# Use standard EuRoC calibration values
-
-# Disable real-time frame skipping
-force_realtime: 0
-
-# Feature density (empirically validated)
-# ~600 features per frame
-nmaxdist: 25
-
-# FAST + descriptor quality thresholds
-nfast_th: 10
-dmaxquality: 0.0001
-
-# Enable Global Bundle Adjustment
-do_full_ba: 1
-```
-
----
 
 ## Part 3 — Execution Protocol (Precision Run)
 
 **Goal:** Run the dataset at 1× speed, ensure synchronization, and explicitly trigger end-of-sequence optimization.
 
 ---
+It is recommended to use tmux for this part because you will run each command on a different terminal.
 
 ### Terminal 1 — OV²SLAM Node
 
@@ -252,11 +200,11 @@ evo_ape tum \
 ```
 
 **Expected Result:**
-**RMSE ≈ 0.06 m**
+**RMSE ≈ 0.06 m** or 0.069 or 0.079 m
 
 ---
 
-## Runtime Environment Note
+<!---## Runtime Environment Note (Not needed)
 
 To avoid missing shared library issues, export the following:
 
@@ -274,6 +222,6 @@ This workflow prioritizes:
 * Minimal dependencies
 * Embedded-friendly performance
 * Reproducible precision results
-
+-->
 Deviating from these steps (especially visualization behavior or clock handling) may prevent Global Bundle Adjustment from running and invalidate the final trajectory.
 
