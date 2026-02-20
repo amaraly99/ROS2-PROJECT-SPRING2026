@@ -31,7 +31,7 @@ sudo apt-get purge -y 'libsuitesparse*'
 sudo apt-get autoremove -y
 ````
 
----
+<!--- ---
 
 ### 2. Fix Ownership and Clean Third-Party Artifacts
 
@@ -43,7 +43,7 @@ rm -rf Thirdparty/*/build Thirdparty/*/install
 
 ---
 
-<!---### 3. Build Ceres Solver (SuiteSparse Disabled)
+### 3. Build Ceres Solver (SuiteSparse Disabled)
 
 ```bash
 cd ./ov2slam_ros/ov2slam/Thirdparty/ceres-solver
@@ -65,7 +65,7 @@ make -j"$(nproc)"
 
 ------>
 
-### 3. Resolve ROS Dependencies
+### 2. Resolve ROS Dependencies
 
 ```bash
 cd ~/ros2_ws
@@ -77,7 +77,7 @@ rosdep install --from-paths src --ignore-src -r -y
 ```
 
 ---
-### 4. Build Thirdparty Libraries
+### 3. Build Thirdparty Libraries
 
 ```bash
 cd ov2slam_ros/
@@ -86,7 +86,7 @@ cd ov2slam_ros/
 **WARNING** when building ceres, check for the flag saying CERES_USE_EIGEN_SPARSE, if it's not enabled then you need to manually install Eigen3 in order to do sparse matrix calculations (or else you will receive an error from OV2SLAM saying Function tolerance reached)
 ---
 
-### 5. Build the Workspace
+### 4. Build the Workspace
 
 ```bash
 colcon build \
