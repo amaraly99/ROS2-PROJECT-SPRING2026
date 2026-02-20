@@ -1,4 +1,4 @@
-# OV²SLAM — Embedded Build & Precision Evaluation Guide
+# OV²SLAM: Embedded Build & Precision Evaluation Guide
 
 This document describes the validated embedded build and execution workflow used to achieve **≈ 0.06 m RMSE** on the **EuRoC MH_05_difficult (Stereo)** sequence.
 
@@ -23,7 +23,7 @@ It consolidates:
 
 ---
 
-# Part 1 — System Preparation & Build
+# Part 1 - System Preparation & Build
 
 ## 1. Remove SuiteSparse
 
@@ -54,7 +54,7 @@ cd src/ov2slam_ros/
 ./build_thirdparty.sh
 ```
 
-### Important — Ceres Configuration
+### Important - Ceres Configuration
 
 During Ceres build, ensure the output includes:
 
@@ -89,7 +89,7 @@ source install/setup.bash
 
 ---
 
-# Part 2 — Execution Protocol (Precision Run)
+# Part 2 - Execution Protocol (Precision Run)
 
 **Objective:** Run dataset at 1× speed, ensure simulated time synchronization, and explicitly trigger end-of-sequence optimization.
 
@@ -97,7 +97,7 @@ Use separate terminals (tmux recommended).
 
 ---
 
-## Terminal 1 — OV²SLAM Node
+## Terminal 1 - OV²SLAM Node
 
 ```bash
 source install/setup.bash
@@ -108,7 +108,7 @@ ros2 run ov2slam ov2slam_node \
 
 ---
 
-## Terminal 2 — Dataset Playback
+## Terminal 2 - Dataset Playback
 
 ```bash
 ros2 bag play \
@@ -118,7 +118,7 @@ ros2 bag play \
 
 ---
 
-## Terminal 3 — Visualization (Optional)
+## Terminal 3 - Visualization (Optional)
 
 ```bash
 source install/setup.bash
@@ -146,7 +146,7 @@ This triggers:
 
 ---
 
-# Part 3 — Verification & Evaluation
+# Part 3 - Verification & Evaluation
 
 ## 1. Confirm in Logs
 
