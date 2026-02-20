@@ -1,74 +1,43 @@
 # OV²SLAM — Embedded Build & Precision Evaluation Guide
 
-This guide documents the **embedded, dependency-minimal build** and the **validated execution workflow** used to achieve **≈ 0.06 m RMSE** on the **EuRoC MH_05_difficult (Stereo)** sequence.
+This document describes the validated embedded build and execution workflow used to achieve **≈ 0.06 m RMSE** on the **EuRoC MH_05_difficult (Stereo)** sequence.
 
 It consolidates:
-- The lightweight C++ build configuration (no SuiteSparse)
-- Critical runtime optimizations to avoid CPU bottlenecks
-- The validated YAML parameter set
-- The execution protocol required to reliably trigger **Global Bundle Adjustment** and trajectory export
+
+* Lightweight dependency-minimal build (no SuiteSparse)
+* Ceres + Eigen sparse configuration requirements
+* Deterministic execution protocol
+* Explicit Global Bundle Adjustment trigger
+* Reproducible evaluation procedure
 
 ---
 
-## Target Configuration
+# Target Configuration
 
-- **Dataset:** EuRoC MH_05_difficult (Stereo)
-- **Metric:** Absolute Pose Error (APE), RMSE ≈ **0.06 m**
-- **ROS:** ROS 2 Jazzy
-- **Platform:** Embedded (SuiteSparse disabled)
-- **Evaluation:** `evo_ape`
+* **Dataset:** EuRoC MH_05_difficult (Stereo)
+* **Metric:** Absolute Pose Error (APE)
+* **Expected RMSE:** ≈ 0.06 m
+* **ROS Version:** ROS 2 Jazzy
+* **Platform:** Embedded (SuiteSparse disabled)
+* **Evaluation Tool:** evo_ape
 
 ---
 
-## Part 1 — System Preparation & Build
+# Part 1 — System Preparation & Build
 
-**Goal:** Produce a clean, lightweight OV²SLAM build without SuiteSparse or heavy sparse backends.
-
-### 1. Remove SuiteSparse (System Level)
+## 1. Remove SuiteSparse
 
 ```bash
 sudo apt-get purge -y 'libsuitesparse*'
 sudo apt-get autoremove -y
-````
-
-<!--- ---
-
-### 2. Fix Ownership and Clean Third-Party Artifacts
-
-```bash
-cd ./ov2slam_ros/ov2slam
-sudo chown -R "$USER:$USER" Thirdparty
-rm -rf Thirdparty/*/build Thirdparty/*/install
 ```
 
 ---
 
-### 3. Build Ceres Solver (SuiteSparse Disabled)
+## 2. Resolve ROS Dependencies
 
 ```bash
-cd ./ov2slam_ros/ov2slam/Thirdparty/ceres-solver
-rm -rf build install
-mkdir -p build
-cd build
-
-cmake .. \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DSUITESPARSE=OFF \
-  -DCXSPARSE=OFF \
-  -DEIGENSPARSE=OFF \
-  -DGLOG=OFF \
-  -DMINIGLOG=ON \
-  -DBUILD_TESTING=OFF
-
-make -j"$(nproc)"
-```
-
------->
-
-### 2. Resolve ROS Dependencies
-
-```bash
-cd ~/ros2_ws
+cd ~/src
 source /opt/ros/jazzy/setup.bash
 sudo apt update && sudo apt install -y python3-rosdep
 sudo rosdep init || true
@@ -77,16 +46,37 @@ rosdep install --from-paths src --ignore-src -r -y
 ```
 
 ---
-### 3. Build Thirdparty Libraries
+
+## 3. Build Thirdparty Libraries
 
 ```bash
-cd ov2slam_ros/
+cd src/ov2slam_ros/
 ./build_thirdparty.sh
 ```
-**WARNING** when building ceres, check for the flag saying CERES_USE_EIGEN_SPARSE, if it's not enabled then you need to manually install Eigen3 in order to do sparse matrix calculations (or else you will receive an error from OV2SLAM saying Function tolerance reached)
+
+### Important — Ceres Configuration
+
+During Ceres build, ensure the output includes:
+
+```
+CERES_USE_EIGEN_SPARSE
+```
+
+If not enabled:
+
+```bash
+sudo apt install libeigen3-dev
+```
+
+Failure to enable Eigen sparse may cause premature termination with:
+
+```
+Function tolerance reached
+```
+
 ---
 
-### 4. Build the Workspace
+## 4. Build Workspace
 
 ```bash
 colcon build \
@@ -99,21 +89,15 @@ source install/setup.bash
 
 ---
 
-## Part 2 — Code & Configuration (Validated Setup)
+# Part 2 — Execution Protocol (Precision Run)
 
-**Goal:** Minimize CPU overhead and ensure the Global Bundle Adjustment phase executes reliably.
+**Objective:** Run dataset at 1× speed, ensure simulated time synchronization, and explicitly trigger end-of-sequence optimization.
 
----
-
-
-## Part 3 — Execution Protocol (Precision Run)
-
-**Goal:** Run the dataset at 1× speed, ensure synchronization, and explicitly trigger end-of-sequence optimization.
+Use separate terminals (tmux recommended).
 
 ---
-It is recommended to use tmux for this part because you will run each command on a different terminal.
 
-### Terminal 1 — OV²SLAM Node
+## Terminal 1 — OV²SLAM Node
 
 ```bash
 source install/setup.bash
@@ -124,7 +108,7 @@ ros2 run ov2slam ov2slam_node \
 
 ---
 
-### Terminal 2 — Dataset Playback
+## Terminal 2 — Dataset Playback
 
 ```bash
 ros2 bag play \
@@ -134,7 +118,7 @@ ros2 bag play \
 
 ---
 
-### Terminal 3 — Visualization Bridge (Optional)
+## Terminal 3 — Visualization (Optional)
 
 ```bash
 source install/setup.bash
@@ -143,52 +127,50 @@ ros2 run foxglove_bridge foxglove_bridge --port 8765
 
 ---
 
-### Manual End-of-Sequence Trigger (“Clock Kick”)
+# Manual End-of-Sequence Trigger (Clock Kick)
 
 When bag playback finishes, `/clock` stops publishing.
-OV²SLAM will **not** automatically finalize or save trajectories in this state.
+OV²SLAM will not finalize automatically.
 
-Manually advance the simulated clock to trigger the internal timeout logic:
+Force a simulated time advance:
 
 ```bash
 ros2 topic pub --once /clock rosgraph_msgs/msg/Clock \
   "{clock: {sec: 1450000000, nanosec: 0}}"
 ```
 
-This forces:
+This triggers:
 
 * Global Bundle Adjustment
 * Trajectory export
 
 ---
 
-## Part 4 — Verification & Results
+# Part 3 — Verification & Evaluation
 
-### 1. Monitor Logs
+## 1. Confirm in Logs
 
-In **Terminal 1**, wait for:
+Wait for:
 
 * `[GlobalBundleAdjustment] Starting...`
 * `Kfs Trajectory file written!`
 * `Full Trajectory w. LC file written!`
 
-(≈ 30–60 seconds)
+Expected delay: 30–60 seconds.
 
 ---
 
-### 2. Retrieve Output
+## 2. Output File
 
-**File:**
-
-```text
+```
 ov2slam_fullba_kfs_traj.txt
 ```
 
-Located in the workspace root.
+Located in workspace root.
 
 ---
 
-### 3. Evaluate Accuracy
+## 3. Evaluate Accuracy
 
 ```bash
 evo_ape tum \
@@ -199,29 +181,24 @@ evo_ape tum \
   --t_max_diff 0.1
 ```
 
-**Expected Result:**
-**RMSE ≈ 0.06 m** or 0.069 or 0.079 m
-
 ---
 
-<!---## Runtime Environment Note (Not needed)
+# Expected Result
 
-To avoid missing shared library issues, export the following:
-
-```bash
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/ros2_ws/src/ov2slam_ros/Thirdparty/ibow_lcd/build
+```
+RMSE ≈ 0.06 m
 ```
 
+Observed stable range: 0.06 – 0.08 m.
+
 ---
 
-## Summary
+# Determinism Note
 
-This workflow prioritizes:
+Deviating from:
 
-* Deterministic execution
-* Minimal dependencies
-* Embedded-friendly performance
-* Reproducible precision results
--->
-Deviating from these steps (especially visualization behavior or clock handling) may prevent Global Bundle Adjustment from running and invalidate the final trajectory.
+* 1× playback rate
+* Proper simulated time
+* Explicit clock trigger
 
+may prevent Global Bundle Adjustment from
