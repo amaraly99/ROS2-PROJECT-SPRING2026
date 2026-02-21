@@ -1,3 +1,41 @@
+# ROS2 Camera Configuration
+> ovcam Shared Memory → ROS2 Bridge Script
+
+## ── Producer (Host Terminal) ────────────────────────────────
+
+# Install dependencies
+sudo apt update
+sudo apt install -y libcamera-dev cmake
+
+# Build producer
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j$(nproc)
+
+# Run producer (1280x720 @ 30 FPS)
+sudo ./build/ovcam_producer --width 1280 --height 720 --fps 30
+
+
+## ── ROS2 Bridge (New Terminal, ROS2 Sourced) ────────────────
+
+# Source ROS2
+source /opt/ros/jazzy/setup.bash
+
+# Build bridge
+cd root_directory_of_this_project
+colcon build --packages-select ovcam_bridge
+source install/setup.bash
+
+# Run bridge node
+ros2 run ovcam_bridge ovcam_bridge_node
+
+
+## ── Verify Stream ────────────────────────────────────────────
+
+# Check publishing frequency (~30 Hz expected)
+ros2 topic hz /ovcam/image_raw
+
+
+
 # OV²SLAM: Embedded Build & Precision Evaluation Guide
 
 This document describes the validated embedded build and execution workflow used to achieve **≈ 0.06 m RMSE** on the **EuRoC MH_05_difficult (Stereo)** sequence.
