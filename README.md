@@ -3,40 +3,40 @@
 
 ## Producer (Host Terminal)
 
-# Install dependencies
+### Install dependencies
 ```bash
 sudo apt update
 sudo apt install -y libcamera-dev cmake
 ```
-# Build producer
+### Build producer
 ```bash
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j$(nproc)
 ```
-# Run producer (1280x720 @ 30 FPS)
+### Run producer (1280x720 @ 30 FPS)
 ```bash
 sudo ./build/ovcam_producer --width 1280 --height 720 --fps 30
 ```
 
 ## ROS2 Bridge (New Terminal, ROS2 Sourced) 
 
-# Source ROS2
+### Source ROS2
 ```bash
 source /opt/ros/jazzy/setup.bash
 ```
-# Build bridge
+### Build bridge
 ```bash
 cd root_directory_of_this_project
 colcon build --packages-select ovcam_bridge
 source install/setup.bash
 ```
-# Run bridge node
+### Run bridge node
 ```bash
 ros2 run ovcam_bridge ovcam_bridge_node
 ```
 
-## Verify Stream 
-# Check publishing frequency (~30 Hz expected)
+### Verify Stream 
+Check publishing frequency (~30 Hz expected)
 ```bash
 ros2 topic hz /ovcam/image_raw
 ```
