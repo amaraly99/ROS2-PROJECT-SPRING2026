@@ -1,7 +1,7 @@
 # ROS2 Camera Configuration
 > ovcam Shared Memory → ROS2 Bridge Script
 
-## ── Producer (Host Terminal) ────────────────────────────────
+## Producer (Host Terminal)
 
 # Install dependencies
 sudo apt update
@@ -15,7 +15,7 @@ cmake --build build -j$(nproc)
 sudo ./build/ovcam_producer --width 1280 --height 720 --fps 30
 
 
-## ── ROS2 Bridge (New Terminal, ROS2 Sourced) ────────────────
+## ROS2 Bridge (New Terminal, ROS2 Sourced) 
 
 # Source ROS2
 source /opt/ros/jazzy/setup.bash
@@ -29,12 +29,11 @@ source install/setup.bash
 ros2 run ovcam_bridge ovcam_bridge_node
 
 
-## ── Verify Stream ────────────────────────────────────────────
-
+## Verify Stream 
 # Check publishing frequency (~30 Hz expected)
 ros2 topic hz /ovcam/image_raw
 
-
+---
 
 # OV²SLAM: Embedded Build & Precision Evaluation Guide
 
