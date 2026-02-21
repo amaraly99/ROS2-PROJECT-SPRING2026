@@ -44,6 +44,18 @@ sudo rosdep init || true
 rosdep update
 rosdep install --from-paths src --ignore-src -r -y
 ```
+From OV2SLAM repo
+**(Optional)** Install OpenGV:
+
+```
+    cd your_path/
+    git clone https://github.com/laurentkneip/opengv
+    cd opengv
+    mkdir build
+    cd build/
+    cmake ..
+    sudo make -j4 install
+```
 
 ---
 
