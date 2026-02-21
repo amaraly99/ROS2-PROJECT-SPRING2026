@@ -39,7 +39,7 @@ public:
         // KeepLast(2) = only buffer 2 messages, drop older ones
         // best_effort = don't retry dropped messages (fine for video)
         pub_ = create_publisher<Image>("/ovcam/image_raw",
-                                       rclcpp::QoS(2).best_effort());
+                                       rclcpp::QoS(2).reliable());
 
         // ── Open shared memory ────────────────────────────────────
         // The producer may not have started yet, so retry for 30 seconds
@@ -171,12 +171,13 @@ private:
             msg->width    = slot->width;
             msg->height   = slot->height;
             msg->step     = slot->stride;  // bytes per row
-            msg->encoding = "nv12";
-            msg->data.resize(slot->bytes_used);
-
-            // THE ONE COPY: shm → ROS2 message buffer
-            std::memcpy(msg->data.data(), frame_data(slot), slot->bytes_used);
-
+            
+            uint32_t y_bytes = slot->stride * slot->height;
+	    msg->encoding    = "mono8";   // ROS2 standard grayscale encoding
+	    msg->step        = slot->stride;
+	    msg->data.resize(y_bytes);
+	    std::memcpy(msg->data.data(), frame_data(slot), y_bytes);
+            
             // ── Validate seqlock ──────────────────────────────────
             // If seq changed while we were copying, data may be torn.
             // Retry the whole thing.
