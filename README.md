@@ -48,7 +48,7 @@ From OV2SLAM repo
 **(Optional)** Install OpenGV:
 
 ```
-    cd your_path/
+    cd src/ov2slam_ros/Thirdparty/
     git clone https://github.com/laurentkneip/opengv
     cd opengv
     mkdir build
