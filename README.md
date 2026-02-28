@@ -530,7 +530,8 @@ Four patches were applied to fix NaN/Inf crashes and SLAM initialization failure
 <!-- Add your name and contribution below -->
 | Name | Role / Contribution |
 |---|---|
-| | |
+| Amar Aly | OV²SLAM setup, integration, ROS2 Environment setup and Camera Calibration |
+| Ahmad Dhaoudi | YOLOv26n conversion to .hef for Hailo10H, Yolo detection and setup, ViSP integration |
 
 ---
 
