@@ -59,12 +59,14 @@
 
 | Item | Details |
 |---|---|
-| **Board** | Raspberry Pi 5 (Cortex-A76 × 4) |
+| **Board** | Raspberry Pi 5 (Cortex-A76 × 4, **16 GB RAM**) |
 | **Camera** | OV5647 (CSI), running at 640 × 480 ~30 fps |
-| **Accelerator** | Hailo-8L M.2 (passed through as `/dev/hailo0`) |
-| **Host OS** | Raspberry Pi OS or Ubuntu 24.04 (64-bit) |
+| **Accelerator** | Hailo-10H AI HAT+ 2 (passed through as `/dev/hailo0`) |
+| **Host OS** | **Raspberry Pi OS Trixie (64-bit) — REQUIRED** |
 | **Docker** | Docker Engine ≥ 24 |
 | **libcamera** | Installed on the **host** (used by `ovcam_producer` outside Docker) |
+
+> **⚠ Raspberry Pi OS Trixie is required.** The Hailo-10H AI HAT+ 2 drivers and `libcamera` integration depend on the Trixie release. Earlier releases (Bookworm, etc.) are **not supported**.
 
 ### Host packages (outside Docker)
 
