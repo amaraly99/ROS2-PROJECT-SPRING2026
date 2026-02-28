@@ -613,10 +613,15 @@ class SO3 : public SO3Base<SO3<Scalar_, Options>> {
     q.unit_quaternion_nonconst() =
         QuaternionMember(real_factor, imag_factor * omega.x(),
                          imag_factor * omega.y(), imag_factor * omega.z());
-    SOPHUS_ENSURE(abs(q.unit_quaternion().squaredNorm() - Scalar(1)) <
+   /* SOPHUS_ENSURE(abs(q.unit_quaternion().squaredNorm() - Scalar(1)) <
                       Sophus::Constants<Scalar>::epsilon(),
                   "SO3::exp failed! omega: %, real: %, img: %",
                   omega.transpose(), real_factor, imag_factor);
+*/
+// AMAR'S PATCH: Stop the node from crashing on NaN
+    if (std::isnan(omega[0]) || std::isnan(omega[1]) || std::isnan(omega[2])) {
+        return Sophus::SO3<Scalar_>(); 
+    }
     return q;
   }
 

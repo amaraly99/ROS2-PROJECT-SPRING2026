@@ -137,7 +137,7 @@ public:
 
                 if ( !img0_buf.empty() )
                 {
-                    double time = (double)img0_buf.front()->header.stamp.sec;
+                    double time = (double)img0_buf.front()->header.stamp.sec + 1e-9*(double)img0_buf.front()->header.stamp.nanosec;
                     image0 = getGrayImageFromMsg(img0_buf.front());
                     img0_buf.pop();
 
@@ -212,11 +212,13 @@ int main(int argc, char** argv)
 
     // Create callbacks according to the topics set in the parameters file
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr subleft = 
-		nh->create_subscription<sensor_msgs::msg::Image>("/cam0/image_raw", 2, 
+		nh->create_subscription<sensor_msgs::msg::Image>(pparams->cam_left_topic_, 2, 
 			std::bind(&SensorsGrabber::subLeftImage, &sb, std::placeholders::_1));
-    rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr subright = 
-		nh->create_subscription<sensor_msgs::msg::Image>("/cam1/image_raw", 2, 
-			std::bind(&SensorsGrabber::subRightImage, &sb, std::placeholders::_1)); //, &sb);
+    rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr subright;
+    if( pparams->stereo_ && !pparams->cam_right_topic_.empty() ) {
+		subright = nh->create_subscription<sensor_msgs::msg::Image>(pparams->cam_right_topic_, 2, 
+			std::bind(&SensorsGrabber::subRightImage, &sb, std::placeholders::_1));
+    }
 
     // Start a thread for providing new measurements to the SLAM
     std::thread sync_thread(&SensorsGrabber::sync_process, &sb);

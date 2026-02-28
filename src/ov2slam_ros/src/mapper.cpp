@@ -220,7 +220,7 @@ void Mapper::triangulateTemporal(Frame &frame)
     // Relative motions between new KF and prev. KFs
     int relkfid = -1;
     Sophus::SE3d Tcicj, Tcjci;
-    Eigen::Matrix3d Rcicj;
+    Eigen::Matrix3d Rcicj = Eigen::Matrix3d::Identity();
 
     // New 3D MPs projections
     cv::Point2f left_px_proj, right_px_proj;

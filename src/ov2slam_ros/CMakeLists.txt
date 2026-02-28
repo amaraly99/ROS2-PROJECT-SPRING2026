@@ -13,7 +13,7 @@ endif()
 # NOTE!
 #######
 # Set to OFF if you did not compile OpenCV w. opencv_contrib
-set(WITH_OPENCV_CONTRIB OFF)
+set(WITH_OPENCV_CONTRIB ON)
 
 if( ${CMAKE_VERSION} VERSION_LESS "3.8.2" )
     set(CMAKE_CXX_STANDARD 14)
