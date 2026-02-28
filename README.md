@@ -1,6 +1,6 @@
 # ROS 2 Perception Stack — Comprehensive Guide
 
-> Raspberry Pi + OV5647 mono camera → OV²SLAM visual odometry + YOLO object detection  
+> Raspberry Pi + OV5647 mono camera → OV²SLAM visual odometry  
 > **ROS 2 Jazzy** · Ubuntu 24.04 · Docker · CycloneDDS
 
 ---
@@ -18,6 +18,7 @@
 9. [Tuning Reference](#9-tuning-reference)
 10. [Troubleshooting](#10-troubleshooting)
 11. [Applied Bug Fixes (2026-03-01)](#11-applied-bug-fixes-2026-03-01)
+12. [Contributors](#12-contributors)
 
 ---
 
@@ -40,10 +41,7 @@
 │  │  Terminal 4 — Foxglove Bridge (port 8765)                      │   │
 │  │        exposes all topics to Foxglove Studio desktop app       │   │
 │  │                                                                │   │
-│  │  Terminal 5 — YOLO Detector (WIP / optional)                   │   │
-│  │        subscribes /ovcam/image_raw → yolo_msgs/Detection       │   │
-│  │                                                                │   │
-│  │  Terminal 6 — Debug shell (ros2 topic hz, echo, rqt, etc.)     │   │
+│  │  Terminal 5 — Debug shell (ros2 topic hz, echo, rqt, etc.)     │   │
 │  └────────────────────────────────────────────────────────────────┘   │
 └──────────────────────────────────────────────────────────────────────┘
 ```
@@ -54,7 +52,6 @@
 2. **ovcam_bridge** (Docker) reads the ring buffer and publishes `sensor_msgs/msg/Image` on `/ovcam/image_raw`.
 3. **OV²SLAM** subscribes, runs feature extraction → KLT tracking → motion estimation → local BA (Ceres) → map management.
 4. **Foxglove Bridge** exposes every ROS 2 topic over WebSocket for remote visualization.
-5. **YOLO detector** (optional) runs object detection on the same image stream.
 
 ---
 
@@ -82,8 +79,7 @@ sudo apt install -y libcamera-dev cmake g++ pkg-config
 ```
 ROS2-PROJECT-SPRING2026/
 ├── Dockerfile                          # Image definition (Ubuntu 24.04 + ROS 2 Jazzy)
-├── STACK_GUIDE.md                      # ← this file
-├── README.md                           # Quick-start (camera config + EuRoC evaluation)
+├── README.md                           # ← this file
 ├── .gitignore
 │
 ├── camera_calib/
@@ -106,16 +102,7 @@ ROS2-PROJECT-SPRING2026/
 │   ├── ovcam_bridge/                   # C++ — ROS 2 node (runs in Docker)
 │   │   └── src/bridge_node.cpp         # Reads shm → publishes Image on /ovcam/image_raw
 │   │
-│   ├── ovcam_ros/                      # (WIP — planned ovcam integration for YOLO)
-│   │
-│   ├── yolo_ros/                       # Python — YOLO detection package
-│   │   └── yolo_ros/
-│   │       ├── detector_node.py        # Subscribes /ovcam/image_raw → Detection msgs
-│   │       ├── camera_node.py          # RTSP stream alternative
-│   │       └── controller_node.py      # Servo/motor controller from detections
-│   │
-│   └── yolo_msgs/                      # ROS 2 interface package
-│       └── msg/Detection.msg           # class_name, confidence, center_x/y, width, height
+│   └── ovcam_ros/                      # (WIP — planned integration)
 │
 ├── opencv/                             # OpenCV 4.10 source (built from source in Docker)
 ├── opencv_contrib/                     # OpenCV contrib modules
@@ -140,7 +127,7 @@ The `Dockerfile` installs:
 - Ubuntu 24.04 base with locale setup
 - ROS 2 Jazzy (`ros-jazzy-ros-base`, `ros-jazzy-foxglove-bridge`, CycloneDDS, etc.)
 - C++ toolchain, CMake, Eigen3, Ceres Solver *without SuiteSparse*
-- Python 3 + colcon build tools + ultralytics (YOLO)
+- Python 3 + colcon build tools
 - An entrypoint that auto-sources `/opt/ros/jazzy/setup.bash` and the workspace overlay
 
 > **Note:** OpenCV 4.10 with contrib is built from source inside the container on first use. The source lives at `/workspace/opencv/` and `/workspace/opencv_contrib/`. Both are git-ignored.
@@ -204,7 +191,7 @@ cmake .. && make -j$(nproc)
 **Run:**
 
 ```bash
-./ovcam_producer        # captures from /dev/video0 by default
+./ovcam_producer --width 640 --height 480 --fps 30
 ```
 
 > The producer must be running **before** starting `ovcam_bridge` inside Docker.
@@ -263,20 +250,8 @@ ros2 run ovcam_bridge ovcam_bridge_node
 cd /workspace
 
 # 1. Build Thirdparty libs (first time only)
-cd src/ov2slam_ros/Thirdparty/ceres-solver && mkdir -p build && cd build
-cmake .. -DBUILD_TESTING=OFF -DBUILD_EXAMPLES=OFF && make -j$(nproc) && sudo make install
-cd /workspace
-
-cd src/ov2slam_ros/Thirdparty/Sophus && mkdir -p build && cd build
-cmake .. && make -j$(nproc) && sudo make install
-cd /workspace
-
-cd src/ov2slam_ros/Thirdparty/obindex2 && mkdir -p build && cd build
-cmake .. && make -j$(nproc) && sudo make install
-cd /workspace
-
-cd src/ov2slam_ros/Thirdparty/ibow_lcd && mkdir -p build && cd build
-cmake .. && make -j$(nproc) && sudo make install
+cd src/ov2slam_ros/Thirdparty
+./build_thirdparty.sh
 cd /workspace
 
 # 2. Build OV²SLAM ROS 2 package
@@ -306,54 +281,7 @@ ros2 run ov2slam_ros ov2slam_node \
 
 ---
 
-### 5.4 yolo_ros (Docker — ROS 2 Python)
-
-**Purpose:** Object detection using Ultralytics YOLO. Subscribes to the camera image topic and publishes detections.
-
-**Location:** `src/yolo_ros/`
-
-**Status:** Functional but not actively used in the current pipeline.
-
-**Key nodes:**
-| Node | Role |
-|---|---|
-| `detector_node.py` | Subscribes `/ovcam/image_raw`, runs YOLO inference, publishes `yolo_msgs/Detection` |
-| `camera_node.py` | Alternative RTSP camera source |
-| `controller_node.py` | Maps detections to servo/motor commands |
-
-**Build:**
-
-```bash
-colcon build --packages-select yolo_msgs yolo_ros
-source install/setup.bash
-```
-
-**Run:**
-
-```bash
-ros2 run yolo_ros detector_node
-```
-
----
-
-### 5.5 yolo_msgs (Docker — ROS 2 Interface)
-
-**Purpose:** Custom message definitions for YOLO detections.
-
-**Message: `Detection.msg`**
-
-```
-string class_name
-float32 confidence
-float32 center_x
-float32 center_y
-float32 width
-float32 height
-```
-
----
-
-### 5.6 Foxglove Bridge
+### 5.4 Foxglove Bridge
 
 **Purpose:** Exposes all ROS 2 topics over WebSocket (port 8765) for visualization in [Foxglove Studio](https://foxglove.dev/).
 
@@ -369,13 +297,13 @@ Then connect Foxglove Studio (desktop or web) to `ws://<PI_IP>:8765`.
 
 ## 6. Terminal Workflow (Live Camera)
 
-Open five terminal sessions. Terminal 1 runs on the **host**; terminals 2–6 run **inside the Docker container**.
+Open four terminal sessions. Terminal 1 runs on the **host**; terminals 2–5 run **inside the Docker container**.
 
 ### Terminal 1 — Camera Producer (Host)
 
 ```bash
 cd ~/ROS2-PROJECT-SPRING2026/src/ovcam_producer/build
-./ovcam_producer
+./ovcam_producer --width 640 --height 480 --fps 30
 ```
 
 ### Terminal 2 — Image Bridge (Docker)
@@ -410,31 +338,30 @@ ros2 topic hz /ovcam/image_raw
 ros2 topic echo /ov2slam/odom --once
 ```
 
-### Terminal 6 — YOLO Detector (Docker, optional)
-
-```bash
-source /opt/ros/jazzy/setup.bash && source /workspace/install/setup.bash
-ros2 run yolo_ros detector_node
-```
-
 ---
 
 ## 7. EuRoC Dataset Replay
 
 See also `README.md` for downloadable links.
 
-### 1. Download and extract a sequence
+> **Important:** Download the **ROS bag** version of each sequence (not the ASL / zip format).  
+> The bag files are available on the [EuRoC MAV Dataset page](https://projects.asl.ethz.ch/datasets/doku.php?id=kmavvisualinertialdatasets) under the "ROS bag" column.
+
+### 1. Download a bag2 sequence
 
 ```bash
 mkdir -p /workspace/datasets && cd /workspace/datasets
-# Example: MH_01_easy
-wget http://robotics.ethz.ch/~asl-datasets/ijrr_euroc_mav_dataset/machine_hall/MH_01_easy/MH_01_easy.zip
-unzip MH_01_easy.zip
+# Download the ROS bag version directly — example: MH_01_easy
+# (use the bag download links from the EuRoC dataset page)
 ```
 
-### 2. Convert to ROS 2 bag (if needed)
+### 2. Convert bag1 → bag2 (if needed)
 
-The existing `README.md` describes the ASL-format → bag conversion. Alternatively, write a Python publisher that reads the `cam0/data/` images and publishes on `/ovcam/image_raw` (the topic name in `euroc_mono.yaml`).
+If only a ROS 1 bag (`.bag`) is available, convert it to ROS 2 format:
+
+```bash
+ros2 bag convert -i MH_01_easy.bag -o MH_01_easy_bag2 -s rosbag_v2
+```
 
 ### 3. Run OV²SLAM
 
@@ -486,33 +413,17 @@ The calibration file lives at `camera_calib/ov5647_ov2slam.yaml`.
 
 ### Recalibrating
 
-If the resolution or lens changes, recalibrate using OpenCV:
+If the resolution or lens changes, recalibrate using the provided scripts:
 
 ```bash
-# Capture ~30 checkerboard images at different angles
-# Then:
-python3 -c "
-import cv2, numpy as np, glob
-BOARD = (9,6)
-objp = np.zeros((BOARD[0]*BOARD[1],3), np.float32)
-objp[:,:2] = np.mgrid[0:BOARD[0],0:BOARD[1]].T.reshape(-1,2)
-obj_pts, img_pts = [], []
-for f in sorted(glob.glob('calib_imgs/*.png')):
-    img = cv2.imread(f)
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    ret, corners = cv2.findChessboardCorners(gray, BOARD)
-    if ret:
-        obj_pts.append(objp)
-        img_pts.append(cv2.cornerSubPix(gray, corners, (11,11), (-1,-1),
-            (cv2.TERM_CRITERIA_EPS+cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)))
-ret, K, dist, _, _ = cv2.calibrateCamera(obj_pts, img_pts, gray.shape[::-1], None, None)
-print(f'RMS: {ret:.4f}')
-print(f'fx={K[0,0]:.6f} fy={K[1,1]:.6f} cx={K[0,2]:.6f} cy={K[1,2]:.6f}')
-print(f'k1={dist[0,0]:.8f} k2={dist[0,1]:.8f} p1={dist[0,2]:.8f} p2={dist[0,3]:.8f}')
-"
+# 1. Capture ~30 checkerboard images at different angles
+python3 capture.py
+
+# 2. Run calibration
+python3 calibrate.py
 ```
 
-Update the values in `ov5647_ov2slam.yaml` accordingly.
+Update the values in `ov5647_ov2slam.yaml` with the output.
 
 ---
 
@@ -586,10 +497,9 @@ Key parameters in the YAML config files:
 
 ### Build error: "Sophus/se3.hpp not found"
 
-- Build and install Sophus first:
+- Build and install all thirdparty deps:
   ```bash
-  cd src/ov2slam_ros/Thirdparty/Sophus && mkdir -p build && cd build
-  cmake .. && make -j$(nproc) && sudo make install
+  cd src/ov2slam_ros/Thirdparty && ./build_thirdparty.sh
   ```
 
 ### Build error: "SuiteSparse not found"
@@ -612,6 +522,15 @@ Four patches were applied to fix NaN/Inf crashes and SLAM initialization failure
 | **D — Topic Subscription** | `src/ov2slam_node.cpp` | Left topic was hardcoded; right topic subscription crashed in mono mode when topic string was empty. |
 
 **Backups:** Original source files saved in `src/ov2slam_ros/src_backup_20260301_212752/`.
+
+---
+
+## 12. Contributors
+
+<!-- Add your name and contribution below -->
+| Name | Role / Contribution |
+|---|---|
+| | |
 
 ---
 
