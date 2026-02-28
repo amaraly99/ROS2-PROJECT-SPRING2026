@@ -744,6 +744,11 @@ void Frame::setTwc(const Sophus::SE3d &Twc)
 {
     std::lock_guard<std::mutex> lock(pose_mutex_);
 
+    if( !Twc.rotationMatrix().allFinite() || !Twc.translation().allFinite() ) {
+        std::cerr << "[Frame::setTwc(SE3)] REJECTED: NaN/Inf in pose\n";
+        return;
+    }
+
     Twc_ = Twc;
     Tcw_ = Twc.inverse();
 }
@@ -759,6 +764,16 @@ inline void Frame::setTcw(const Sophus::SE3d &Tcw)
 void Frame::setTwc(const Eigen::Matrix3d &Rwc, Eigen::Vector3d &twc)
 {
     std::lock_guard<std::mutex> lock(pose_mutex_);
+
+    if( !Rwc.allFinite() || !twc.allFinite() ) {
+        std::cerr << "[Frame::setTwc(R,t)] REJECTED: NaN/Inf in pose\n";
+        return;
+    }
+    double det = Rwc.determinant();
+    if( std::abs(det - 1.0) > 1e-4 ) {
+        std::cerr << "[Frame::setTwc(R,t)] REJECTED: det(R)=" << det << " != 1\n";
+        return;
+    }
 
     Twc_.setRotationMatrix(Rwc);
     Twc_.translation() = twc;

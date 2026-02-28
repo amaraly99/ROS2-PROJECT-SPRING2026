@@ -53,7 +53,15 @@ public:
             }
 
             double dt = (time - prev_time_);
-            Twc = Twc * Sophus::SE3d::exp(log_relT_ * dt);
+            if( dt > 1e-6 && log_relT_.allFinite() ) {
+                Eigen::Matrix<double, 6, 1> delta_log = log_relT_ * dt;
+                if( delta_log.allFinite() ) {
+                    Sophus::SE3d delta = Sophus::SE3d::exp(delta_log);
+                    if( delta.rotationMatrix().allFinite() && delta.translation().allFinite() ) {
+                        Twc = Twc * delta;
+                    }
+                }
+            }
         }
     }
 
@@ -71,8 +79,18 @@ public:
                 exit(-1);
             }
 
+            if( dt < 1e-6 ) {
+                // dt too small, skip motion model update to avoid division by zero
+                prevTwc_ = Twc;
+                return;
+            }
+
             Sophus::SE3d Tprevcur = prevTwc_.inverse() * Twc;
             log_relT_ = Tprevcur.log() / dt;
+            if( !log_relT_.allFinite() ) {
+                std::cerr << "[MotionModel] WARNING: log_relT_ not finite (dt=" << dt << "), resetting to zero\n";
+                log_relT_.setZero();
+            }
             prevTwc_ = Twc;
         }
     }

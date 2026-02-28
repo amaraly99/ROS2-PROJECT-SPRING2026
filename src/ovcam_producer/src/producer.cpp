@@ -146,17 +146,56 @@ static void on_request(Request* req) {
     g_camera->queueRequest(req);
 }
 
+// ── usage ─────────────────────────────────────────────────────────
+static void print_usage(const char* prog) {
+    printf("Usage: %s [options]\n\n"
+           "Stream options:\n"
+           "  --width  <px>      Frame width  (default: 1280)\n"
+           "  --height <px>      Frame height (default: 720)\n"
+           "  --fps    <n>       Target frame rate (default: 30)\n"
+           "  --slots  <n>       Ring-buffer slot count (default: 4)\n\n"
+           "Exposure options:\n"
+           "  --shutter <us>     Fixed shutter time in microseconds.\n"
+           "                     Disables AE for exposure. Example: 10000 = 10 ms.\n"
+           "                     Omit to let AE control exposure automatically.\n"
+           "  --gain <factor>    Analogue gain multiplier (e.g. 1.0 = no gain, 8.0 = 8x).\n"
+           "                     Disables AE for gain. Omit for automatic.\n\n"
+           "Note: setting either --shutter or --gain locks AE entirely. Set both\n"
+           "      for full manual control, or neither for full auto.\n",
+           prog);
+}
+
 // ── main ──────────────────────────────────────────────────────────
 int main(int argc, char** argv) {
     uint32_t W = 1280, H = 720, FPS = 30, N = 4;
     const char* SHM = "/ovcam_frames";
     const char* SEM = "/ovcam_ready";
 
+    // Shutter / gain: negative sentinel = "not set by user → use AE"
+    int64_t shutter_us = -1;   // microseconds; -1 = auto
+    float   gain       = -1.f; // analogue gain; -1 = auto
+
     for (int i = 1; i < argc; ++i) {
-        if (!strcmp(argv[i], "--width")  && i+1 < argc) W   = atoi(argv[++i]);
-        if (!strcmp(argv[i], "--height") && i+1 < argc) H   = atoi(argv[++i]);
-        if (!strcmp(argv[i], "--fps")    && i+1 < argc) FPS = atoi(argv[++i]);
-        if (!strcmp(argv[i], "--slots")  && i+1 < argc) N   = atoi(argv[++i]);
+        if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) {
+            print_usage(argv[0]);
+            return 0;
+        }
+        if (!strcmp(argv[i], "--width")   && i+1 < argc) W          = atoi(argv[++i]);
+        if (!strcmp(argv[i], "--height")  && i+1 < argc) H          = atoi(argv[++i]);
+        if (!strcmp(argv[i], "--fps")     && i+1 < argc) FPS        = atoi(argv[++i]);
+        if (!strcmp(argv[i], "--slots")   && i+1 < argc) N          = atoi(argv[++i]);
+        if (!strcmp(argv[i], "--shutter") && i+1 < argc) shutter_us = atoll(argv[++i]);
+        if (!strcmp(argv[i], "--gain")    && i+1 < argc) gain       = atof(argv[++i]);
+    }
+
+    // Basic sanity checks for exposure args
+    if (shutter_us == 0) {
+        fprintf(stderr, "[error] --shutter must be > 0 microseconds\n");
+        return 1;
+    }
+    if (gain == 0.f || gain < -1.f) {
+        fprintf(stderr, "[error] --gain must be a positive multiplier (e.g. 1.0–16.0)\n");
+        return 1;
     }
 
     signal(SIGINT,  on_signal);
@@ -226,11 +265,47 @@ int main(int argc, char** argv) {
         reqs.push_back(std::move(r));
     }
 
-    // set FPS via frame duration control
+    // ── build ControlList ─────────────────────────────────────────
+    //
+    // Frame-duration limits lock the FPS ceiling/floor.
+    // Shutter and gain are independent: set either/both for manual,
+    // or omit both to stay in full-AE mode.
+    //
+    // AeEnable must be explicitly disabled whenever we override
+    // exposure time or gain, otherwise the ISP will fight our values.
+    //
     ControlList ctrls;
+
+    // FPS via frame duration (always set)
     int64_t fd_us = 1000000LL / FPS;
     ctrls.set(controls::FrameDurationLimits,
               Span<const int64_t, 2>({fd_us, fd_us}));
+
+    const bool manual_shutter = (shutter_us > 0);
+    const bool manual_gain    = (gain > 0.f);
+
+    if (manual_shutter || manual_gain) {
+        // Disable AE so the ISP doesn't override our values
+        ctrls.set(controls::AeEnable, false);
+
+        if (manual_shutter) {
+            ctrls.set(controls::ExposureTime, (int32_t)shutter_us);
+            printf("[cam] shutter: %lld µs (manual)\n", (long long)shutter_us);
+        } else {
+            printf("[cam] shutter: auto (only gain is manual)\n");
+        }
+
+        if (manual_gain) {
+            ctrls.set(controls::AnalogueGain, gain);
+            printf("[cam] gain: %.2fx (manual)\n", gain);
+        } else {
+            printf("[cam] gain: auto (only shutter is manual)\n");
+        }
+    } else {
+        // Full auto-exposure — AeEnable defaults to true, but be explicit
+        ctrls.set(controls::AeEnable, true);
+        printf("[cam] exposure: full AE (auto shutter + auto gain)\n");
+    }
 
     // plain function pointer — libcamera Signal does not accept lambdas
     cam->requestCompleted.connect(on_request);
