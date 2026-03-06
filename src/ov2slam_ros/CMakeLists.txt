@@ -80,6 +80,7 @@ endif ( )
 ## System dependencies are found with CMake's conventions
 
 # OpenCV
+set(OpenCV_DIR /usr/local/lib/cmake/opencv4/)
 find_package(OpenCV REQUIRED)
 
 if(OpenCV_VERSION_MAJOR LESS 3)

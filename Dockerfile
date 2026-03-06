@@ -82,7 +82,7 @@ RUN apt-get update \
 # ==============================================================================
 # System-wide Environment — ROS + Library Paths
 # ==============================================================================
-RUN cat > /etc/profile.d/ros2_jazzy.sh << 'EOF'
+RUN cat > /etc/profile.d/ros2_jazzy.sh <<'EOF'
 # ROS 2 Jazzy
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 source /opt/ros/jazzy/setup.bash
@@ -106,7 +106,7 @@ RUN chmod +x /etc/profile.d/ros2_jazzy.sh
 # ==============================================================================
 # Startup Check Script
 # ==============================================================================
-RUN cat > /usr/local/bin/ros2_check.sh << 'EOF'
+RUN cat > /usr/local/bin/ros2_check.sh <<'EOF'
 #!/usr/bin/env bash
 set -e
 
