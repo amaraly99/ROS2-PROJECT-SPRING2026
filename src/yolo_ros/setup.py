@@ -20,8 +20,6 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'camera = yolo_ros.camera_node:main',
-            'detector = yolo_ros.detector_node:main',
             'controller = yolo_ros.controller_node:main',
         ],
     },

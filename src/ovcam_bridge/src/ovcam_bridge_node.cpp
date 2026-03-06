@@ -36,8 +36,7 @@ public:
         frame_id_ = declare_parameter("frame_id", std::string("camera"));
 
         // ── Publisher ─────────────────────────────────────────────
-        // KeepLast(2) = only buffer 2 messages, drop older ones
-        // best_effort = don't retry dropped messages (fine for video)
+        // mono8 for OV2SLAM: reliable, KeepLast(2)
         pub_ = create_publisher<Image>("/ovcam/image_raw",
                                        rclcpp::QoS(2).reliable());
 
@@ -117,6 +116,11 @@ private:
             // How many frames are ready?
             uint64_t latest = ws_load(gh_);
 
+            // Don't try to catch up more frames than we have slots —
+            // older frames are already overwritten in the ring buffer.
+            if (latest > last_fn + gh_->slot_count)
+                last_fn = latest - gh_->slot_count;
+
             // Process every frame we missed since last time
             // (usually just 1, but catches up if we were slow)
             for (uint64_t fn = last_fn + 1; fn <= latest; ++fn)
@@ -160,31 +164,26 @@ private:
             }
 
             // ── Build ROS2 Image message ──────────────────────────
+            const uint32_t y_bytes = slot->stride * slot->height;
+
             auto msg             = std::make_unique<Image>();
             msg->header.frame_id = frame_id_;
-
-            // Convert nanoseconds to ROS2 timestamp
-            msg->header.stamp = rclcpp::Time(
+            msg->header.stamp    = rclcpp::Time(
                 (int32_t)(slot->t_ns / 1000000000ULL),
                 (uint32_t)(slot->t_ns % 1000000000ULL));
-
             msg->width    = slot->width;
             msg->height   = slot->height;
-            msg->step     = slot->stride;  // bytes per row
-            
-            uint32_t y_bytes = slot->stride * slot->height;
-	    msg->encoding    = "mono8";   // ROS2 standard grayscale encoding
-	    msg->step        = slot->stride;
-	    msg->data.resize(y_bytes);
-	    std::memcpy(msg->data.data(), frame_data(slot), y_bytes);
-            
+            msg->encoding = "mono8";
+            msg->step     = slot->stride;
+
             // ── Validate seqlock ──────────────────────────────────
-            // If seq changed while we were copying, data may be torn.
-            // Retry the whole thing.
+            // If seq changed while we were copying, data was torn — retry.
             uint64_t s2 = seq_load(slot);
             if (s2 != s1) continue;
 
-            // Data is consistent — publish
+            // Seqlock validated — safe to copy and publish.
+            msg->data.resize(y_bytes);
+            std::memcpy(msg->data.data(), frame_data(slot), y_bytes);
             pub_->publish(std::move(msg));
             return;
         }
