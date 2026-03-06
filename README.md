@@ -12,46 +12,70 @@
 3. [Repository Layout](#3-repository-layout)
 4. [Docker Image](#4-docker-image)
 5. [Packages](#5-packages)
-6. [Terminal Workflow (Live Camera)](#6-terminal-workflow-live-camera)
-7. [EuRoC Dataset Replay](#7-euroc-dataset-replay)
-8. [Camera Calibration](#8-camera-calibration)
-9. [Tuning Reference](#9-tuning-reference)
-10. [Troubleshooting](#10-troubleshooting)
-11. [Applied Bug Fixes (2026-03-01)](#11-applied-bug-fixes-2026-03-01)
-12. [Contributors](#12-contributors)
+6. [YOLO NPU Pipeline — Quick-Start & Verification](#6-yolo-npu-pipeline--quick-start--verification)
+7. [Foxglove Live Visualization](#7-foxglove-live-visualization)
+8. [Terminal Workflow — Full Stack (Camera + YOLO + SLAM)](#8-terminal-workflow--full-stack-camera--yolo--slam)
+9. [EuRoC Dataset Replay](#9-euroc-dataset-replay)
+10. [Camera Calibration](#10-camera-calibration)
+11. [Tuning Reference](#11-tuning-reference)
+12. [Troubleshooting](#12-troubleshooting)
+13. [Applied Bug Fixes (2026-03-01)](#13-applied-bug-fixes-2026-03-01)
+14. [Contributors](#14-contributors)
 
 ---
 
 ## 1. Architecture Overview
 
 ```
-┌──────────────────────── HOST (Raspberry Pi) ────────────────────────┐
-│                                                                      │
-│  Terminal 1 — ovcam_producer (native, libcamera + POSIX shm)        │
-│        ↓  shared memory ring buffer (/ovcam_shm)                    │
-│  ┌────────────────────── DOCKER CONTAINER ──────────────────────┐   │
-│  │                                                                │   │
-│  │  Terminal 2 — ovcam_bridge                                     │   │
-│  │        reads shm → publishes /ovcam/image_raw (sensor_msgs)   │   │
-│  │                          ↓                                     │   │
-│  │  Terminal 3 — OV²SLAM                                          │   │
-│  │        subscribes /ovcam/image_raw → visual SLAM               │   │
-│  │        publishes /ov2slam/odom, /ov2slam/pointcloud, etc.      │   │
-│  │                          ↓                                     │   │
-│  │  Terminal 4 — Foxglove Bridge (port 8765)                      │   │
-│  │        exposes all topics to Foxglove Studio desktop app       │   │
-│  │                                                                │   │
-│  │  Terminal 5 — Debug shell (ros2 topic hz, echo, rqt, etc.)     │   │
-│  └────────────────────────────────────────────────────────────────┘   │
-└──────────────────────────────────────────────────────────────────────┘
+┌───────────────────────── HOST (Raspberry Pi 5) ─────────────────────────┐
+│                                                                          │
+│  ovcam_producer  (C++, libcamera)                                       │
+│       │  writes NV12 frames                                              │
+│       ▼                                                                  │
+│  /ovcam_frames   ◄── POSIX shared memory ring buffer ──►  (both read)   │
+│       │                                                       │          │
+│       │                                                       │          │
+│       │                                    yolo_producer  (Python)       │
+│       │                                    reads NV12 → BGR → letterbox   │
+│       │                                    Hailo-10H NPU inference       │
+│       │                                    post-process (DFL+NMS)        │
+│       │                                    draws annotations             │
+│       │                                         │  writes detections     │
+│       │                                         ▼  + annotated BGR       │
+│       │                                    /yolo_shm  (POSIX shm)       │
+│       │                                         │                        │
+│  ┌────┼─────────────── DOCKER CONTAINER ────────┼──────────────────┐     │
+│  │    │                                         │                  │     │
+│  │    ▼                                         ▼                  │     │
+│  │  ovcam_bridge                           yolo_bridge             │     │
+│  │  shm → /ovcam/image_raw (mono8)         shm → /yolo/detections │     │
+│  │         │                                     /yolo/annotated   │     │
+│  │         ▼                                         │             │     │
+│  │  OV²SLAM (visual SLAM)                           ▼             │     │
+│  │  → /ov2slam/odom                          controller_node      │     │
+│  │  → /ov2slam/pointcloud                   (drone control logic) │     │
+│  │         │                                                       │     │
+│  │         ▼                                                       │     │
+│  │  Foxglove Bridge (:8765) ── all topics → Foxglove Studio       │     │
+│  └─────────────────────────────────────────────────────────────────┘     │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Data flow summary:**
+### Key design rule
 
-1. **ovcam_producer** (native) captures frames via `libcamera` and writes them into a POSIX shared-memory ring buffer.
-2. **ovcam_bridge** (Docker) reads the ring buffer and publishes `sensor_msgs/msg/Image` on `/ovcam/image_raw`.
-3. **OV²SLAM** subscribes, runs feature extraction → KLT tracking → motion estimation → local BA (Ceres) → map management.
-4. **Foxglove Bridge** exposes every ROS 2 topic over WebSocket for remote visualization.
+> **Hardware on the host, ROS 2 in Docker.**  
+> Anything that touches hardware (camera, NPU) runs natively on the host.  
+> Docker only does ROS 2 bridging and compute that doesn't need device access.
+
+### Data flow summary
+
+1. **ovcam_producer** (host) captures NV12 frames via `libcamera` → writes to `/ovcam_frames` shared memory.
+2. **yolo_producer** (host) reads the same NV12 frames → converts to BGR → letterbox-resizes to 640×640 (preserving aspect ratio, gray padding) → runs YOLO inference on Hailo-10H NPU → post-processes (DFL bbox decode + NMS) → writes detections + annotated BGR frame to `/yolo_shm`.
+3. **ovcam_bridge** (Docker) reads `/ovcam_frames` → publishes mono8 on `/ovcam/image_raw` (for SLAM).
+4. **yolo_bridge** (Docker) reads `/yolo_shm` → publishes `DetectionArray` on `/yolo/detections` + BGR `Image` on `/yolo/annotated`.
+5. **controller_node** (Docker) subscribes to `/yolo/detections` → picks highest-confidence target → outputs control direction.
+6. **OV²SLAM** (Docker) subscribes to `/ovcam/image_raw` → visual odometry.
+7. **Foxglove Bridge** (Docker) exposes every ROS 2 topic over WebSocket for visualization.
 
 ---
 
@@ -90,6 +114,9 @@ ROS2-PROJECT-SPRING2026/
 ├── custom_params/
 │   └── euroc_mono.yaml                 # EuRoC dataset params (1280×720, placeholder calib)
 │
+├── models/
+│   └── yolo26n_10h.hef                 # YOLO26n compiled for Hailo-10H NPU
+│
 ├── src/
 │   ├── ov2slam_ros/                    # C++ — OV²SLAM visual SLAM (main package)
 │   │   ├── src/ov2slam_node.cpp        # ROS 2 node entry point
@@ -97,14 +124,27 @@ ROS2-PROJECT-SPRING2026/
 │   │   ├── Thirdparty/                 # Ceres, Sophus, obindex2, ibow-lcd
 │   │   └── CMakeLists.txt
 │   │
-│   ├── ovcam_producer/                 # C++ — native camera capture (runs on host)
-│   │   ├── src/producer.cpp            # libcamera → shared memory ring buffer
-│   │   └── include/ovcam_shm.hpp       # Shared memory header (ring buffer protocol)
+│   ├── ovcam_producer/                 # C++ — native camera capture (runs on HOST)
+│   │   ├── src/producer.cpp            # libcamera → /ovcam_frames shm
+│   │   └── include/ovcam_shm.hpp       # Shared memory protocol
 │   │
-│   ├── ovcam_bridge/                   # C++ — ROS 2 node (runs in Docker)
-│   │   └── src/bridge_node.cpp         # Reads shm → publishes Image on /ovcam/image_raw
+│   ├── ovcam_bridge/                   # C++ — ROS 2 node (runs in DOCKER)
+│   │   └── src/ovcam_bridge_node.cpp   # /ovcam_frames shm → /ovcam/image_raw
 │   │
-│   └── ovcam_ros/                      # (WIP — planned integration)
+│   ├── yolo_producer/                  # Python — NPU inference (runs on HOST)
+│   │   ├── yolo_producer.py            # Reads camera shm → Hailo NPU → /yolo_shm
+│   │   └── include/yolo_shm.hpp        # YOLO shm protocol (shared with yolo_bridge)
+│   │
+│   ├── yolo_bridge/                    # C++ — ROS 2 node (runs in DOCKER)
+│   │   └── src/yolo_bridge_node.cpp    # /yolo_shm → /yolo/detections + /yolo/annotated
+│   │
+│   ├── yolo_msgs/                      # ROS 2 message definitions
+│   │   └── msg/
+│   │       ├── Detection.msg           # class_name, confidence, center_x/y, size_w/h
+│   │       └── DetectionArray.msg      # header + Detection[]
+│   │
+│   └── yolo_ros/                       # Python — ROS 2 nodes
+│       └── yolo_ros/controller_node.py # Subscribes DetectionArray → control logic
 │
 ├── opencv/                             # OpenCV 4.10 source (built from source in Docker)
 ├── opencv_contrib/                     # OpenCV contrib modules
@@ -137,6 +177,12 @@ The `Dockerfile` installs:
 ### Run
 
 ```bash
+./start_container.sh
+```
+
+Or manually:
+
+```bash
 sudo docker run -it --rm \
   --name ros2_perception_stack \
   --net=host \
@@ -156,7 +202,7 @@ sudo docker run -it --rm \
 | `--net=host` | Share host network for DDS discovery |
 | `--ipc=host` | Access POSIX shared memory from ovcam_producer |
 | `--privileged` | Device access (camera, Hailo) |
-| `--device=/dev/hailo0` | Hailo-8L accelerator pass-through |
+| `--device=/dev/hailo0` | Hailo-10H NPU pass-through |
 | `-v $(pwd):/workspace` | Mount project directory |
 
 ### Entering additional terminals
@@ -211,7 +257,7 @@ cmake .. && make -j$(nproc)
 ```bash
 # Inside Docker
 cd /workspace
-colcon build --packages-select ovcam_bridge --cmake-args -DCMAKE_BUILD_TYPE=Release
+colcon build --packages-select ovcam_bridge --symlink-install
 source install/setup.bash
 ```
 
@@ -223,11 +269,13 @@ ros2 run ovcam_bridge ovcam_bridge_node
 
 ---
 
-### 5.3 ov2slam_ros (Docker — ROS 2 C++)
+### 5.3 ov2slam (Docker — ROS 2 C++)
 
 **Purpose:** Monocular visual SLAM. Subscribes to camera images, performs feature tracking (KLT + ORB/BRIEF), estimates camera motion, runs local Bundle Adjustment via Ceres, and maintains a sparse 3D map.
 
 **Location:** `src/ov2slam_ros/`
+
+> **Note:** The directory is named `ov2slam_ros` but the ROS 2 **package name** is `ov2slam`. Always use `ov2slam` in `ros2 run` and `colcon build` commands.
 
 **Key source files:**
 | File | Role |
@@ -257,29 +305,31 @@ cd src/ov2slam_ros/Thirdparty
 cd /workspace
 
 # 2. Build OV²SLAM ROS 2 package
-colcon build --packages-select ov2slam_ros \
-  --cmake-args -DCMAKE_BUILD_TYPE=Release
+colcon build --packages-select ov2slam --symlink-install
 source install/setup.bash
 ```
 
 **Run (live camera):**
 
 ```bash
-ros2 run ov2slam_ros ov2slam_node \
+export LD_LIBRARY_PATH=/workspace/opencv/build/lib:$LD_LIBRARY_PATH
+ros2 run ov2slam ov2slam_node \
   /workspace/camera_calib/ov5647_ov2slam.yaml
 ```
 
 **Run (EuRoC dataset):**
 
 ```bash
-ros2 run ov2slam_ros ov2slam_node \
+export LD_LIBRARY_PATH=/workspace/opencv/build/lib:$LD_LIBRARY_PATH
+ros2 run ov2slam ov2slam_node \
   /workspace/custom_params/euroc_mono.yaml
 ```
 
 **Published topics:**
-- `/ov2slam/odom` — `nav_msgs/msg/Odometry`
-- `/ov2slam/pointcloud` — `sensor_msgs/msg/PointCloud2`
-- Frame-to-frame tracking visualization (image with keypoints)
+- `/vo_pose` — `geometry_msgs/msg/PoseStamped` (visual odometry pose)
+- `/point_cloud` — `sensor_msgs/msg/PointCloud2` (sparse 3D map)
+- `/image_track` — feature tracking visualization
+- `/tf` — camera transform frames
 
 ---
 
@@ -297,52 +347,379 @@ Then connect Foxglove Studio (desktop or web) to `ws://<PI_IP>:8765`.
 
 ---
 
-## 6. Terminal Workflow (Live Camera)
+### 5.5 yolo_producer (Host — Python)
 
-Open four terminal sessions. Terminal 1 runs on the **host**; terminals 2–5 run **inside the Docker container**.
+**Purpose:** Reads NV12 camera frames from `/ovcam_frames` shared memory, runs YOLO inference on the Hailo-10H NPU, post-processes detections (DFL bounding box decode + NMS), draws annotated bounding boxes, and writes results to `/yolo_shm`.
 
-### Terminal 1 — Camera Producer (Host)
+**Location:** `src/yolo_producer/`
+
+**Key files:**
+- `yolo_producer.py` — main inference loop
+- `include/yolo_shm.hpp` — shared memory protocol (shared with `yolo_bridge`)
+
+**Run (on the host, NOT in Docker):**
 
 ```bash
-cd ~/ROS2-PROJECT-SPRING2026/src/ovcam_producer/build
-./ovcam_producer --width 640 --height 480 --fps 30
+cd ~/ROS2-PROJECT-SPRING2026
+python3 src/yolo_producer/yolo_producer.py --hef models/yolo26n_10h.hef
 ```
 
-### Terminal 2 — Image Bridge (Docker)
+> Requires `ovcam_producer` to be running first.
+
+---
+
+### 5.6 yolo_bridge (Docker — ROS 2 C++)
+
+**Purpose:** Reads detections + annotated BGR frame from `/yolo_shm` and publishes them as ROS 2 topics.
+
+**Location:** `src/yolo_bridge/`
+
+**Published topics:**
+| Topic | Type | QoS | Content |
+|---|---|---|---|
+| `/yolo/detections` | `yolo_msgs/DetectionArray` | best_effort | Array of detections (class, confidence, bbox) |
+| `/yolo/annotated` | `sensor_msgs/Image` (bgr8) | best_effort | Camera frame with drawn bounding boxes |
+
+**Build & Run:**
+
+```bash
+# Inside Docker
+colcon build --packages-select yolo_bridge --symlink-install
+source install/setup.bash
+ros2 run yolo_bridge yolo_bridge_node
+```
+
+---
+
+### 5.7 yolo_msgs (Docker — ROS 2 Messages)
+
+**Purpose:** Defines the custom message types for YOLO detections.
+
+**Location:** `src/yolo_msgs/msg/`
+
+| Message | Fields |
+|---|---|
+| `Detection.msg` | `class_name`, `confidence`, `center_x`, `center_y`, `size_width`, `size_height` |
+| `DetectionArray.msg` | `std_msgs/Header header` + `Detection[] detections` |
+
+**Build:**
+
+```bash
+colcon build --packages-select yolo_msgs
+```
+
+---
+
+### 5.8 yolo_ros (Docker — Python)
+
+**Purpose:** High-level ROS 2 nodes that consume YOLO detections.
+
+**Location:** `src/yolo_ros/`
+
+**Nodes:**
+- `controller` — subscribes to `/yolo/detections`, picks highest-confidence detection, outputs directional control (left/center/right based on target position).
+
+**Run:**
+
+```bash
+ros2 run yolo_ros controller
+```
+
+---
+
+## 6. YOLO NPU Pipeline — Quick-Start & Verification
+
+This section walks you through running the full YOLO NPU pipeline from scratch and verifying everything works. **Read the whole section first**, then follow step by step.
+
+### What you're about to run
+
+```
+Camera (OV5647, 30fps)
+  └─► ovcam_producer (HOST) ─── /ovcam_frames shm ───┐
+                                                       ├─► ovcam_bridge (DOCKER) ─► /ovcam/image_raw (mono8, 30Hz)
+                                                       │
+                                                       └─► yolo_producer (HOST)
+                                                             │  NV12 → BGR → letterbox 640×640
+                                                             │  Hailo-10H NPU inference (~30fps)
+                                                             │  DFL decode + NMS
+                                                             ▼
+                                                        /yolo_shm ─► yolo_bridge (DOCKER)
+                                                                       ├─► /yolo/detections  (DetectionArray, ~25Hz)
+                                                                       └─► /yolo/annotated   (Image bgr8, ~25Hz)
+```
+
+### Prerequisites
+
+- `ovcam_producer` is already built (see [section 5.1](#51-ovcam_producer-host--native))
+- Docker container `ros2_perception_stack` is running
+- All Docker packages are built:
+  ```bash
+  # Inside Docker:
+  source /opt/ros/jazzy/setup.bash
+  cd /workspace
+  colcon build --packages-select yolo_msgs ovcam_bridge yolo_bridge yolo_ros --symlink-install
+  source install/setup.bash
+  ```
+
+### Step-by-step (4 terminals)
+
+#### Terminal 1 — Camera producer (HOST)
+
+Open a terminal **on the Pi** (not in Docker):
+
+```bash
+cd ~/ROS2-PROJECT-SPRING2026
+src/ovcam_producer/build/ovcam_producer --width 640 --height 480 --fps 30
+```
+
+You should see:
+```
+[shm] created '/ovcam_frames': 4 slots x ...
+[cam] actual: 640x480 stride=640
+```
+
+> Leave this running. It streams camera frames into shared memory.
+
+#### Terminal 2 — YOLO producer (HOST)
+
+Open another terminal **on the Pi** (not in Docker):
+
+```bash
+cd ~/ROS2-PROJECT-SPRING2026
+python3 src/yolo_producer/yolo_producer.py --hef models/yolo26n_10h.hef
+```
+
+You should see:
+```
+[hailo] loading HEF: models/yolo26n_10h.hef
+[hailo] input: 640×640×3
+[hailo] outputs: ['yolo26n_v2/conv61', ...]
+[ovcam] opened: 640×480 stride=640 slots=4
+[yolo_shm] created: 640×480 slots=4 slot_size=922752
+[yolo_producer] running — conf=0.25 iou=0.45
+[yolo_producer] 100 frames, 25.0 fps, 1 dets
+```
+
+> The `N dets` count shows how many objects YOLO detected in the latest frame.
+> Point the camera at a person or a common object (cup, phone, etc.) to see detections.
+
+#### Terminal 3 — ROS 2 bridges (DOCKER)
+
+Enter the Docker container:
+
+```bash
+sudo docker exec -it ros2_perception_stack /bin/bash
+```
+
+Then inside:
 
 ```bash
 source /opt/ros/jazzy/setup.bash && source /workspace/install/setup.bash
-ros2 run ovcam_bridge ovcam_bridge_node
+ros2 run ovcam_bridge ovcam_bridge_node &
+ros2 run yolo_bridge yolo_bridge_node
 ```
 
-### Terminal 3 — OV²SLAM (Docker)
+You should see:
+```
+[INFO] [yolo_bridge]: yolo_shm mapped: 640x480, 4 slots
+```
+
+#### Terminal 4 — Verify everything (DOCKER)
+
+Enter the Docker container in a new terminal:
 
 ```bash
+sudo docker exec -it ros2_perception_stack /bin/bash
 source /opt/ros/jazzy/setup.bash && source /workspace/install/setup.bash
-ros2 run ov2slam_ros ov2slam_node /workspace/camera_calib/ov5647_ov2slam.yaml
 ```
 
-### Terminal 4 — Foxglove Bridge (Docker)
+Now run these checks:
+
+**Check 1 — Topics exist:**
+```bash
+ros2 topic list
+```
+Expected output should include:
+```
+/ovcam/image_raw
+/yolo/annotated
+/yolo/detections
+```
+
+**Check 2 — Detections flowing at ~25 Hz:**
+```bash
+ros2 topic hz /yolo/detections
+```
+Expected:
+```
+average rate: 25.0
+```
+
+**Check 3 — See actual detections (point camera at a person):**
+```bash
+ros2 topic echo /yolo/detections --once
+```
+Expected:
+```yaml
+header:
+  stamp:
+    sec: 6249
+    nanosec: 661330294
+  frame_id: camera
+detections:
+- class_name: person
+  confidence: 0.7796
+  center_x: 354.5
+  center_y: 279.0
+  size_width: 417.0
+  size_height: 396.0
+```
+
+**Check 4 — Annotated images flowing:**
+```bash
+ros2 topic hz /yolo/annotated
+```
+Expected: `average rate: ~25`
+
+**Check 5 — Camera bridge (SLAM feed) flowing:**
+```bash
+ros2 topic hz /ovcam/image_raw
+```
+Expected: `average rate: ~30`
+
+### Stopping everything
+
+**Important:** Always stop processes when you're done, or CPU stays pegged.
 
 ```bash
+# In Docker — stop bridges:
+pkill -f yolo_bridge_node
+pkill -f ovcam_bridge_node
+
+# On the host — stop producers:
+pkill -f yolo_producer.py
+pkill -f ovcam_producer
+```
+
+Or press `Ctrl+C` in each terminal window (in reverse order: bridges first, then producers).
+
+### Configuration options
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--hef <path>` | `models/yolo26n_10h.hef` | Path to compiled YOLO model |
+| `--conf <float>` | `0.25` | Minimum confidence to report a detection |
+| `--iou <float>` | `0.45` | NMS IoU threshold (lower = fewer overlapping boxes) |
+
+Example with tighter threshold:
+```bash
+python3 src/yolo_producer/yolo_producer.py --hef models/yolo26n_10h.hef --conf 0.5
+```
+
+### What gets detected
+
+The model recognizes the **80 COCO classes**: person, bicycle, car, motorcycle, airplane, bus, train, truck, boat, traffic light, fire hydrant, stop sign, bench, bird, cat, dog, horse, cow, elephant, bear, zebra, giraffe, backpack, umbrella, handbag, suitcase, bottle, cup, fork, knife, spoon, bowl, banana, apple, sandwich, orange, pizza, donut, cake, chair, couch, bed, dining table, toilet, tv, laptop, mouse, remote, keyboard, cell phone, microwave, oven, toaster, sink, refrigerator, book, clock, vase, scissors, teddy bear, toothbrush, and more.
+
+---
+
+## 7. Foxglove Live Visualization
+
+See YOLO detections and annotated camera feed live in your browser or desktop app.
+
+### Step 1 — Start the Foxglove Bridge (DOCKER)
+
+After starting all 4 terminals from [section 6](#6-yolo-npu-pipeline--quick-start--verification), open one more Docker terminal:
+
+```bash
+sudo docker exec -it ros2_perception_stack /bin/bash
 source /opt/ros/jazzy/setup.bash
 ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765
 ```
 
-### Terminal 5 — Debug Shell (Docker)
+You should see:
+```
+[foxglove_bridge]: Starting Foxglove WebSocket bridge on port 8765
+```
+
+### Step 2 — Connect Foxglove Studio
+
+1. Open [Foxglove Studio](https://app.foxglove.dev/) in a browser on any computer on the same network, OR download the desktop app from https://foxglove.dev/download
+2. Click **"Open connection"**
+3. Select **"Foxglove WebSocket"**
+4. Enter: `ws://<PI_IP>:8765` (e.g., `ws://192.168.0.120:8765`)
+5. Click **Connect**
+
+### Step 3 — Add panels
+
+- **Image panel** → set topic to `/yolo/annotated` → you'll see the live camera feed with bounding boxes drawn on detected objects
+- **Image panel** → set topic to `/ovcam/image_raw` → raw mono camera feed (what SLAM sees)
+- **Log panel** or **Raw Messages panel** → set topic to `/yolo/detections` → see detection messages in real time
+
+> **Tip:** The Pi's IP can be found by running `hostname -I` on the Pi.
+
+---
+
+## 8. Terminal Workflow — Full Stack (Camera + YOLO + SLAM)
+
+To run everything together (YOLO detection + OV²SLAM + visualization), open 6 terminals:
+
+### Terminal 1 — Camera Producer (HOST)
 
 ```bash
+cd ~/ROS2-PROJECT-SPRING2026
+src/ovcam_producer/build/ovcam_producer --width 640 --height 480 --fps 30
+```
+
+### Terminal 2 — YOLO Producer (HOST)
+
+```bash
+cd ~/ROS2-PROJECT-SPRING2026
+python3 src/yolo_producer/yolo_producer.py --hef models/yolo26n_10h.hef
+```
+
+### Terminal 3 — Bridges (DOCKER)
+
+```bash
+sudo docker exec -it ros2_perception_stack /bin/bash
+source /opt/ros/jazzy/setup.bash && source /workspace/install/setup.bash
+ros2 run ovcam_bridge ovcam_bridge_node &
+ros2 run yolo_bridge yolo_bridge_node
+```
+
+### Terminal 4 — OV²SLAM (DOCKER)
+
+```bash
+sudo docker exec -it ros2_perception_stack /bin/bash
+source /opt/ros/jazzy/setup.bash && source /workspace/install/setup.bash
+export LD_LIBRARY_PATH=/workspace/opencv/build/lib:$LD_LIBRARY_PATH
+ros2 run ov2slam ov2slam_node /workspace/camera_calib/ov5647_ov2slam.yaml
+```
+
+### Terminal 5 — Foxglove Bridge (DOCKER)
+
+```bash
+sudo docker exec -it ros2_perception_stack /bin/bash
+source /opt/ros/jazzy/setup.bash
+ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765
+```
+
+### Terminal 6 — Debug Shell (DOCKER)
+
+```bash
+sudo docker exec -it ros2_perception_stack /bin/bash
 source /opt/ros/jazzy/setup.bash && source /workspace/install/setup.bash
 
 # Useful commands:
 ros2 topic list
+ros2 topic hz /yolo/detections
+ros2 topic echo /yolo/detections --once
 ros2 topic hz /ovcam/image_raw
 ros2 topic echo /ov2slam/odom --once
 ```
 
 ---
 
-## 7. EuRoC Dataset Replay
+## 9. EuRoC Dataset Replay
 
 See also `README.md` for downloadable links.
 
@@ -368,7 +745,8 @@ ros2 bag convert -i MH_01_easy.bag -o MH_01_easy_bag2 -s rosbag_v2
 ### 3. Run OV²SLAM
 
 ```bash
-ros2 run ov2slam_ros ov2slam_node /workspace/custom_params/euroc_mono.yaml
+export LD_LIBRARY_PATH=/workspace/opencv/build/lib:$LD_LIBRARY_PATH
+ros2 run ov2slam ov2slam_node /workspace/custom_params/euroc_mono.yaml
 ```
 
 ### 4. In a separate terminal, play the bag
@@ -394,7 +772,7 @@ evo_ape tum /workspace/datasets/MH_01_easy/mav0/state_groundtruth_estimate0/data
 
 ---
 
-## 8. Camera Calibration
+## 10. Camera Calibration
 
 The OV5647 was calibrated at 640 × 480 using a checkerboard pattern.
 
@@ -429,7 +807,7 @@ Update the values in `ov5647_ov2slam.yaml` with the output.
 
 ---
 
-## 9. Tuning Reference
+## 11. Tuning Reference
 
 Key parameters in the YAML config files:
 
@@ -466,7 +844,22 @@ Key parameters in the YAML config files:
 
 ---
 
-## 10. Troubleshooting
+## 12. Troubleshooting
+
+### yolo_producer shows 0 dets
+
+- **Not a bug** if nothing detectable is in frame. Point the camera at a person, cup, phone, or any COCO object.
+- If objects are present but no detections: try lowering `--conf` to `0.1`.
+
+### yolo_bridge can't connect to shm
+
+- Start `yolo_producer` **before** `yolo_bridge`. The producer creates `/yolo_shm`; the bridge only reads it.
+- If you restart `yolo_producer` while the bridge is running, you must also restart the bridge (it holds a stale mmap of the old shm).
+
+### "Lost communication with the server" from Hailo
+
+- This happens when the Python process crashes mid-inference. Not harmful — just restart `yolo_producer.py`.
+- If persistent: check `ls /dev/hailo0` exists and `hailortcli fw-control identify` works.
 
 ### OV²SLAM fails to initialize
 
@@ -510,7 +903,7 @@ Key parameters in the YAML config files:
 
 ---
 
-## 11. Applied Bug Fixes (2026-03-01)
+## 13. Applied Bug Fixes (2026-03-01)
 
 Four patches were applied to fix NaN/Inf crashes and SLAM initialization failures. See `ov2slam_fixes.md` for the full write-up with root-cause analysis and proof.
 
@@ -527,7 +920,7 @@ Four patches were applied to fix NaN/Inf crashes and SLAM initialization failure
 
 ---
 
-## 12. Contributors
+## 14. Contributors
 
 <!-- Add your name and contribution below -->
 | Name | Role / Contribution |
@@ -537,4 +930,4 @@ Four patches were applied to fix NaN/Inf crashes and SLAM initialization failure
 
 ---
 
-*Last updated: 2026-03-01*
+*Last updated: 2026-03-05*
