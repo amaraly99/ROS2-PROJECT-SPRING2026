@@ -265,7 +265,7 @@ source install/setup.bash
 **Run (live camera):**
 
 ```bash
-ros2 run ov2slam_ros ov2slam_node \
+ros2 run ov2slam ov2slam_node \
   /workspace/camera_calib/ov5647_ov2slam.yaml
 ```
 
