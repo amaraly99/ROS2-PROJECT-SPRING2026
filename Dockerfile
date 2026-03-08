@@ -62,13 +62,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*
 
 # ==============================================================================
-# Extra Libraries (SLAM / Vision)
+# Extra Libraries (SLAM / Vision / ViSP)
 # ==============================================================================
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgoogle-glog-dev \
     libgflags-dev \
     liblapack-dev \
     libblas-dev \
+    libvisp-dev \
  && rm -rf /var/lib/apt/lists/*
 
 # ==============================================================================
@@ -132,6 +133,7 @@ pkgs=(
   libgflags-dev
   liblapack-dev
   libblas-dev
+  libvisp-dev
   nano
 )
 

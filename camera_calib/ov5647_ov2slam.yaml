@@ -73,7 +73,7 @@ bdo_stereo_rect: 0
 alpha: 0.
 
 bdo_undist: 1
-finit_parallax: 25. # 15
+finit_parallax: 25. #25 — lowered for easier live init; raise back to 25 for more accurate triangulation
 
 use_shi_tomasi: 0
 use_fast: 0
@@ -120,6 +120,6 @@ use_nonmonotic_step: 0
 
 apply_l2_after_robust: 1
 nmin_covscore: 25
-fkf_filtering_ratio: 0.95
+fkf_filtering_ratio: 0.80  # was 0.95 — lower = more aggressive KF culling = bounded map = stable CPU
 do_full_ba: 0
 

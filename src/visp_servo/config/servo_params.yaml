@@ -1,0 +1,30 @@
+# ViSP Servo Parameters
+visp_servo_node:
+  ros__parameters:
+    # ── Target selection ──────────────────────────────────────
+    target_class: "person"          # COCO class to track
+    min_confidence: 0.3             # Ignore detections below this
+
+    # ── Image dimensions (must match camera) ──────────────────
+    image_width: 640
+    image_height: 480
+
+    # ── Servoing gains ────────────────────────────────────────
+    lambda_xy: 0.5                  # IBVS gain for x/y centering
+    lambda_z: 0.3                   # Gain for approach/retreat (depth)
+
+    # ── Velocity limits (m/s, rad/s) ──────────────────────────
+    max_linear: 0.5                 # Max linear velocity magnitude
+    max_angular: 0.5                # Max yaw rate
+
+    # ── Desired distance (image-based) ────────────────────────
+    #   target_bbox_ratio: desired bbox height / image height
+    #   When the target fills this fraction, stop approaching.
+    target_bbox_ratio: 0.35
+    bbox_ratio_tolerance: 0.05      # Dead-zone around target_bbox_ratio
+
+    # ── Target loss ───────────────────────────────────────────
+    lost_threshold: 15              # Consecutive frames without detection → LOST
+
+    # ── Smoothing ─────────────────────────────────────────────
+    smoothing_window: 5             # Moving average window for bbox center
