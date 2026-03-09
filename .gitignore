@@ -107,3 +107,8 @@ CMakeCache.txt
 cmake_install.cmake
 Makefile
 compile_commands.json
+
+############################################################
+# Calibration Images
+############################################################
+./camera_calib/calib_images/

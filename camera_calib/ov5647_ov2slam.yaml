@@ -68,7 +68,7 @@ stereo: 0
 force_realtime: 1
 slam_mode: 1
 
-buse_loop_closer: 0
+buse_loop_closer: 1
 bdo_stereo_rect: 0
 alpha: 0.
 
@@ -90,12 +90,12 @@ fclahe_val: 3
 do_klt: 1
 klt_use_prior: 1
 btrack_keyframetoframe: 0
-nklt_win_size: 9
+nklt_win_size: 15
 nklt_pyr_lvl: 3
 
 nmax_iter: 30
 fmax_px_precision: 0.01
-fmax_fbklt_dist: 0.5
+fmax_fbklt_dist: 1.0
 nklt_err: 15 #30.
 
 bdo_track_localmap: 1
@@ -103,7 +103,7 @@ fmax_desc_dist: 0.2
 fmax_proj_pxdist: 2.
 
 doepipolar: 1
-dop3p: 0
+dop3p: 1
 bdo_random: 1
 nransac_iter: 100
 fransac_err: 1.5 #6.
