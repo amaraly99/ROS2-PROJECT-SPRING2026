@@ -327,8 +327,11 @@ ros2 run ov2slam ov2slam_node \
 **Location:** `src/yolo_producer/`
 
 **Run (on the host):**
+Download the HailoRT Python wheel for your Python version from the 
+[Hailo Developer Zone](https://hailo.ai/developer-zone/request-access/) (account required)
 
 ```bash
+pip3 install hailort-*.whl --break-system-packages
 cd ~/ROS2-PROJECT-SPRING2026
 python3 src/yolo_producer/yolo_producer.py --hef models/yolo26n_10h.hef
 ```
