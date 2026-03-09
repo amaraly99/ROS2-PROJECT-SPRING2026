@@ -59,7 +59,7 @@ body_T_cam1: !!opencv-matrix
 #--------------------------------------------------------------------------------------------
 # SLAM Parameters
 #--------------------------------------------------------------------------------------------
-debug: 0
+debug: 1
 log_timings: 0
 
 mono: 1
@@ -73,10 +73,10 @@ bdo_stereo_rect: 0
 alpha: 0.
 
 bdo_undist: 1
-finit_parallax: 25. # 15
+finit_parallax: 25. #25 — lowered for easier live init; raise back to 25 for more accurate triangulation
 
 use_shi_tomasi: 0
-use_fast: 0
+use_fast: 1
 use_brief: 1
 use_singlescale_detector: 1
 
@@ -89,13 +89,13 @@ fclahe_val: 3
 
 do_klt: 1
 klt_use_prior: 1
-btrack_keyframetoframe: 0
-nklt_win_size: 9
+btrack_keyframetoframe: 0 #faster and allows for weird motion or fast motion
+nklt_win_size: 15
 nklt_pyr_lvl: 3
 
 nmax_iter: 30
 fmax_px_precision: 0.01
-fmax_fbklt_dist: 0.5
+fmax_fbklt_dist: 1.0
 nklt_err: 15 #30.
 
 bdo_track_localmap: 1
@@ -103,7 +103,7 @@ fmax_desc_dist: 0.2
 fmax_proj_pxdist: 2.
 
 doepipolar: 1
-dop3p: 0
+dop3p: 1
 bdo_random: 1
 nransac_iter: 100
 fransac_err: 1.5 #6.
@@ -120,6 +120,6 @@ use_nonmonotic_step: 0
 
 apply_l2_after_robust: 1
 nmin_covscore: 25
-fkf_filtering_ratio: 0.95
+fkf_filtering_ratio: 0.80  # was 0.95 — lower = more aggressive KF culling = bounded map = stable CPU
 do_full_ba: 0
 
