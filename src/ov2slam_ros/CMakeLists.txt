@@ -79,9 +79,10 @@ endif ( )
 
 ## System dependencies are found with CMake's conventions
 
-# OpenCV
-set(OpenCV_DIR /usr/local/lib/cmake/opencv4/)
+# OpenCV (custom build with contrib modules)
+set(OpenCV_DIR "/workspace/opencv/build" CACHE PATH "" FORCE)
 find_package(OpenCV REQUIRED)
+link_directories("/workspace/opencv/build/lib")
 
 if(OpenCV_VERSION_MAJOR LESS 3)
   message( FATAL_ERROR "OpenCV 3 or 4 is required!  Current version : ${OpenCV_VERSION}" )

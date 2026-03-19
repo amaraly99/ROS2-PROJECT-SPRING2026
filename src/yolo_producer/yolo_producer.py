@@ -126,10 +126,11 @@ class OvcamReader:
             raise RuntimeError(f"sem_open({sem_name}) failed")
 
         self._last_seq = 0
+        self._stride_packed = (self.stride == self.w)
         print(f"[ovcam] opened: {w}×{h} stride={stride} slots={slot_count}")
 
     def wait_frame(self, timeout_s: float = 0.5) -> Tuple[np.ndarray, int]:
-        """Wait for a new frame. Returns (bgr_image, timestamp_ns) or raises TimeoutError."""
+        """Wait for a new frame. Returns (rgb_image, timestamp_ns) or raises TimeoutError."""
         # Wait on semaphore with timeout
         now = time.clock_gettime(time.CLOCK_REALTIME)
         ts = _Timespec(int(now + timeout_s), int(((now + timeout_s) % 1) * 1e9))
@@ -162,7 +163,10 @@ class OvcamReader:
         uv_bytes = stride * (h // 2)
         nv12_bytes = y_bytes + uv_bytes
         data_off = slot_off + 64  # after SlotHeader
-        nv12_data = bytes(self.mm[data_off:data_off + nv12_bytes])
+
+        # Single efficient copy from mmap (replaces bytes() + frombuffer)
+        raw = np.frombuffer(self.mm, dtype=np.uint8,
+                            count=nv12_bytes, offset=data_off).copy()
 
         # Validate seqlock
         s2 = struct.unpack_from("<Q", self.mm, slot_off)[0]
@@ -171,14 +175,19 @@ class OvcamReader:
 
         self._last_seq = write_seq
 
-        # NV12 → BGR: re-pack to width-stride layout so cvtColor always works
-        raw = np.frombuffer(nv12_data, dtype=np.uint8)
-        y_plane  = raw[:stride * h].reshape(h, stride)[:, :w]
-        uv_plane = raw[stride * h:].reshape(h // 2, stride)[:, :w]
-        nv12_packed = np.ascontiguousarray(np.concatenate([y_plane, uv_plane], axis=0))
-        bgr = cv2.cvtColor(nv12_packed, cv2.COLOR_YUV2BGR_NV12)
+        # NV12 → RGB directly (skip BGR intermediate)
+        if self._stride_packed:
+            # Fast path: stride == width, NV12 data already contiguous
+            nv12_packed = raw.reshape(h * 3 // 2, w)
+        else:
+            # Slow path: strip stride padding
+            y_plane  = raw[:stride * h].reshape(h, stride)[:, :w]
+            uv_plane = raw[stride * h:].reshape(h // 2, stride)[:, :w]
+            nv12_packed = np.ascontiguousarray(
+                np.concatenate([y_plane, uv_plane], axis=0))
 
-        return bgr, t_ns
+        rgb = cv2.cvtColor(nv12_packed, cv2.COLOR_YUV2RGB_NV12)
+        return rgb, t_ns
 
 
 # ═════════════════════════════════════════════════════════════════
@@ -190,11 +199,13 @@ class YoloShmWriter:
     def __init__(self, img_w: int, img_h: int,
                  shm_name: str = "/yolo_shm",
                  sem_name: str = "/yolo_ready",
-                 n_slots: int = 4):
+                 n_slots: int = 4,
+                 include_image: bool = True):
         self.img_w    = img_w
         self.img_h    = img_h
-        img_stride    = img_w * 3  # BGR
-        img_bytes     = img_stride * img_h
+        self.include_image = include_image
+        img_stride    = img_w * 3  # RGB
+        img_bytes     = img_stride * img_h if include_image else 0
         slot_payload  = YOLO_SLOT_HDR + YOLO_DETS_PAD + img_bytes
         slot_size     = (slot_payload + 63) & ~63  # 64-byte align
         total         = 128 + n_slots * slot_size  # YoloShmGlobal = 128 bytes
@@ -235,8 +246,8 @@ class YoloShmWriter:
         print(f"[yolo_shm] created: {img_w}×{img_h} slots={n_slots} "
               f"slot_size={slot_size}")
 
-    def write(self, dets: list, annotated_bgr: np.ndarray, t_ns: int):
-        """Write detections + annotated frame to next slot."""
+    def write(self, dets: list, img, t_ns: int):
+        """Write detections (+ optional image) to next slot."""
         self._frame_num += 1
         fn = self._frame_num
         idx = (fn - 1) % self.slot_count
@@ -247,11 +258,13 @@ class YoloShmWriter:
         # Seqlock open (odd)
         self.mm[slot_off:slot_off + 8] = struct.pack("<Q", fn * 2 - 1)
 
-        # Write slot header (skip seq, already written)
+        # Write slot header — img_bytes=0 when image not included
+        write_img = self.include_image and img is not None
         meta = struct.pack("<QIIIIi",
                            t_ns, det_count,
                            self.img_w, self.img_h,
-                           self.img_stride, self.img_bytes)
+                           self.img_stride,
+                           self.img_bytes if write_img else 0)
         self.mm[slot_off + 8:slot_off + 8 + len(meta)] = meta
 
         # Write detections
@@ -263,10 +276,11 @@ class YoloShmWriter:
                                    d["x1"], d["y1"], d["x2"], d["y2"])
             self.mm[det_off + i * 16:det_off + i * 16 + 16] = det_data
 
-        # Write annotated image
-        img_off = slot_off + YOLO_IMG_OFFSET
-        img_flat = annotated_bgr.tobytes()
-        self.mm[img_off:img_off + len(img_flat)] = img_flat
+        # Write image only when included (saves ~1.8MB/frame when skipped)
+        if write_img:
+            img_off = slot_off + YOLO_IMG_OFFSET
+            img_flat = img.tobytes()
+            self.mm[img_off:img_off + len(img_flat)] = img_flat
 
         # Seqlock close (even)
         self.mm[slot_off:slot_off + 8] = struct.pack("<Q", fn * 2)
@@ -282,7 +296,8 @@ class YoloShmWriter:
 # YOLO post-processing
 # ═════════════════════════════════════════════════════════════════
 def sigmoid(x: np.ndarray) -> np.ndarray:
-    x = np.clip(x, -88.0, 88.0)
+    clip_val = 11.0 if x.dtype == np.float16 else 88.0
+    x = np.clip(x, -clip_val, clip_val)
     return 1.0 / (1.0 + np.exp(-x))
 
 
@@ -315,10 +330,12 @@ def postprocess(outputs: dict, img_h: int, img_w: int,
                 input_size: int = 640,
                 conf_thresh: float = 0.25,
                 iou_thresh: float = 0.45,
-                grids: dict = None) -> list:
+                grids: dict = None,
+                timing: dict = None) -> list:
     """
     Post-process YOLO outputs from 6 tensors (3 scales × bbox+classes).
     Returns list of dicts with keys: class_id, confidence, x1, y1, x2, y2.
+    If timing dict is provided, records per-stage durations (ms).
     """
     names = sorted(outputs.keys())
     bbox_tensors = []
@@ -345,6 +362,8 @@ def postprocess(outputs: dict, img_h: int, img_w: int,
     # Pre-filter threshold in logit space: sigmoid(x) > t  ⟺  x > log(t/(1-t))
     logit_thresh = math.log(conf_thresh / (1.0 - conf_thresh))
     strides = [8, 16, 32]
+
+    t_decode_start = time.monotonic()
 
     for i, ((bn, bbox_t), (cn, cls_t)) in enumerate(zip(bbox_tensors, cls_tensors)):
         H, W, _ = cls_t.shape
@@ -391,34 +410,57 @@ def postprocess(outputs: dict, img_h: int, img_w: int,
         all_scores.append(max_scores)
         all_classes.append(max_classes)
 
+    t_decode_end = time.monotonic()
+
     if not all_boxes:
+        if timing is not None:
+            timing["decode_ms"] = (t_decode_end - t_decode_start) * 1000.0
+            timing["nms_ms"] = 0.0
+            timing["total_ms"] = timing["decode_ms"]
         return []
 
     boxes   = np.concatenate(all_boxes, axis=0)
     scores  = np.concatenate(all_scores, axis=0)
     classes = np.concatenate(all_classes, axis=0)
 
-    # NMS per class
+    # NMS per class using OpenCV's C++-backed NMSBoxes
+    t_nms_start = time.monotonic()
     dets = []
     for cls_id in np.unique(classes):
         cls_mask = (classes == cls_id)
         cls_boxes  = boxes[cls_mask]
         cls_scores = scores[cls_mask]
 
-        order = cls_scores.argsort()[::-1]
-        cls_boxes  = cls_boxes[order]
-        cls_scores = cls_scores[order]
+        # cv2.dnn.NMSBoxes expects [x, y, w, h] format and list of floats
+        xywh = np.empty_like(cls_boxes)
+        xywh[:, 0] = cls_boxes[:, 0]                           # x
+        xywh[:, 1] = cls_boxes[:, 1]                           # y
+        xywh[:, 2] = cls_boxes[:, 2] - cls_boxes[:, 0]         # w
+        xywh[:, 3] = cls_boxes[:, 3] - cls_boxes[:, 1]         # h
 
-        keep = _nms(cls_boxes, cls_scores, iou_thresh)
-        for k in keep:
-            dets.append({
-                "class_id": int(cls_id),
-                "confidence": float(cls_scores[k]),
-                "x1": int(cls_boxes[k, 0]),
-                "y1": int(cls_boxes[k, 1]),
-                "x2": int(cls_boxes[k, 2]),
-                "y2": int(cls_boxes[k, 3]),
-            })
+        indices = cv2.dnn.NMSBoxes(
+            xywh.tolist(), cls_scores.tolist(),
+            conf_thresh, iou_thresh)
+
+        if len(indices) > 0:
+            # indices may be [[i]] or [i] depending on OpenCV version
+            keep = indices.flatten()
+            for k in keep:
+                dets.append({
+                    "class_id": int(cls_id),
+                    "confidence": float(cls_scores[k]),
+                    "x1": int(cls_boxes[k, 0]),
+                    "y1": int(cls_boxes[k, 1]),
+                    "x2": int(cls_boxes[k, 2]),
+                    "y2": int(cls_boxes[k, 3]),
+                })
+
+    t_nms_end = time.monotonic()
+
+    if timing is not None:
+        timing["decode_ms"] = (t_decode_end - t_decode_start) * 1000.0
+        timing["nms_ms"] = (t_nms_end - t_nms_start) * 1000.0
+        timing["total_ms"] = (t_nms_end - t_decode_start) * 1000.0
 
     dets.sort(key=lambda d: -d["confidence"])
     return dets[:YOLO_MAX_DETS]
@@ -484,6 +526,10 @@ def main():
                         help="Confidence threshold")
     parser.add_argument("--iou", type=float, default=0.45,
                         help="NMS IoU threshold")
+    parser.add_argument("--fp16", action="store_true",
+                        help="Use float16 for post-processing (precision experiment)")
+    parser.add_argument("--no-image", action="store_true",
+                        help="Skip writing image to YOLO SHM (saves ~1.8MB/frame)")
     args = parser.parse_args()
 
     hef_path = args.hef
@@ -507,9 +553,12 @@ def main():
     input_h, input_w = input_shape[0], input_shape[1]
     print(f"[hailo] input: {input_w}×{input_h}×{input_shape[2]}")
 
-    # Set output format to float32 for post-processing
+    # Set output format for post-processing
+    out_dtype = np.float16 if args.fp16 else np.float32
     for out in infer_model.outputs:
-        out.set_format_type(FormatType.FLOAT32)
+        out.set_format_type(FormatType.FLOAT32)  # Hailo always outputs float32
+    if args.fp16:
+        print("[yolo_producer] float16 post-processing enabled")
 
     configured = infer_model.configure()
 
@@ -522,7 +571,8 @@ def main():
 
     # ── Create YOLO shm ──────────────────────────────────────────
     # Annotated image: same size as camera frame
-    writer = YoloShmWriter(reader.w, reader.h)
+    writer = YoloShmWriter(reader.w, reader.h,
+                           include_image=not args.no_image)
 
     print(f"[yolo_producer] running — conf={args.conf} iou={args.iou}")
 
@@ -559,27 +609,50 @@ def main():
     t_start = time.monotonic()
     t_window = t_start
 
+    # Timing accumulators for benchmarking
+    pp_timing = {}
+    pp_timing_acc = {"preprocess_ms": 0.0, "inference_ms": 0.0,
+                     "decode_ms": 0.0, "nms_ms": 0.0, "postprocess_ms": 0.0}
+    pp_timing_count = 0
+
     while not g_stop:
         try:
-            bgr, t_ns = reader.wait_frame(timeout_s=1.0)
+            rgb, t_ns = reader.wait_frame(timeout_s=1.0)
         except TimeoutError:
             continue
 
-        # Preprocess: letterbox resize (preserve aspect ratio) + BGR→RGB
+        # Preprocess: letterbox resize (already RGB from wait_frame)
+        t_pre = time.monotonic()
         input_buf[:] = 114  # YOLO standard gray fill
-        resized = cv2.resize(bgr, (new_w, new_h))
+        resized = cv2.resize(rgb, (new_w, new_h))
         input_buf[pad_top:pad_top + new_h, pad_left:pad_left + new_w] = resized
-        cv2.cvtColor(input_buf, cv2.COLOR_BGR2RGB, dst=input_buf)
+        t_pre_end = time.monotonic()
 
         # Run inference (reuses pre-allocated bindings + buffers)
+        t_infer = time.monotonic()
         configured.run([bindings], timeout=1000)
+        t_infer_end = time.monotonic()
 
-        # Post-process
-        dets = postprocess(output_buffers, bgr.shape[0], bgr.shape[1],
+        # Post-process (optionally cast to float16 for precision experiment)
+        pp_timing.clear()
+        if args.fp16:
+            pp_inputs = {k: v.astype(np.float16) for k, v in output_buffers.items()}
+        else:
+            pp_inputs = output_buffers
+        dets = postprocess(pp_inputs, rgb.shape[0], rgb.shape[1],
                            input_size=input_w,
                            conf_thresh=args.conf,
                            iou_thresh=args.iou,
-                           grids=grids)
+                           grids=grids,
+                           timing=pp_timing)
+
+        # Accumulate timing
+        pp_timing_count += 1
+        pp_timing_acc["preprocess_ms"] += (t_pre_end - t_pre) * 1000.0
+        pp_timing_acc["inference_ms"] += (t_infer_end - t_infer) * 1000.0
+        pp_timing_acc["decode_ms"] += pp_timing.get("decode_ms", 0.0)
+        pp_timing_acc["nms_ms"] += pp_timing.get("nms_ms", 0.0)
+        pp_timing_acc["postprocess_ms"] += pp_timing.get("total_ms", 0.0)
 
         # Scale boxes from letterboxed model space → source image space
         for d in dets:
@@ -588,8 +661,8 @@ def main():
             d["x2"] = max(0, min(int((d["x2"] - pad_left) / scale), max_x))
             d["y2"] = max(0, min(int((d["y2"] - pad_top)  / scale), max_y))
 
-        # Write to YOLO shm (raw frame, no annotation drawing)
-        writer.write(dets, bgr, t_ns)
+        # Write to YOLO shm (detections always, image only if --no-image not set)
+        writer.write(dets, rgb if not args.no_image else None, t_ns)
 
         frame_count += 1
         if frame_count % 100 == 0:
@@ -597,9 +670,15 @@ def main():
             window_fps = 100.0 / (now - t_window)
             avg_fps = frame_count / (now - t_start)
             t_window = now
+            n = pp_timing_count if pp_timing_count > 0 else 1
             print(f"[yolo_producer] {frame_count} frames, "
                   f"{window_fps:.1f} fps (avg {avg_fps:.1f}), "
-                  f"{len(dets)} dets")
+                  f"{len(dets)} dets | "
+                  f"pre={pp_timing_acc['preprocess_ms']/n:.1f}ms "
+                  f"infer={pp_timing_acc['inference_ms']/n:.1f}ms "
+                  f"decode={pp_timing_acc['decode_ms']/n:.1f}ms "
+                  f"nms={pp_timing_acc['nms_ms']/n:.1f}ms "
+                  f"pp_total={pp_timing_acc['postprocess_ms']/n:.1f}ms")
 
     print(f"\n[yolo_producer] stopped after {frame_count} frames")
 

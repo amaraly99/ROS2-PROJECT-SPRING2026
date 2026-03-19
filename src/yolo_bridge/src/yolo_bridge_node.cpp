@@ -176,26 +176,27 @@ private:
                 det_msg->detections.push_back(std::move(det));
             }
 
-            // Read annotated image
-            auto* img_src = yolo_img_data(slot);
-            auto img_msg             = std::make_unique<Image>();
-            img_msg->header.frame_id = frame_id_;
-            img_msg->header.stamp    = stamp;
-            img_msg->width    = img_w;
-            img_msg->height   = img_h;
-            img_msg->encoding = "bgr8";
-            img_msg->step     = img_stride;
-
             // Validate seqlock before copying data
             uint64_t s2 = yolo_seq_load(slot);
             if (s2 != s1) continue;  // torn read, retry
 
-            // Seqlock valid — copy and publish
-            img_msg->data.resize(img_bytes);
-            std::memcpy(img_msg->data.data(), img_src, img_bytes);
-
+            // Seqlock valid — publish detections
             pub_dets_->publish(std::move(det_msg));
-            pub_img_->publish(std::move(img_msg));
+
+            // Only copy + publish image if producer included one
+            if (img_bytes > 0) {
+                auto* img_src = yolo_img_data(slot);
+                auto img_msg             = std::make_unique<Image>();
+                img_msg->header.frame_id = frame_id_;
+                img_msg->header.stamp    = stamp;
+                img_msg->width    = img_w;
+                img_msg->height   = img_h;
+                img_msg->encoding = "rgb8";
+                img_msg->step     = img_stride;
+                img_msg->data.resize(img_bytes);
+                std::memcpy(img_msg->data.data(), img_src, img_bytes);
+                pub_img_->publish(std::move(img_msg));
+            }
             return;
         }
 

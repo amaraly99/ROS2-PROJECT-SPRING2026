@@ -150,6 +150,9 @@ public:
     bool use_subspace_dogleg_; // If False, Powell's trad. Dogleg used
     bool use_nonmonotic_step_;
 
+    int ba_max_iterations_;        // Max Ceres iterations for local BA (default: 5)
+    double ba_max_solver_time_;    // Max solver time in seconds (default: 0.2)
+
     // Estimator parameters
     bool apply_l2_after_robust_; // If true, a L2 optim is applied to refine the results from robust cost function
 

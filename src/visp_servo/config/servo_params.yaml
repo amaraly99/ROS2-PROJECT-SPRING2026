@@ -1,4 +1,4 @@
-# ViSP Servo Parameters
+# ViSP Servo Parameters — Multi-Feature IBVS
 visp_servo_node:
   ros__parameters:
     # ── Target selection ──────────────────────────────────────
@@ -9,9 +9,10 @@ visp_servo_node:
     image_width: 640
     image_height: 480
 
-    # ── Servoing gains ────────────────────────────────────────
-    lambda_xy: 0.5                  # IBVS gain for x/y centering
-    lambda_z: 0.3                   # Gain for approach/retreat (depth)
+    # ── IBVS gain ────────────────────────────────────────────
+    #   Controls convergence speed of all 4 corner features.
+    #   Higher = faster but may oscillate. Lower = smoother.
+    lambda: 0.5
 
     # ── Velocity limits (m/s, rad/s) ──────────────────────────
     max_linear: 0.5                 # Max linear velocity magnitude
@@ -19,12 +20,31 @@ visp_servo_node:
 
     # ── Desired distance (image-based) ────────────────────────
     #   target_bbox_ratio: desired bbox height / image height
-    #   When the target fills this fraction, stop approaching.
+    #   When the target fills this fraction, the drone is at the desired distance.
     target_bbox_ratio: 0.35
     bbox_ratio_tolerance: 0.05      # Dead-zone around target_bbox_ratio
 
-    # ── Target loss ───────────────────────────────────────────
+    # ── State machine ─────────────────────────────────────────
     lost_threshold: 15              # Consecutive frames without detection → LOST
+    search_timeout: 300             # Frames of searching before giving up
+    search_yaw_rate: 0.3            # rad/s yaw rate during SEARCHING state
+    approach_ratio: 0.15            # bbox_ratio to transition APPROACHING → TRACKING
+    hover_error_thresh: 0.02        # Servo error norm below which → HOVERING
+
+    # ── Safety ────────────────────────────────────────────────
+    edge_margin_px: 50.0            # Pixels from image edge to trigger re-centering
+    vel_ramp_rate: 0.1              # Max velocity change per callback (m/s per step)
 
     # ── Smoothing ─────────────────────────────────────────────
-    smoothing_window: 5             # Moving average window for bbox center
+    smoothing_window: 3             # Moving average window for bbox corners
+
+    # ── Target geometry ───────────────────────────────────────
+    #   Known height of the target object (meters).
+    #   Used for depth estimation: Z = fy * known_height / bbox_height_px
+    known_target_height: 1.7        # Person height in meters
+
+    # ── Camera intrinsics (OV5647 calibration) ────────────────
+    cam_fx: 543.098
+    cam_fy: 539.702
+    cam_cx: 310.687
+    cam_cy: 222.928
