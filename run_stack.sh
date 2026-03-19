@@ -3,8 +3,8 @@
 #
 # Core layout (Pi 5, 4 cores):
 #   Core 0     ovcam_producer   (libcamera capture)
-#   Core 1     yolo_producer    (Hailo NPU inference)
-#   Core 0,1   ovcam_bridge     yolo_bridge     visp_servo
+#   Core 1     yolo_producer    (Hailo NPU inference — DEDICATED)
+#   Core 0     ovcam_bridge     yolo_bridge     visp_servo  (lightweight)
 #   Core 2,3   OV2SLAM          (visual SLAM — 2 dedicated cores)
 #
 # Usage:
@@ -67,7 +67,7 @@ sleep 1
 # ── 2. Camera producer — Core 0 ───────────────────────────────────────────────
 log "2/6  ovcam_producer  →  core 0"
 taskset -c 0 "${WS}/src/ovcam_producer/build/ovcam_producer" \
-    --width 640 --height 480 --fps 30 \
+    --width 640 --height 480 --fps 60 \
     > /tmp/ovcam_producer.log 2>&1 &
 OVCAM_PID=$!
 # Wait up to 5s for shm to appear
@@ -81,7 +81,7 @@ done
 # ── 3. YOLO producer — Core 1 ─────────────────────────────────────────────────
 log "3/6  yolo_producer   →  core 1"
 taskset -c 1 python3 "${WS}/src/yolo_producer/yolo_producer.py" \
-    --hef "${WS}/models/yolo26n_10h.hef" \
+    --hef "${WS}/models/yolo26n_10h.hef" --no-image \
     > /tmp/yolo_producer.log 2>&1 &
 YOLO_PID=$!
 # Wait up to 10s for yolo shm (Hailo model load takes a few seconds)
@@ -103,10 +103,10 @@ docker_node() {
     "
 }
 
-# ── 4. ROS bridges — Cores 0,1 ────────────────────────────────────────────────
-log "4/6  ovcam_bridge + yolo_bridge  →  cores 0,1"
-docker_node "0,1" ovcam_bridge ovcam_bridge_node /tmp/ovcam_bridge.log
-docker_node "0,1" yolo_bridge  yolo_bridge_node  /tmp/yolo_bridge.log
+# ── 4. ROS bridges — Core 0 ───────────────────────────────────────────────────
+log "4/6  ovcam_bridge + yolo_bridge  →  core 0"
+docker_node "0" ovcam_bridge ovcam_bridge_node /tmp/ovcam_bridge.log
+docker_node "0" yolo_bridge  yolo_bridge_node  /tmp/yolo_bridge.log
 sleep 2
 
 # ── 5. OV2SLAM — Cores 2,3 ────────────────────────────────────────────────────
@@ -125,9 +125,9 @@ else
     log "5/6  OV2SLAM  →  skipped (--no-slam)"
 fi
 
-# ── 6. visp_servo — Cores 0,1 ─────────────────────────────────────────────────
-log "6/6  visp_servo  →  cores 0,1"
-docker_node "0,1" visp_servo visp_servo_node /tmp/visp_servo.log
+# ── 6. visp_servo — Core 0 ────────────────────────────────────────────────────
+log "6/6  visp_servo  →  core 0"
+docker_node "0" visp_servo visp_servo_node /tmp/visp_servo.log
 sleep 1
 
 # ── summary ───────────────────────────────────────────────────────────────────
@@ -138,9 +138,9 @@ echo ""
 echo "  Core layout:"
 printf "    Core 0     ovcam_producer   PID %-6s  log: /tmp/ovcam_producer.log\n" "$OVCAM_PID"
 printf "    Core 1     yolo_producer    PID %-6s  log: /tmp/yolo_producer.log\n"  "$YOLO_PID"
-echo   "    Core 0,1   ovcam_bridge              log (container): /tmp/ovcam_bridge.log"
-echo   "    Core 0,1   yolo_bridge               log (container): /tmp/yolo_bridge.log"
-echo   "    Core 0,1   visp_servo                log (container): /tmp/visp_servo.log"
+echo   "    Core 0     ovcam_bridge              log (container): /tmp/ovcam_bridge.log"
+echo   "    Core 0     yolo_bridge               log (container): /tmp/yolo_bridge.log"
+echo   "    Core 0     visp_servo                log (container): /tmp/visp_servo.log"
 if [[ "$OPT" != "--no-slam" ]]; then
 echo   "    Core 2,3   OV2SLAM                   log (container): /tmp/ov2slam.log"
 fi

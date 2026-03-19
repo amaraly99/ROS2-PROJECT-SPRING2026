@@ -37,6 +37,8 @@ core.*
 ov2slam_traj.txt
 ov2slam_kfs_traj.txt
 ov2slam_traj_kitti.txt
+# Wildcard covers all trajectory variant names (e.g. wlc, wlc_opt, etc.)
+ov2slam_*traj*.txt
 
 ############################################################
 # Source backup directories (created during patching)

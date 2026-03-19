@@ -34,6 +34,7 @@
 #include <functional>
 #include <cmath>
 #include <mutex>
+#include <fstream>
 
 class Profiler {
 public:
@@ -221,6 +222,24 @@ public:
 
         ss << "\n***********************************\n";
         return ss.str();
+    }
+
+    // Export all timing statistics to CSV for paper benchmarks
+    void exportCSV(const std::string & filepath) const {
+        std::ofstream ofs(filepath);
+        if (!ofs.is_open()) return;
+        ofs << "timer,mean_ms,std_ms,min_ms,max_ms\n";
+        for (const auto& el : timing_map_) {
+            ofs << el.first << ","
+                << el.second.mean() << ","
+                << el.second.std() << ","
+                << el.second.min() << ","
+                << el.second.max() << "\n";
+        }
+    }
+
+    static void ExportCSV(const std::string & filepath) {
+        Profiler::getInstance().exportCSV(filepath);
     }
 
 private:

@@ -630,6 +630,10 @@ void SlamManager::writeResults()
     {
         writeFullTrajectoryLC();
     }
+
+    // Export profiler timing data to CSV for benchmarking
+    Profiler::ExportCSV("ov2slam_timings.csv");
+    std::cout << "\n[benchmark] Timing data exported to ov2slam_timings.csv\n";
 }
 
 

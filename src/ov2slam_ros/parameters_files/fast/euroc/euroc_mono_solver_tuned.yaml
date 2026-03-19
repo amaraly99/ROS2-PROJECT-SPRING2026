@@ -136,14 +136,18 @@ buse_inv_depth: 1
 robust_mono_th: 5.9915 # (20% : 3.2189 / 10% :  4.6052 / 5% : 5.9915 / 2%: 7.8240 / 1%: 9.2103)  
 
 use_sparse_schur: 1
-use_dogleg: 0
+use_dogleg: 1
 use_subspace_dogleg: 0
 use_nonmonotic_step: 0
 
-# Estimator parameters
-apply_l2_after_robust: 1
+# Solver budget — reduced for edge deployment
+ba_max_iterations: 3
+ba_max_solver_time: 0.1
 
-nmin_covscore: 25 # Min co-obs for optimizing in SLAM mode BA
+# Estimator parameters
+apply_l2_after_robust: 0
+
+nmin_covscore: 40 # Raised: smaller BA problem, fewer weak constraints
 
 # Map Filtering
 fkf_filtering_ratio: 0.9

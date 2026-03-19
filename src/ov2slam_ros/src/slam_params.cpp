@@ -157,6 +157,12 @@ SlamParams::SlamParams(const cv::FileStorage &fsSettings) {
 
     apply_l2_after_robust_ = static_cast<int>(fsSettings["apply_l2_after_robust"]);
 
+    // Configurable solver budget (defaults match original values)
+    cv::FileNode fn_iters = fsSettings["ba_max_iterations"];
+    ba_max_iterations_ = fn_iters.empty() ? 5 : (int)fn_iters;
+    cv::FileNode fn_time = fsSettings["ba_max_solver_time"];
+    ba_max_solver_time_ = fn_time.empty() ? 0.2 : (double)fn_time;
+
     nmin_covscore_ = fsSettings["nmin_covscore"];
 
     // Map Filtering parameters

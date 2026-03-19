@@ -459,9 +459,9 @@ void Optimizer::localBA(Frame &newframe, const bool buse_robust_cost)
 
     options.num_threads = 1;
 
-    options.max_num_iterations = 5;
+    options.max_num_iterations = pslamstate_->ba_max_iterations_;
     options.function_tolerance = 1.e-3;
-    options.max_solver_time_in_seconds = 0.2;
+    options.max_solver_time_in_seconds = pslamstate_->ba_max_solver_time_;
 
     if( !pslamstate_->bforce_realtime_ ) {
         options.max_solver_time_in_seconds *= 2.;
