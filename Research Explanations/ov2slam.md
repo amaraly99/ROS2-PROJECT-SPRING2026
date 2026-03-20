@@ -35,6 +35,7 @@ This module is the memory of the SLAM, without it, SLAM would not know if the ca
 I will adopt 2 research directions and see how exactly can a contribution be made
 - OV2SLAM Core Algorithm Optimization
 - Other SLAM Algorithms optimized for Microcontrollers
+
 Why is that? there is already the existing OV2SLAM algorithm which could be possibly modified into a smaller, more power efficient, and a faster algorithm. I will first explain the main SLAM algorithm then evaluate what can be changed to make it better. In other words research directions within optimizing the OV2SLAM itself.
 
 The other direction would be looking for other SLAM algorithms, examine if they can
@@ -81,30 +82,45 @@ This instrinsic matrix is very important and comes with a manual camera calibrat
 
 I will be focusing mainly on Mono-VSLAM and will possibly expand to Stereo-VSLAM
 
-# Front-End Thread
+### OV<sup>2</sup>SLAM System Diagram
+![alt text](system_diag.png)
 
-The front-end thread (FE) is the first direct encounter with the input
-images that the OV<sup>2</sup>SLAM expects. First, we start by the following assumptions
+#### *Front-End Thread*
+
+The front-end thread (FE) is the first direct encounter with the input images that the OV<sup>2</sup>SLAM expects. It is divided into exactly 5 steps for an incoming image:
+- Image Pre-Processing
+- Keypoints Tracking
+- Outliers Filtering
+- Pose Estimation
+- Keyframe creation
+
+
+First, we start by the following assumptions
 - incoming frame $F$
 - a set of keyframes that already exist in the system.
 It is important to note that the first image is always a keyframe. 
 
 Then, OV²SLAM does the following for an incoming frame $F$:
 
-```mermaid
-graph TD
-    A[Contrast enhancement using CLAHE] --> B[Track keypoints of previous frame through optical tracking]
-    B --> C[Outlier detection using Essential Matrix]
-    C --> D[Use 3D points of previous frame to estimate pose]
-    D --> E[Keyframe creation <b>IF</b> few tracked 3D points <b>OR</b> enough parallax]
-    E --> F[Keypoint creation by dividing the image into a grid of cells]
-    F --> G[Refining keypoints to subpixel]
-    G --> H[Descriptor generation]
-    H --> I[Send keyframe to mapper thread]
-```
-## Important equations and methods:
+**1. Contrast enhancement** using CLAHE [Image Pre-Processing]   
+⬇  
+**2. Track keypoints** of previous frame through optical tracking [Keypoints tracking]  
+⬇  
+**3. Outlier detection** using Essential Matrix+RANSAC **OR** P3P+RANSAC [Outlier Detection]  
+⬇  
+**4. Use 3D points** of previous frame to estimate pose [Pose Estimation]  
+⬇  
+**5. Keyframe creatio Criteria** **IF** few tracked 3D points **OR** enough parallax  
+⬇  
+**6. Keypoint creation** by dividing the image into a grid of cells and assigning keypoints [Keyframe creation]  
+⬇  
+**7. Refining keypoints** to subpixel  
+⬇  
+**8. Descriptor generation**  
+⬇  
+**9. Send keyframe** to mapper thread
 
-## Optical Tracking via Kanade-Lucas-Tomasi (KLT)
+*Optical Tracking via Kanade-Lucas-Tomasi (KLT)*
 
 Optical tracking is a way to map a pixel from Frame at time $t$ to Frame
 at time $t+1$, to see how did something move. The basic assumption is
