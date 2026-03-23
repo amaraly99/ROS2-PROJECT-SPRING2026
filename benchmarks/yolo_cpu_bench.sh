@@ -1,29 +1,30 @@
 #!/bin/bash
-# ─── YOLO CPU Benchmark — All Model Sizes ───────────────────────────────────
+# ─── YOLO CPU/ONNX Benchmark — All Model Sizes ──────────────────────────────
 #
-# Benchmarks YOLO26 n/s/m/l/xl running on ARM CPU (Ultralytics PyTorch)
-# and compares against the NPU baseline.
+# Benchmarks YOLO26 n/s/m/l on ARM CPU using two backends:
+#   1. PyTorch FP32  — default Ultralytics .pt model
+#   2. ONNX Runtime  — exported .onnx, uses ARM-optimised ORT kernels (~2.5× faster)
 #
-# For each model size:
-#   - Runs yolo_cpu_producer.py in benchmark mode (no SHM write)
-#   - Records fps, inference latency (mean, P50, P95) to CSV
-#   - Also collects CPU/RAM usage via pidstat
+# Compares both against the Hailo NPU baseline (yolo26n INT8 = 25.1 ms / 32 fps).
+#
+# Camera SHM is NOT required: script auto-detects ovcam and falls back to
+# --synthetic (random frames of camera dimensions) when the camera is not running.
 #
 # Usage:
-#   bash benchmarks/yolo_cpu_bench.sh                  # all sizes
-#   bash benchmarks/yolo_cpu_bench.sh --sizes "n s"    # subset
-#   bash benchmarks/yolo_cpu_bench.sh --frames 100     # fewer frames
+#   bash benchmarks/yolo_cpu_bench.sh                      # n s m l, PyTorch only
+#   bash benchmarks/yolo_cpu_bench.sh --onnx               # also benchmark ONNX
+#   bash benchmarks/yolo_cpu_bench.sh --sizes "n s" --onnx # subset + ONNX
+#   bash benchmarks/yolo_cpu_bench.sh --frames 50          # fewer frames (faster)
 #
 # Prerequisites:
-#   - ovcam_producer must be running (camera SHM active)
-#   - pip install ultralytics torch torchvision
-#   - YOLO26 .pt model files in PROJECT_DIR/models/
-#     Download: python3 -c "from ultralytics import YOLO; YOLO('yolo26n.pt')"
-#     (Ultralytics auto-downloads on first use)
+#   pip install ultralytics torch onnxruntime onnx
+#   YOLO26 .pt weights in PROJECT_DIR/models/
+#     (auto-downloaded on first run)
 #
 # Output:
-#   benchmarks/results/yolo_cpu/yolo26<size>_cpu_timings.csv   — per-frame timing
-#   benchmarks/results/yolo_cpu/summary.csv                    — all sizes comparison
+#   benchmarks/results/yolo_cpu/yolo26<size>_cpu_timings.csv  — per-frame timing
+#   benchmarks/results/yolo_cpu/yolo26<size>_onnx_timings.csv — ONNX per-frame
+#   benchmarks/results/yolo_cpu/summary.csv                   — full comparison
 # ─────────────────────────────────────────────────────────────────────────────
 
 set -euo pipefail
@@ -36,11 +37,15 @@ MODELS_DIR="$PROJECT_DIR/models"
 
 mkdir -p "$RESULTS_DIR"
 
+# ── Logging ───────────────────────────────────────────────────────────────────
+log() { echo "[yolo_cpu_bench] $*"; }
+
 # ── Defaults ─────────────────────────────────────────────────────────────────
-SIZES="n s m l"   # xl excluded by default (likely too slow on RPi5 CPU)
-FRAMES=200
+SIZES="n s m l"
+FRAMES=100          # 100 frames by default (200 for final paper runs)
 IMG_SIZE=640
 CONF=0.25
+BENCH_ONNX=0        # set via --onnx flag
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -48,116 +53,187 @@ while [[ $# -gt 0 ]]; do
         --frames)   FRAMES="$2"; shift 2 ;;
         --img-size) IMG_SIZE="$2"; shift 2 ;;
         --conf)     CONF="$2"; shift 2 ;;
+        --onnx)     BENCH_ONNX=1; shift ;;
         *) echo "Unknown arg: $1"; exit 1 ;;
     esac
 done
 
-# ── Ensure ovcam SHM is available ────────────────────────────────────────────
+# ── Camera SHM: prefer live frames, fall back to synthetic ───────────────────
+USE_SYNTHETIC=0
 if [[ ! -e /dev/shm/ovcam_frames ]]; then
-    echo "ERROR: /dev/shm/ovcam_frames not found."
-    echo "       Start ovcam_producer first: ./run_stack.sh --no-slam"
-    echo "       (You can stop YOLO/SLAM — only ovcam_producer is needed)"
-    exit 1
+    log "ovcam_frames SHM not found — using --synthetic (random frames, no camera needed)"
+    USE_SYNTHETIC=1
+else
+    log "ovcam_frames SHM found — reading live camera frames"
 fi
 
-# ── Summary CSV header ────────────────────────────────────────────────────────
-SUMMARY="$RESULTS_DIR/summary.csv"
-if [[ ! -f "$SUMMARY" ]]; then
-    echo "model,device,frames,avg_fps,mean_infer_ms,mean_total_ms,\
-peak_rss_mb,cpu_pct_avg,npu_baseline_ms,speedup_vs_npu" > "$SUMMARY"
-fi
-
+# ── NPU baseline (measured: Session 3) ───────────────────────────────────────
 NPU_BASELINE_FPS=32.1
 NPU_BASELINE_INFER_MS=25.1
 
-log() { echo "[yolo_cpu_bench] $*"; }
+# ── Summary CSV ───────────────────────────────────────────────────────────────
+SUMMARY="$RESULTS_DIR/summary.csv"
+if [[ ! -f "$SUMMARY" ]]; then
+    echo "model,backend,frames,avg_fps,mean_infer_ms,mean_total_ms,"\
+"peak_rss_mb,cpu_pct_avg,npu_baseline_ms,slowdown_vs_npu" > "$SUMMARY"
+fi
 
-# ── Run one size ──────────────────────────────────────────────────────────────
-run_size() {
+# ── Helper: ensure .pt model is present ──────────────────────────────────────
+ensure_pt_model() {
     local SIZE="$1"
     local MODEL_NAME="yolo26${SIZE}.pt"
     local MODEL_PATH="$MODELS_DIR/$MODEL_NAME"
-    local CSV_OUT="$RESULTS_DIR/yolo26${SIZE}_cpu_timings.csv"
-    local LOG_OUT="$RESULTS_DIR/yolo26${SIZE}_cpu_run.log"
 
-    log "──────────────────────────────────────────────────────"
-    log "Model: $MODEL_NAME  (frames=$FRAMES, imgsz=$IMG_SIZE)"
-
-    # Download model if not present (ultralytics auto-download on first predict)
-    # We trigger it via a quick Python check:
     if [[ ! -f "$MODEL_PATH" ]]; then
-        log "Model not found at $MODEL_PATH — triggering Ultralytics auto-download..."
-        python3 -c "from ultralytics import YOLO; YOLO('yolo26${SIZE}.pt')" \
-            && cp ~/ultralytics/models/yolo26${SIZE}.pt "$MODEL_PATH" 2>/dev/null || true
-        # If auto-download puts it in cwd or ~/.cache, find it
-        CANDIDATE=$(find ~ -name "$MODEL_NAME" -newer "$RESULTS_DIR" 2>/dev/null | head -1 || true)
-        if [[ -n "$CANDIDATE" ]] && [[ ! -f "$MODEL_PATH" ]]; then
-            cp "$CANDIDATE" "$MODEL_PATH"
-        fi
-        # If still not found, just let yolo_cpu_producer use Ultralytics default cache
-        if [[ ! -f "$MODEL_PATH" ]]; then
-            MODEL_PATH="yolo26${SIZE}.pt"  # Let Ultralytics download to default cache
-        fi
+        log "Downloading $MODEL_NAME via Ultralytics..."
+        python3 -c "
+from ultralytics import YOLO
+import shutil, glob, os
+m = YOLO('yolo26${SIZE}.pt')
+candidates = glob.glob(os.path.expanduser('~/.cache/ultralytics/**/$MODEL_NAME'),
+                       recursive=True)
+if candidates:
+    shutil.copy(candidates[0], '$MODEL_PATH')
+    print('Saved to $MODEL_PATH')
+else:
+    print('WARNING: could not locate downloaded model')
+" 2>&1 | grep -E "Saved|WARNING|Error"
     fi
 
-    # Start pidstat in background to capture CPU/RAM usage
-    PIDSTAT_LOG="$RESULTS_DIR/yolo26${SIZE}_pidstat.log"
-    pidstat -r -u -h 2 > "$PIDSTAT_LOG" &
-    PIDSTAT_PID=$!
-
-    # Run benchmark
-    python3 "$PRODUCER" \
-        --model "$MODEL_PATH" \
-        --benchmark \
-        --frames "$FRAMES" \
-        --img-size "$IMG_SIZE" \
-        --conf "$CONF" \
-        --csv "$CSV_OUT" \
-        2>&1 | tee "$LOG_OUT"
-
-    # Stop pidstat
-    kill "$PIDSTAT_PID" 2>/dev/null || true
-
-    # Parse results from log
-    AVG_FPS=$(grep "Avg FPS" "$LOG_OUT" | awk '{print $NF}' | head -1 || echo "N/A")
-    MEAN_INFER=$(grep "Inference" "$LOG_OUT" | awk '{print $3}' | head -1 || echo "N/A")
-    MEAN_TOTAL=$(grep "Total E2E" "$LOG_OUT" | awk '{print $3}' | head -1 || echo "N/A")
-
-    # Parse peak RSS from pidstat (RSS in kB → MB)
-    PEAK_RSS=$(awk 'NR>3 && /python/{rss=$8; if(rss>max) max=rss} END{printf "%.1f", max/1024}' \
-               "$PIDSTAT_LOG" 2>/dev/null || echo "N/A")
-    CPU_AVG=$(awk 'NR>3 && /python/{s+=$7; n++} END{if(n>0) printf "%.1f", s/n; else print "N/A"}' \
-              "$PIDSTAT_LOG" 2>/dev/null || echo "N/A")
-
-    # Compute speedup vs NPU
-    SPEEDUP=$(awk -v infer="$MEAN_INFER" -v npu="$NPU_BASELINE_INFER_MS" \
-        'BEGIN{if(infer+0>0 && npu+0>0) printf "%.2f", npu/infer; else print "N/A"}' \
-        2>/dev/null || echo "N/A")
-
-    echo "yolo26${SIZE},cpu,$FRAMES,$AVG_FPS,$MEAN_INFER,$MEAN_TOTAL,\
-$PEAK_RSS,$CPU_AVG,$NPU_BASELINE_INFER_MS,$SPEEDUP" >> "$SUMMARY"
-
-    log "Done: fps=$AVG_FPS  infer=${MEAN_INFER}ms  total=${MEAN_TOTAL}ms"
-    log "      RSS=${PEAK_RSS}MB  CPU=${CPU_AVG}%"
-    log "      vs NPU (${NPU_BASELINE_INFER_MS}ms): speedup=$SPEEDUP"
+    if [[ ! -f "$MODEL_PATH" ]]; then
+        log "ERROR: $MODEL_PATH not found. Skipping size $SIZE."
+        return 1
+    fi
+    return 0
 }
 
-# ── Run all sizes ─────────────────────────────────────────────────────────────
-log "Starting YOLO CPU benchmark — sizes: [$SIZES]"
+# ── Helper: export .onnx if not already present ───────────────────────────────
+ensure_onnx_model() {
+    local SIZE="$1"
+    local ONNX_PATH="$MODELS_DIR/yolo26${SIZE}.onnx"
+    local PT_PATH="$MODELS_DIR/yolo26${SIZE}.pt"
+
+    if [[ ! -f "$ONNX_PATH" ]]; then
+        log "Exporting yolo26${SIZE}.onnx from ${PT_PATH}..."
+        python3 -c "
+from ultralytics import YOLO
+import os
+m = YOLO('$PT_PATH')
+path = m.export(format='onnx', imgsz=$IMG_SIZE, simplify=True)
+print(f'Exported: {path}  ({os.path.getsize(path)//1024}KB)')
+" 2>&1 | grep -E "Exported|Error"
+    fi
+
+    if [[ ! -f "$ONNX_PATH" ]]; then
+        log "ERROR: ONNX export failed for size $SIZE. Skipping ONNX benchmark."
+        return 1
+    fi
+    return 0
+}
+
+# ── Helper: start pidstat monitoring ─────────────────────────────────────────
+start_pidstat() {
+    local LOG="$1"
+    if command -v pidstat &>/dev/null; then
+        pidstat -r -u -h 2 > "$LOG" &
+        echo $!
+    else
+        echo "pidstat_unavailable" > "$LOG"
+        echo ""
+    fi
+}
+
+# ── Helper: parse pidstat output ─────────────────────────────────────────────
+parse_pidstat() {
+    local LOG="$1"
+    local PEAK_RSS CPU_AVG
+    PEAK_RSS=$(awk 'NR>3 && /python/{rss=$8; if(rss+0>max+0) max=rss} END{
+        if(max+0>0) printf "%.1f", max/1024; else print "N/A"}' "$LOG" 2>/dev/null || echo "N/A")
+    CPU_AVG=$(awk 'NR>3 && /python/{s+=$7; n++} END{
+        if(n>0) printf "%.1f", s/n; else print "N/A"}' "$LOG" 2>/dev/null || echo "N/A")
+    echo "$PEAK_RSS $CPU_AVG"
+}
+
+# ── Run benchmark for one model + backend ─────────────────────────────────────
+run_benchmark() {
+    local MODEL_PATH="$1"
+    local BACKEND_LABEL="$2"   # e.g. "PyTorch-CPU-FP32" or "ONNX-Runtime-CPU"
+    local SIZE="$3"
+    local CSV_SUFFIX="$4"      # "cpu" or "onnx"
+
+    local CSV_OUT="$RESULTS_DIR/yolo26${SIZE}_${CSV_SUFFIX}_timings.csv"
+    local LOG_OUT="$RESULTS_DIR/yolo26${SIZE}_${CSV_SUFFIX}_run.log"
+    local PIDSTAT_LOG="$RESULTS_DIR/yolo26${SIZE}_${CSV_SUFFIX}_pidstat.log"
+
+    log "  Backend: $BACKEND_LABEL  frames=$FRAMES  imgsz=$IMG_SIZE"
+
+    PIDSTAT_PID=$(start_pidstat "$PIDSTAT_LOG")
+
+    PRODUCER_ARGS=(
+        --model "$MODEL_PATH"
+        --benchmark
+        --frames "$FRAMES"
+        --img-size "$IMG_SIZE"
+        --conf "$CONF"
+        --csv "$CSV_OUT"
+    )
+    [[ "$USE_SYNTHETIC" -eq 1 ]] && PRODUCER_ARGS+=(--synthetic)
+
+    python3 "$PRODUCER" "${PRODUCER_ARGS[@]}" 2>&1 | tee "$LOG_OUT"
+
+    [[ -n "$PIDSTAT_PID" ]] && kill "$PIDSTAT_PID" 2>/dev/null || true
+
+    # Parse summary from log
+    # Log format: "  Avg FPS      : 2.2"  /  "  Inference    : 448.5 ms/frame"
+    local AVG_FPS MEAN_INFER MEAN_TOTAL
+    AVG_FPS=$(grep    "Avg FPS"   "$LOG_OUT" | awk '{print $NF}' | head -1 || echo "N/A")
+    MEAN_INFER=$(grep "Inference" "$LOG_OUT" | awk '{print $4}'  | head -1 || echo "N/A")
+    MEAN_TOTAL=$(grep "Total E2E" "$LOG_OUT" | awk '{print $4}'  | head -1 || echo "N/A")
+
+    read PEAK_RSS CPU_AVG <<< "$(parse_pidstat "$PIDSTAT_LOG")"
+
+    local SLOWDOWN
+    SLOWDOWN=$(awk -v infer="$MEAN_INFER" -v npu="$NPU_BASELINE_INFER_MS" \
+        'BEGIN{if(infer+0>0 && npu+0>0) printf "%.1fx", infer/npu; else print "N/A"}')
+
+    echo "yolo26${SIZE},$BACKEND_LABEL,$FRAMES,$AVG_FPS,$MEAN_INFER,$MEAN_TOTAL,"\
+"$PEAK_RSS,$CPU_AVG,$NPU_BASELINE_INFER_MS,$SLOWDOWN" >> "$SUMMARY"
+
+    log "  Done: fps=$AVG_FPS  infer=${MEAN_INFER}ms  total=${MEAN_TOTAL}ms  slowdown=${SLOWDOWN}"
+    log "  RSS=${PEAK_RSS}MB  CPU=${CPU_AVG}%"
+}
+
+# ── Main loop ─────────────────────────────────────────────────────────────────
+log "YOLO CPU/ONNX Benchmark — sizes: [$SIZES]  ONNX: $([[ $BENCH_ONNX -eq 1 ]] && echo yes || echo no)"
 log "Results → $RESULTS_DIR"
 log ""
 
 for SIZE in $SIZES; do
-    run_size "$SIZE"
+    log "══════════════════════════════════════════════════════"
+    log "Model: yolo26${SIZE}  (frames=$FRAMES, imgsz=$IMG_SIZE)"
+
+    ensure_pt_model "$SIZE" || continue
+
+    run_benchmark "$MODELS_DIR/yolo26${SIZE}.pt" "PyTorch-CPU-FP32" "$SIZE" "cpu"
+
+    if [[ "$BENCH_ONNX" -eq 1 ]]; then
+        ensure_onnx_model "$SIZE" && \
+            run_benchmark "$MODELS_DIR/yolo26${SIZE}.onnx" "ONNX-Runtime-CPU" "$SIZE" "onnx"
+    fi
+    log ""
 done
 
 log ""
 log "═══════════════════════════════════════════════════════"
-log "All sizes complete. Summary:"
+log "Complete. Full comparison:"
+log ""
 column -t -s',' "$SUMMARY"
 log ""
-log "NPU baseline: ${NPU_BASELINE_FPS} fps / ${NPU_BASELINE_INFER_MS} ms inference"
+log "NPU baseline: ${NPU_BASELINE_FPS} fps  /  ${NPU_BASELINE_INFER_MS} ms inference"
 log ""
-log "Next step: run E2E latency probe for each config:"
-log "  Start yolo_cpu_producer --model yolo26n.pt (no --benchmark)"
-log "  Then: python3 benchmarks/e2e_latency_probe.py --config yolo_cpu_n --duration 60"
+log "Next steps:"
+log "  1. Run E2E latency with each config:"
+log "     python3 src/yolo_producer/yolo_cpu_producer.py --model models/yolo26n.pt"
+log "     python3 benchmarks/e2e_latency_probe.py --config yolo_cpu_n --duration 60"
+log "  2. Run resource contention profiling:"
+log "     bash benchmarks/contention_bench.sh --condition D --label full_pipeline"
