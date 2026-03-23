@@ -473,10 +473,10 @@ bool LoopCloser::epipolarFiltering(const Frame &newkf, const Frame &lckf, std::v
 
     for( const auto &kplmid : vkplmids ) {
         auto kp = newkf.getKeypointById(kplmid.first);
-        vcurbvs.push_back(kp.bv_);
+        vcurbvs.push_back(kp.bv_.template cast<double>());
 
         auto lckp = lckf.getKeypointById(kplmid.second);
-        vlcbvs.push_back(lckp.bv_);
+        vlcbvs.push_back(lckp.bv_.template cast<double>());
     }
 
     bool success = 
@@ -796,7 +796,7 @@ bool LoopCloser::p3pRansac(const Frame &newkf, std::vector<std::pair<int,int>> &
         auto kp = newkf.getKeypointById(kpid);
 
         vwpts.push_back(plm->getPoint());
-        vbvs.push_back(kp.bv_);
+        vbvs.push_back(kp.bv_.template cast<double>());
     }
 
     int k = 0;

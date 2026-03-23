@@ -75,8 +75,11 @@ public:
             prev_time_ = time;
             
             if( dt < 0. ) {
-                std::cerr << "\nGot image older than previous image! LEAVING!\n";
-                exit(-1);
+                // Occasional DDS re-delivery can cause a single out-of-order
+                // frame; warn and skip rather than crashing the whole run.
+                std::cerr << "\n[WARN] Got image older than previous image (dt="
+                          << dt << "s) — skipping frame.\n";
+                return;
             }
 
             if( dt < 1e-6 ) {

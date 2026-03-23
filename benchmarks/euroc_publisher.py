@@ -33,8 +33,12 @@ class EurocPublisher(Node):
         self.bridge_ = CvBridge()
         self.rate_ = rate
 
-        # Load image list from EuRoC ASL format
-        cam0_dir = os.path.join(dataset_path, 'mav0', 'cam0')
+        # Load image list from EuRoC ASL format.
+        # Supports standard mav0/ wrapper and flat layout (cam0/ at root).
+        if os.path.isdir(os.path.join(dataset_path, 'mav0', 'cam0')):
+            cam0_dir = os.path.join(dataset_path, 'mav0', 'cam0')
+        else:
+            cam0_dir = os.path.join(dataset_path, 'cam0')
         csv_path = os.path.join(cam0_dir, 'data.csv')
         img_dir = os.path.join(cam0_dir, 'data')
 

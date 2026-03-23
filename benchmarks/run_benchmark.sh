@@ -13,7 +13,9 @@
 #   bash /workspace/benchmarks/run_benchmark.sh solver_tuned 1
 # ─────────────────────────────────────────────────────────────────
 
-set -euo pipefail
+set -eo pipefail
+# NOTE: -u (nounset) is intentionally omitted — sourcing ROS2 setup.bash
+# references variables that may be unset (e.g. AMENT_TRACE_SETUP_FILES).
 
 CONFIG_NAME="${1:-baseline}"
 NUM_RUNS="${2:-1}"
@@ -22,12 +24,19 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 RESULTS_DIR="$SCRIPT_DIR/results/${CONFIG_NAME}_$(date +%Y%m%d_%H%M%S)"
 
-# EuRoC sequences
-EUROC_DIR="$PROJECT_DIR/datasets/euroc"
-SEQUENCES=("MH_01_easy" "V1_01_easy" "V2_01_easy")
+# EuRoC sequences (flat layout — no mav0/ wrapper)
+EUROC_DIR="$PROJECT_DIR/datasets"
+SEQUENCES=("MH01-Easy" "MH05-Hard")
 
-# OV2SLAM config
-SLAM_CONFIG="$PROJECT_DIR/src/ov2slam_ros/parameters_files/fast/euroc/euroc_mono.yaml"
+# OV2SLAM config — select based on CONFIG_NAME
+PARAMS_DIR="$PROJECT_DIR/src/ov2slam_ros/parameters_files/fast/euroc"
+case "$CONFIG_NAME" in
+    *solver_tuned*)  SLAM_CONFIG="$PARAMS_DIR/euroc_mono_solver_tuned.yaml" ;;
+    *fe_combined*)   SLAM_CONFIG="$PARAMS_DIR/euroc_mono_fe_combined.yaml" ;;
+    *fe_klt2*)       SLAM_CONFIG="$PARAMS_DIR/euroc_mono_fe_klt2.yaml" ;;
+    *fe_maxdist65*)  SLAM_CONFIG="$PARAMS_DIR/euroc_mono_fe_maxdist65.yaml" ;;
+    *)               SLAM_CONFIG="$PARAMS_DIR/euroc_mono.yaml" ;;
+esac
 
 # Source ROS2
 source /opt/ros/jazzy/setup.bash
@@ -49,7 +58,7 @@ command -v evo_ape >/dev/null 2>&1 || echo "[WARN] evo not installed — install
 # Check for EuRoC datasets
 MISSING=0
 for SEQ in "${SEQUENCES[@]}"; do
-    if [ ! -d "$EUROC_DIR/$SEQ/mav0/cam0/data" ]; then
+    if [ ! -d "$EUROC_DIR/$SEQ/cam0/data" ]; then
         echo "[WARN] Missing: $EUROC_DIR/$SEQ"
         MISSING=$((MISSING+1))
     fi
@@ -118,7 +127,7 @@ run_one() {
     done
 
     # Run evo evaluation
-    local GT_FILE="$SEQ_DIR/mav0/state_groundtruth_estimate0/data.csv"
+    local GT_FILE="$SEQ_DIR/state_groundtruth_estimate0/data.csv"
     local TRAJ_FILE="$RUN_DIR/ov2slam_traj.txt"
 
     if [ -f "$TRAJ_FILE" ] && [ -f "$GT_FILE" ]; then
@@ -131,7 +140,7 @@ run_one() {
 
             echo "  Evaluating RPE..."
             evo_rpe euroc "$GT_FILE" "$TRAJ_FILE" \
-                --delta 1 --delta_unit s \
+                --align \
                 --save_results "$RUN_DIR/rpe_results.zip" \
                 > "$RUN_DIR/rpe_summary.txt" 2>&1 || true
         else
@@ -149,9 +158,9 @@ run_one() {
 # ── Main benchmark loop ───────────────────────────────────────
 for SEQ in "${SEQUENCES[@]}"; do
     SEQ_DIR="$EUROC_DIR/$SEQ"
-    if [ ! -d "$SEQ_DIR/mav0/cam0/data" ]; then
+    if [ ! -d "$SEQ_DIR/cam0/data" ]; then
         echo ""
-        echo "─── Sequence: $SEQ — SKIPPED (not found) ───"
+        echo "─── Sequence: $SEQ — SKIPPED (cam0/data not found) ───"
         continue
     fi
 

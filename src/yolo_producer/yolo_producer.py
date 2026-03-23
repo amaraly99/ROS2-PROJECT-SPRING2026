@@ -364,25 +364,37 @@ def postprocess(outputs: dict, img_h: int, img_w: int,
     strides = [8, 16, 32]
 
     t_decode_start = time.monotonic()
+    t_prefilter = 0
+    t_sigmoid = 0
+    t_bbox_extract = 0
+    t_grid_lookup = 0
+    t_coord_rescale = 0
 
     for i, ((bn, bbox_t), (cn, cls_t)) in enumerate(zip(bbox_tensors, cls_tensors)):
         H, W, _ = cls_t.shape
         stride = strides[i] if i < len(strides) else input_size // H
 
         # Fast pre-filter on raw logits (skip sigmoid on 672K values)
+        _t0 = time.perf_counter_ns()
         cls_flat = cls_t.reshape(-1, 80)
         max_logits = cls_flat.max(axis=1)
         mask = max_logits > logit_thresh
+        _t1 = time.perf_counter_ns()
+        t_prefilter += (_t1 - _t0)
         if not mask.any():
             continue
 
         # Sigmoid + argmax only on passing anchors
+        _t0 = time.perf_counter_ns()
         passing_cls = cls_flat[mask]
         passing_scores = sigmoid(passing_cls)
         max_scores  = passing_scores.max(axis=1)
         max_classes = passing_scores.argmax(axis=1)
+        _t1 = time.perf_counter_ns()
+        t_sigmoid += (_t1 - _t0)
 
         # DFL decode only on passing anchors
+        _t0 = time.perf_counter_ns()
         bbox_flat = bbox_t.reshape(-1, bbox_t.shape[-1])
         bbox_passing = bbox_flat[mask]
         if bbox_passing.shape[1] == 64:
@@ -390,9 +402,13 @@ def postprocess(outputs: dict, img_h: int, img_w: int,
         elif bbox_passing.shape[1] == 4:
             ltrb = bbox_passing
         else:
+            t_bbox_extract += (time.perf_counter_ns() - _t0)
             continue
+        _t1 = time.perf_counter_ns()
+        t_bbox_extract += (_t1 - _t0)
 
         # Use pre-computed grids
+        _t0 = time.perf_counter_ns()
         if grids and (H, W) in grids:
             cx = grids[(H, W)][0][mask]
             cy = grids[(H, W)][1][mask]
@@ -400,7 +416,10 @@ def postprocess(outputs: dict, img_h: int, img_w: int,
             gy, gx = np.meshgrid(np.arange(H), np.arange(W), indexing='ij')
             cx = (gx.flatten()[mask] + 0.5) * stride
             cy = (gy.flatten()[mask] + 0.5) * stride
+        _t1 = time.perf_counter_ns()
+        t_grid_lookup += (_t1 - _t0)
 
+        _t0 = time.perf_counter_ns()
         x1 = cx - ltrb[:, 0] * stride
         y1 = cy - ltrb[:, 1] * stride
         x2 = cx + ltrb[:, 2] * stride
@@ -409,6 +428,8 @@ def postprocess(outputs: dict, img_h: int, img_w: int,
         all_boxes.append(np.stack([x1, y1, x2, y2], axis=1))
         all_scores.append(max_scores)
         all_classes.append(max_classes)
+        _t1 = time.perf_counter_ns()
+        t_coord_rescale += (_t1 - _t0)
 
     t_decode_end = time.monotonic()
 
@@ -417,6 +438,11 @@ def postprocess(outputs: dict, img_h: int, img_w: int,
             timing["decode_ms"] = (t_decode_end - t_decode_start) * 1000.0
             timing["nms_ms"] = 0.0
             timing["total_ms"] = timing["decode_ms"]
+            timing["prefilter_ms"] = t_prefilter / 1e6
+            timing["sigmoid_ms"] = t_sigmoid / 1e6
+            timing["bbox_extract_ms"] = t_bbox_extract / 1e6
+            timing["grid_lookup_ms"] = t_grid_lookup / 1e6
+            timing["coord_rescale_ms"] = t_coord_rescale / 1e6
         return []
 
     boxes   = np.concatenate(all_boxes, axis=0)
@@ -461,6 +487,71 @@ def postprocess(outputs: dict, img_h: int, img_w: int,
         timing["decode_ms"] = (t_decode_end - t_decode_start) * 1000.0
         timing["nms_ms"] = (t_nms_end - t_nms_start) * 1000.0
         timing["total_ms"] = (t_nms_end - t_decode_start) * 1000.0
+        timing["prefilter_ms"] = t_prefilter / 1e6
+        timing["sigmoid_ms"] = t_sigmoid / 1e6
+        timing["bbox_extract_ms"] = t_bbox_extract / 1e6
+        timing["grid_lookup_ms"] = t_grid_lookup / 1e6
+        timing["coord_rescale_ms"] = t_coord_rescale / 1e6
+
+    dets.sort(key=lambda d: -d["confidence"])
+    return dets[:YOLO_MAX_DETS]
+
+
+def postprocess_ondevice_nms(output_flat: np.ndarray,
+                             img_w: int, img_h: int,
+                             input_size: int = 640,
+                             pad_left: int = 0, pad_top: int = 0,
+                             scale: float = 1.0,
+                             num_classes: int = 80,
+                             max_per_class: int = 100,
+                             conf_thresh: float = 0.25,
+                             timing: dict = None) -> list:
+    """
+    Parse on-device NMS output from Hailo (yolov8m/yolov11m).
+
+    Output tensor is flat: num_classes * (1 + max_per_class * 5) floats.
+    Per class: float32 count, then count × {y_min, x_min, y_max, x_max, score}
+    all normalized to [0, 1] relative to the 640×640 input (including letterbox).
+    """
+    t0 = time.perf_counter_ns()
+    stride = 1 + max_per_class * 5  # 501 floats per class
+    dets = []
+
+    for cls_id in range(num_classes):
+        base = cls_id * stride
+        count = int(output_flat[base])
+        if count == 0:
+            continue
+        count = min(count, max_per_class)
+        for j in range(count):
+            off = base + 1 + j * 5
+            y_min, x_min, y_max, x_max, score = output_flat[off:off + 5]
+            if score < conf_thresh:
+                continue
+            # Convert from normalized [0,1] in 640×640 space → source image pixels
+            px1 = (x_min * input_size - pad_left) / scale
+            py1 = (y_min * input_size - pad_top) / scale
+            px2 = (x_max * input_size - pad_left) / scale
+            py2 = (y_max * input_size - pad_top) / scale
+            dets.append({
+                "class_id": cls_id,
+                "confidence": float(score),
+                "x1": max(0, min(int(px1), img_w - 1)),
+                "y1": max(0, min(int(py1), img_h - 1)),
+                "x2": max(0, min(int(px2), img_w - 1)),
+                "y2": max(0, min(int(py2), img_h - 1)),
+            })
+
+    t1 = time.perf_counter_ns()
+    if timing is not None:
+        timing["decode_ms"] = 0.0
+        timing["nms_ms"] = 0.0
+        timing["total_ms"] = (t1 - t0) / 1e6
+        timing["prefilter_ms"] = 0.0
+        timing["sigmoid_ms"] = 0.0
+        timing["bbox_extract_ms"] = 0.0
+        timing["grid_lookup_ms"] = 0.0
+        timing["coord_rescale_ms"] = (t1 - t0) / 1e6  # all time is parse+rescale
 
     dets.sort(key=lambda d: -d["confidence"])
     return dets[:YOLO_MAX_DETS]
@@ -530,6 +621,14 @@ def main():
                         help="Use float16 for post-processing (precision experiment)")
     parser.add_argument("--no-image", action="store_true",
                         help="Skip writing image to YOLO SHM (saves ~1.8MB/frame)")
+    parser.add_argument("--ondevice-nms", action="store_true",
+                        help="Use on-device NMS postprocessing (for yolov8m/yolov11m HEFs)")
+    parser.add_argument("--csv", type=str, default=None,
+                        help="Write per-frame timing CSV to this path")
+    parser.add_argument("--max-frames", type=int, default=0,
+                        help="Stop after N frames (0 = unlimited)")
+    parser.add_argument("--downsample", type=float, default=1.0,
+                        help="Downsample factor for resolution experiment (e.g. 2.0 = half res)")
     args = parser.parse_args()
 
     hef_path = args.hef
@@ -562,9 +661,18 @@ def main():
 
     configured = infer_model.configure()
 
-    # Print output info
+    # Print output info and detect on-device NMS
     out_names = [o.name for o in infer_model.outputs]
     print(f"[hailo] outputs: {out_names}")
+
+    # Auto-detect on-device NMS: single output with "nms_postprocess" in name
+    use_ondevice_nms = args.ondevice_nms
+    if not use_ondevice_nms and len(infer_model.outputs) == 1:
+        if "nms_postprocess" in infer_model.outputs[0].name:
+            use_ondevice_nms = True
+            print("[hailo] auto-detected on-device NMS output")
+    if use_ondevice_nms:
+        print(f"[yolo_producer] on-device NMS mode — CPU postprocess skipped")
 
     # ── Open camera shm ──────────────────────────────────────────
     reader = OvcamReader()
@@ -587,11 +695,12 @@ def main():
         bindings.output(out_vstream.name).set_buffer(buf)
         output_buffers[out_vstream.name] = buf
 
-    # Pre-compute anchor grids for all 3 scales
+    # Pre-compute anchor grids for all 3 scales (not needed for on-device NMS)
     grids = {}
-    for H, W, s in [(80, 80, 8), (40, 40, 16), (20, 20, 32)]:
-        gy, gx = np.meshgrid(np.arange(H), np.arange(W), indexing='ij')
-        grids[(H, W)] = ((gx.flatten() + 0.5) * s, (gy.flatten() + 0.5) * s)
+    if not use_ondevice_nms:
+        for H, W, s in [(80, 80, 8), (40, 40, 16), (20, 20, 32)]:
+            gy, gx = np.meshgrid(np.arange(H), np.arange(W), indexing='ij')
+            grids[(H, W)] = ((gx.flatten() + 0.5) * s, (gy.flatten() + 0.5) * s)
 
     # Letterbox parameters (constant — camera and model resolution don't change)
     scale = min(input_w / reader.w, input_h / reader.h)
@@ -604,6 +713,22 @@ def main():
     print(f"[yolo_producer] letterbox: {reader.w}x{reader.h} → {new_w}x{new_h} "
           f"pad=({pad_left},{pad_top}) scale={scale:.4f}")
 
+    # ── CSV writer (optional) ─────────────────────────────────────
+    csv_file = None
+    csv_writer = None
+    if args.csv:
+        import csv
+        csv_file = open(args.csv, "w", newline="")
+        csv_writer = csv.writer(csv_file)
+        csv_writer.writerow(["frame", "preprocess_ms", "inference_ms",
+                             "prefilter_ms", "sigmoid_ms", "bbox_extract_ms",
+                             "grid_lookup_ms", "coord_rescale_ms",
+                             "decode_ms", "nms_ms", "total_pp_ms", "n_dets"])
+
+    if args.downsample > 1.0:
+        print(f"[yolo_producer] downsample={args.downsample:.2f}x "
+              f"(effective {int(reader.w/args.downsample)}x{int(reader.h/args.downsample)})")
+
     # ── Main loop ─────────────────────────────────────────────────
     frame_count = 0
     t_start = time.monotonic()
@@ -612,7 +737,10 @@ def main():
     # Timing accumulators for benchmarking
     pp_timing = {}
     pp_timing_acc = {"preprocess_ms": 0.0, "inference_ms": 0.0,
-                     "decode_ms": 0.0, "nms_ms": 0.0, "postprocess_ms": 0.0}
+                     "decode_ms": 0.0, "nms_ms": 0.0, "postprocess_ms": 0.0,
+                     "prefilter_ms": 0.0, "sigmoid_ms": 0.0,
+                     "bbox_extract_ms": 0.0, "grid_lookup_ms": 0.0,
+                     "coord_rescale_ms": 0.0}
     pp_timing_count = 0
 
     while not g_stop:
@@ -620,6 +748,12 @@ def main():
             rgb, t_ns = reader.wait_frame(timeout_s=1.0)
         except TimeoutError:
             continue
+
+        # Resolution experiment: downsample then upsample to simulate lower-res camera
+        if args.downsample > 1.0:
+            dh = int(rgb.shape[0] / args.downsample)
+            dw = int(rgb.shape[1] / args.downsample)
+            rgb = cv2.resize(cv2.resize(rgb, (dw, dh)), (rgb.shape[1], rgb.shape[0]))
 
         # Preprocess: letterbox resize (already RGB from wait_frame)
         t_pre = time.monotonic()
@@ -633,18 +767,28 @@ def main():
         configured.run([bindings], timeout=1000)
         t_infer_end = time.monotonic()
 
-        # Post-process (optionally cast to float16 for precision experiment)
+        # Post-process
         pp_timing.clear()
-        if args.fp16:
-            pp_inputs = {k: v.astype(np.float16) for k, v in output_buffers.items()}
+        if use_ondevice_nms:
+            # On-device NMS: single flat output, parse directly
+            out_tensor = list(output_buffers.values())[0].flatten()
+            dets = postprocess_ondevice_nms(
+                out_tensor, img_w=reader.w, img_h=reader.h,
+                input_size=input_w,
+                pad_left=pad_left, pad_top=pad_top, scale=scale,
+                conf_thresh=args.conf, timing=pp_timing)
         else:
-            pp_inputs = output_buffers
-        dets = postprocess(pp_inputs, rgb.shape[0], rgb.shape[1],
-                           input_size=input_w,
-                           conf_thresh=args.conf,
-                           iou_thresh=args.iou,
-                           grids=grids,
-                           timing=pp_timing)
+            # Standard: 6 raw tensors, full CPU postprocess
+            if args.fp16:
+                pp_inputs = {k: v.astype(np.float16) for k, v in output_buffers.items()}
+            else:
+                pp_inputs = output_buffers
+            dets = postprocess(pp_inputs, rgb.shape[0], rgb.shape[1],
+                               input_size=input_w,
+                               conf_thresh=args.conf,
+                               iou_thresh=args.iou,
+                               grids=grids,
+                               timing=pp_timing)
 
         # Accumulate timing
         pp_timing_count += 1
@@ -653,13 +797,37 @@ def main():
         pp_timing_acc["decode_ms"] += pp_timing.get("decode_ms", 0.0)
         pp_timing_acc["nms_ms"] += pp_timing.get("nms_ms", 0.0)
         pp_timing_acc["postprocess_ms"] += pp_timing.get("total_ms", 0.0)
+        pp_timing_acc["prefilter_ms"] += pp_timing.get("prefilter_ms", 0.0)
+        pp_timing_acc["sigmoid_ms"] += pp_timing.get("sigmoid_ms", 0.0)
+        pp_timing_acc["bbox_extract_ms"] += pp_timing.get("bbox_extract_ms", 0.0)
+        pp_timing_acc["grid_lookup_ms"] += pp_timing.get("grid_lookup_ms", 0.0)
+        pp_timing_acc["coord_rescale_ms"] += pp_timing.get("coord_rescale_ms", 0.0)
+
+        # Write per-frame CSV row
+        if csv_writer is not None:
+            csv_writer.writerow([
+                frame_count + 1,
+                f"{(t_pre_end - t_pre) * 1000.0:.4f}",
+                f"{(t_infer_end - t_infer) * 1000.0:.4f}",
+                f"{pp_timing.get('prefilter_ms', 0.0):.4f}",
+                f"{pp_timing.get('sigmoid_ms', 0.0):.4f}",
+                f"{pp_timing.get('bbox_extract_ms', 0.0):.4f}",
+                f"{pp_timing.get('grid_lookup_ms', 0.0):.4f}",
+                f"{pp_timing.get('coord_rescale_ms', 0.0):.4f}",
+                f"{pp_timing.get('decode_ms', 0.0):.4f}",
+                f"{pp_timing.get('nms_ms', 0.0):.4f}",
+                f"{pp_timing.get('total_ms', 0.0):.4f}",
+                len(dets),
+            ])
 
         # Scale boxes from letterboxed model space → source image space
-        for d in dets:
-            d["x1"] = max(0, min(int((d["x1"] - pad_left) / scale), max_x))
-            d["y1"] = max(0, min(int((d["y1"] - pad_top)  / scale), max_y))
-            d["x2"] = max(0, min(int((d["x2"] - pad_left) / scale), max_x))
-            d["y2"] = max(0, min(int((d["y2"] - pad_top)  / scale), max_y))
+        # (on-device NMS already does this in postprocess_ondevice_nms)
+        if not use_ondevice_nms:
+            for d in dets:
+                d["x1"] = max(0, min(int((d["x1"] - pad_left) / scale), max_x))
+                d["y1"] = max(0, min(int((d["y1"] - pad_top)  / scale), max_y))
+                d["x2"] = max(0, min(int((d["x2"] - pad_left) / scale), max_x))
+                d["y2"] = max(0, min(int((d["y2"] - pad_top)  / scale), max_y))
 
         # Write to YOLO shm (detections always, image only if --no-image not set)
         writer.write(dets, rgb if not args.no_image else None, t_ns)
@@ -676,9 +844,23 @@ def main():
                   f"{len(dets)} dets | "
                   f"pre={pp_timing_acc['preprocess_ms']/n:.1f}ms "
                   f"infer={pp_timing_acc['inference_ms']/n:.1f}ms "
-                  f"decode={pp_timing_acc['decode_ms']/n:.1f}ms "
-                  f"nms={pp_timing_acc['nms_ms']/n:.1f}ms "
-                  f"pp_total={pp_timing_acc['postprocess_ms']/n:.1f}ms")
+                  f"decode={pp_timing_acc['decode_ms']/n:.2f}ms "
+                  f"[prefilt={pp_timing_acc['prefilter_ms']/n:.2f} "
+                  f"sig={pp_timing_acc['sigmoid_ms']/n:.2f} "
+                  f"bbox={pp_timing_acc['bbox_extract_ms']/n:.2f} "
+                  f"grid={pp_timing_acc['grid_lookup_ms']/n:.2f} "
+                  f"coord={pp_timing_acc['coord_rescale_ms']/n:.2f}] "
+                  f"nms={pp_timing_acc['nms_ms']/n:.2f}ms "
+                  f"pp_total={pp_timing_acc['postprocess_ms']/n:.2f}ms")
+
+        # Stop after max-frames if set
+        if args.max_frames > 0 and frame_count >= args.max_frames:
+            print(f"[yolo_producer] reached --max-frames={args.max_frames}")
+            break
+
+    if csv_file is not None:
+        csv_file.close()
+        print(f"[yolo_producer] CSV written to {args.csv}")
 
     print(f"\n[yolo_producer] stopped after {frame_count} frames")
 

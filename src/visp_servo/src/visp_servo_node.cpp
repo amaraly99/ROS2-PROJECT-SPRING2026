@@ -176,6 +176,10 @@ private:
     double cb_latency_sum_ = 0.0;
     int    cb_latency_count_ = 0;
 
+    // End-to-end latency: detection header stamp → cmd_vel publish
+    double e2e_latency_sum_ = 0.0;
+    int    e2e_latency_count_ = 0;
+
     // ─────────────────────────────────────────────────────────
     void declare_parameters() {
         declare_parameter("target_class",          std::string("person"));
@@ -365,6 +369,7 @@ private:
     // ─────────────────────────────────────────────────────────
     void on_detections(const DetectionArray::SharedPtr msg) {
         auto t_cb_start = std::chrono::high_resolution_clock::now();
+        rclcpp::Time det_stamp = msg->header.stamp;
 
         // 1. Filter by target class and confidence
         const Detection* best = nullptr;
@@ -447,11 +452,22 @@ private:
         prev_cmd_ = cmd;
         pub_cmd_->publish(cmd);
 
-        // Measure callback latency
+        // Measure callback (ViSP processing) latency
         auto t_cb_end = std::chrono::high_resolution_clock::now();
         double cb_ms = std::chrono::duration<double, std::milli>(t_cb_end - t_cb_start).count();
         cb_latency_sum_ += cb_ms;
         cb_latency_count_++;
+
+        // Measure E2E latency: detection frame stamp → cmd_vel publish
+        // det_stamp = camera capture time (propagated through SHM → yolo_bridge → ROS2)
+        if (det_stamp.nanoseconds() > 0) {
+            double e2e_ms = (this->now() - det_stamp).nanoseconds() / 1e6;
+            // Guard against stale/bogus stamps (e.g. clock domain mismatch on first frame)
+            if (e2e_ms > 0.0 && e2e_ms < 5000.0) {
+                e2e_latency_sum_ += e2e_ms;
+                e2e_latency_count_++;
+            }
+        }
 
         // Log + debug
         throttled_log(cx, cy, bw, bh, Z_est, best_conf, error_norm, cmd, using_slam_depth);
@@ -733,17 +749,19 @@ private:
 
         double avg_cb_ms = (cb_latency_count_ > 0)
             ? cb_latency_sum_ / cb_latency_count_ : 0.0;
+        double avg_e2e_ms = (e2e_latency_count_ > 0)
+            ? e2e_latency_sum_ / e2e_latency_count_ : 0.0;
 
         RCLCPP_INFO(get_logger(),
             "[%s] %s conf=%.2f bbox=[%.0f,%.0f %.0fx%.0f] "
             "Z=%.2fm(%s) err=%.4f "
             "cmd: vx=%.2f vy=%.2f vz=%.2f wz=%.2f "
-            "cb=%.2fms",
+            "cb=%.2fms e2e=%.1fms",
             state_name(state_), target_class_.c_str(), conf,
             cx - bw/2, cy - bh/2, bw, bh,
             Z, slam_depth ? "SLAM" : "bbox", error_norm,
             cmd.linear.x, cmd.linear.y, cmd.linear.z, cmd.angular.z,
-            avg_cb_ms);
+            avg_cb_ms, avg_e2e_ms);
     }
 
     // ─────────────────────────────────────────────────────────

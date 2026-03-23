@@ -506,12 +506,13 @@ void VisualFrontEnd::epipolar2d2dFiltering()
             continue;
         }
 
-        // Store the bvs and their ids
-        vkfbvs.push_back(kfkp.bv_);
-        vcurbvs.push_back(kp.bv_);
+        // Store the bvs and their ids.
+        // bv_ is Scalar (float in fp32 mode); cast to double for opengv/Sophus.
+        vkfbvs.push_back(kfkp.bv_.template cast<double>());
+        vcurbvs.push_back(kp.bv_.template cast<double>());
         vkpsids.push_back(kp.lmid_);
 
-        cv::Point2f rotpx = pkf->projCamToImage(Rkfcur * kp.bv_);
+        cv::Point2f rotpx = pkf->projCamToImage(Rkfcur * kp.bv_.template cast<double>());
 
         // Compute parallax
         avg_parallax += cv::norm(rotpx - kfkp.unpx_);
@@ -702,7 +703,7 @@ void VisualFrontEnd::computePose()
         }
 
         if( bdop3p ) {
-            vbvs.push_back(kp.bv_);
+            vbvs.push_back(kp.bv_.template cast<double>());
         }
 
         vkps.push_back(Eigen::Vector2d(kp.unpx_.x, kp.unpx_.y));
@@ -899,13 +900,14 @@ bool VisualFrontEnd::checkReadyForInit()
                 continue;
             }
 
-            // Store the bvs and their ids
-            vkfbvs.push_back(kfkp.bv_);
-            vcurbvs.push_back(kp.bv_);
+            // Store the bvs and their ids.
+            // bv_ is Scalar (float in fp32 mode); cast to double for opengv.
+            vkfbvs.push_back(kfkp.bv_.template cast<double>());
+            vcurbvs.push_back(kp.bv_.template cast<double>());
             vkpsids.push_back(kp.lmid_);
 
             // Compute rotation compensated parallax
-            Eigen::Vector3d rotbv = Rkfcur * kp.bv_;
+            Eigen::Vector3d rotbv = Rkfcur * kp.bv_.template cast<double>();
 
             Eigen::Vector3d unpx = pcurframe_->pcalib_leftcam_->K_ * rotbv;
             cv::Point2f rotpx(unpx.x() / unpx.z(), unpx.y() / unpx.z());
@@ -1110,7 +1112,7 @@ float VisualFrontEnd::computeParallax(const int kfid, bool do_unrot, bool bmedia
 
         // Rotate bv into KF cam frame and back project into image
         if( do_unrot ) {
-            unpx = pkfit->second->projCamToImage(Rkfcur * kp.bv_);
+            unpx = pkfit->second->projCamToImage(Rkfcur * kp.bv_.template cast<double>());
         }
 
         // Compute rotation-compensated parallax

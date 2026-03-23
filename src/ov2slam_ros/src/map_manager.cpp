@@ -467,7 +467,9 @@ void MapManager::stereoMatching(Frame &frame, const std::vector<cv::Mat> &vleftp
 
                     if( nb3dkp >= nbmin3dcokps ) {
                         mean_z /= weights;
-                        Eigen::Vector3d predcampt = mean_z * ( kp.bv_ / kp.bv_.z() );
+                        // bv_ is Scalar; cast to double for Sophus/OpenCV projection.
+                        Eigen::Vector3d bv_d = kp.bv_.template cast<double>();
+                        Eigen::Vector3d predcampt = mean_z * ( bv_d / bv_d.z() );
 
                         cv::Point2f projpt = frame.projCamToRightImageDist(predcampt);
 
