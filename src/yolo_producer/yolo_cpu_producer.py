@@ -162,6 +162,13 @@ def parse_args():
                    help="Number of frames for benchmark mode (default: 200)")
     p.add_argument("--csv",      default="",
                    help="Path to write per-frame timing CSV")
+    p.add_argument("--synthetic", action="store_true",
+                   help="Use synthetic (random) frames — no camera SHM required. "
+                        "Useful for pure inference benchmarking without ovcam running.")
+    p.add_argument("--frame-width",  type=int, default=640,
+                   help="Synthetic frame width  (default: 640, matches OV5647)")
+    p.add_argument("--frame-height", type=int, default=480,
+                   help="Synthetic frame height (default: 480, matches OV5647)")
     return p.parse_args()
 
 
@@ -182,15 +189,26 @@ def main():
                          conf_thresh=args.conf, iou_thresh=args.iou,
                          device=args.device)
 
-    # ── Camera SHM ───────────────────────────────────────────────────
-    reader = OvcamReader("/ovcam_frames", "/sem.ovcam_ready")
-    print(f"[yolo_cpu] camera: {reader.w}x{reader.h}, {reader.slot_count} slots")
+    # ── Camera SHM (or synthetic frame generator) ────────────────────
+    reader = None
+    if args.synthetic:
+        frame_w = args.frame_width
+        frame_h = args.frame_height
+        print(f"[yolo_cpu] synthetic mode: {frame_w}x{frame_h} random frames "
+              f"(no camera SHM required)")
+    else:
+        # Semaphore name "/ovcam_ready" → /dev/shm/sem.ovcam_ready
+        reader = OvcamReader("/ovcam_frames", "/ovcam_ready")
+        frame_w = reader.w
+        frame_h = reader.h
+        print(f"[yolo_cpu] camera: {frame_w}x{frame_h}, {reader.slot_count} slots")
 
-    # ── YOLO SHM writer (skip if benchmark mode) ──────────────────────
+    # ── YOLO SHM writer (skip if benchmark or synthetic mode) ──────────
     writer = None
-    if not args.benchmark:
-        writer = YoloShmWriter("/yolo_shm", "/sem.yolo_ready",
-                                img_w=reader.w, img_h=reader.h,
+    if not args.benchmark and not args.synthetic:
+        # Semaphore name "/yolo_ready" → /dev/shm/sem.yolo_ready
+        writer = YoloShmWriter("/yolo_shm", "/yolo_ready",
+                                img_w=frame_w, img_h=frame_h,
                                 n_slots=4, include_image=not args.no_image)
         print(f"[yolo_cpu] yolo SHM writer ready")
 
@@ -214,15 +232,21 @@ def main():
     target_frames = args.frames if args.benchmark else 10**9
 
     print(f"[yolo_cpu] starting — model={os.path.basename(model_path)} "
-          f"device={args.device} benchmark={args.benchmark}")
+          f"device={args.device} benchmark={args.benchmark} "
+          f"synthetic={args.synthetic}")
 
     while not g_stop and frame_count < target_frames:
-        # 1. Read frame
+        # 1. Read frame (or generate synthetic frame)
         t0 = time.monotonic()
-        try:
-            rgb, t_ns = reader.wait_frame(timeout_s=1.0)
-        except TimeoutError:
-            continue
+        if args.synthetic:
+            # Random uint8 frame — same spatial dimensions as real camera
+            rgb   = np.random.randint(0, 256, (frame_h, frame_w, 3), dtype=np.uint8)
+            t_ns  = time.monotonic_ns()
+        else:
+            try:
+                rgb, t_ns = reader.wait_frame(timeout_s=1.0)
+            except TimeoutError:
+                continue
         t1 = time.monotonic()
         read_ms = (t1 - t0) * 1000.0
 
