@@ -42,6 +42,17 @@ Set it to OFF is OpenCV was not compiled with the opencv_contrib modules)\n")
     add_definitions(-DOPENCV_CONTRIB)
 endif()
 
+# ── Float32 front-end precision switch ─────────────────────────────────────────
+# Use float (32-bit) for bearing vectors stored per Keypoint, halving the
+# memory footprint of keypoint data and improving L2 cache hit rate.
+# Ceres cost functions always use double — this flag ONLY affects bearing
+# vector storage and local bearing-vector arithmetic outside Ceres.
+option(OV2SLAM_FLOAT32 "Use float32 for SLAM front-end bearing vectors" OFF)
+if(OV2SLAM_FLOAT32)
+    message(STATUS "OV2SLAM: float32 front-end precision enabled")
+    add_compile_definitions(OV2SLAM_USE_FLOAT32)
+endif()
+
 find_package(ament_cmake REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(rclcpp REQUIRED)

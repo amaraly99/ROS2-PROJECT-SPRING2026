@@ -42,6 +42,7 @@
 #include <sophus/se3.hpp>
 
 #include "camera_calibration.hpp"
+#include "precision_config.hpp"
 
 struct Keypoint {
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -50,18 +51,22 @@ struct Keypoint {
 
     cv::Point2f px_;
     cv::Point2f unpx_;
-    Eigen::Vector3d bv_;
+    // Bearing vector — stored as Scalar (float in OV2SLAM_USE_FLOAT32 mode,
+    // double otherwise).  Cast to double before passing to Sophus / opengv /
+    // Ceres functions.  Halving from 24 B → 12 B per keypoint improves L2
+    // cache utilisation on the RPi5's 512 KB per-core L2 cache.
+    Eigen::Matrix<Scalar,3,1> bv_;
 
     int scale_;
     float angle_;
     cv::Mat desc_;
-    
+
     bool is3d_;
 
     bool is_stereo_;
     cv::Point2f rpx_;
     cv::Point2f runpx_;
-    Eigen::Vector3d rbv_;
+    Eigen::Matrix<Scalar,3,1> rbv_;
 
     bool is_retracked_;
 
@@ -94,7 +99,7 @@ public:
     
     std::vector<cv::Point2f> getKeypointsPx() const;
     std::vector<cv::Point2f> getKeypointsUnPx() const;
-    std::vector<Eigen::Vector3d> getKeypointsBv() const;
+    std::vector<Eigen::Matrix<Scalar,3,1>> getKeypointsBv() const;
     std::vector<int> getKeypointsId() const;
     std::vector<cv::Mat> getKeypointsDesc() const;
 

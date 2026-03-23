@@ -172,11 +172,11 @@ std::vector<cv::Point2f> Frame::getKeypointsUnPx() const
 }
 
 // Return vector of keypoints' bearing vectors
-std::vector<Eigen::Vector3d> Frame::getKeypointsBv() const
+std::vector<Eigen::Matrix<Scalar,3,1>> Frame::getKeypointsBv() const
 {
     std::lock_guard<std::mutex> lock(kps_mutex_);
 
-    std::vector<Eigen::Vector3d> v;
+    std::vector<Eigen::Matrix<Scalar,3,1>> v;
     v.reserve(nbkps_);
     for( const auto &kp : mapkps_ ) {
         v.push_back(kp.second.bv_);
@@ -248,8 +248,9 @@ inline void Frame::computeKeypoint(const cv::Point2f &pt, Keypoint &kp)
     kp.px_ = pt;
     kp.unpx_ = pcalib_leftcam_->undistortImagePoint(pt);
 
-    Eigen::Vector3d hunpx(kp.unpx_.x, kp.unpx_.y, 1.);
-    kp.bv_ = pcalib_leftcam_->iK_ * hunpx;
+    // iK_ is always double (calibration); compute in double then cast to Scalar.
+    Eigen::Vector3d hunpx(kp.unpx_.x, kp.unpx_.y, 1.0);
+    kp.bv_ = (pcalib_leftcam_->iK_ * hunpx).template cast<Scalar>();
     kp.bv_.normalize();
 }
 
@@ -407,11 +408,11 @@ void Frame::computeStereoKeypoint(const cv::Point2f &pt, Keypoint &kp)
     kp.rpx_ = pt;
     kp.runpx_ = pcalib_rightcam_->undistortImagePoint(pt);
 
-    Eigen::Vector3d bv(kp.runpx_.x, kp.runpx_.y, 1.);
-    bv = pcalib_rightcam_->iK_ * bv.eval();
-    bv.normalize();
-
-    kp.rbv_ = bv;
+    // iK_ is always double; cast result to Scalar for storage.
+    Eigen::Vector3d bv_d(kp.runpx_.x, kp.runpx_.y, 1.0);
+    bv_d = pcalib_rightcam_->iK_ * bv_d.eval();
+    bv_d.normalize();
+    kp.rbv_ = bv_d.template cast<Scalar>();
 
     if( !kp.is_stereo_ ) {
         kp.is_stereo_ = true;

@@ -295,13 +295,13 @@ void Mapper::triangulateTemporal(Frame &frame)
         }
 
         // Check rotation-compensated parallax
-        cv::Point2f rotpx = frame.projCamToImage(Rcicj * vkps.at(i).bv_);
+        cv::Point2f rotpx = frame.projCamToImage(Rcicj * vkps.at(i).bv_.template cast<double>());
         double parallax = cv::norm(kfkp.unpx_ - rotpx);
 
         candidates++;
 
         // Compute 3D pos and check if its good or not
-        left_pt = computeTriangulation(Tcicj, kfkp.bv_, vkps.at(i).bv_);
+        left_pt = computeTriangulation(Tcicj, kfkp.bv_.template cast<double>(), vkps.at(i).bv_.template cast<double>());
 
         // Project into right cam (new KF)
         right_pt = Tcjci * left_pt;
@@ -383,8 +383,8 @@ void Mapper::triangulateStereo(Frame &frame)
         if( !vkps.at(i).is3d_ && vkps.at(i).is_stereo_ )
         {
             vstereoidx.push_back(i);
-            vleftbvs.push_back(vkps.at(i).bv_);
-            vrightbvs.push_back(vkps.at(i).rbv_);
+            vleftbvs.push_back(vkps.at(i).bv_.template cast<double>());
+            vrightbvs.push_back(vkps.at(i).rbv_.template cast<double>());
         }
     }
 
