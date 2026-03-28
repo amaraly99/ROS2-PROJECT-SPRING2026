@@ -16,7 +16,7 @@ speed: fast
 trajectory_policy: paper
 
 # Use either `sequences` or `seq_range_start`/`seq_range_end`.
-sequences: [MH_01_easy]
+sequences: [MH_05_difficult]
 seq_range_start: ""
 seq_range_end: ""
 
@@ -31,4 +31,4 @@ sigint_timeout: 30
 
 startup_settle_sec: 2
 inter_run_delay_sec: 10
-monitor_sample_sec: 0.5
+monitor_sample_sec: 0.05

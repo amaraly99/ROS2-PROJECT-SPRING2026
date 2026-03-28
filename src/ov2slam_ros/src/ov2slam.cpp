@@ -190,7 +190,7 @@ void SlamManager::run()
 
                 if( !bkf_viz_ison_ ) {
                     std::thread kf_viz_thread(&SlamManager::visualizeAtKFsRate, this, time);
-                    pthread_setname_np(kf_viz_thread.native_handle(), "ov2slam_keyframe_visualization_thread");
+                    pthread_setname_np(kf_viz_thread.native_handle(), "ov2_vizkf");
 
                     kf_viz_thread.detach();
                 }    
@@ -202,7 +202,7 @@ void SlamManager::run()
             // Frame rate visualization (limit the visualization processing)
             if( !bframe_viz_ison_ ) {
                 std::thread viz_thread(&SlamManager::visualizeAtFrameRate, this, time);
-                pthread_setname_np(viz_thread.native_handle(), "ov2slam_frame_visualization_thread");
+                pthread_setname_np(viz_thread.native_handle(), "ov2_vizfr");
                 viz_thread.detach();
             }
         } 

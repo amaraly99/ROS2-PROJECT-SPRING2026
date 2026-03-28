@@ -16,7 +16,7 @@
   "sequence_retries": "2",
   "bag_rate": "1.0",
   "evo_correct_scale": false,
-  "selected_sequences": ["MH_01_easy"],
+  "selected_sequences": ["MH_05_difficult"],
   "gt_verdict": "EuRoC *.txt files are already valid TUM pose files; normalized to gt.tum.",
   "trajectory_candidates": [
     {"file": "ov2slam_kfs_traj.txt", "reason": "paper-style choice: keyframe trajectory after online local BA / loop closure, without end-of-sequence full BA"},
