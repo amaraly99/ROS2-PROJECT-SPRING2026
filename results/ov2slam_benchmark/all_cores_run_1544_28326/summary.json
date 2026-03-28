@@ -1,0 +1,32 @@
+[
+  {
+    "seq": "MH_01_easy",
+    "success": true,
+    "rmse": 0.040045,
+    "traj_used": "ov2slam_kfs_traj.txt",
+    "traj_reason": "paper-style choice: keyframe trajectory after online local BA / loop closure, without end-of-sequence full BA",
+    "warnings": "",
+    "error": "",
+    "gt_verdict": "MH_01_easy.txt is already valid TUM format (timestamp tx ty tz qx qy qz qw); normalized copy written to gt.tum"
+  },
+  {
+    "seq": "MH_02_easy",
+    "success": true,
+    "rmse": 0.039757,
+    "traj_used": "ov2slam_kfs_traj.txt",
+    "traj_reason": "paper-style choice: keyframe trajectory after online local BA / loop closure, without end-of-sequence full BA",
+    "warnings": "",
+    "error": "",
+    "gt_verdict": "MH_02_easy.txt is already valid TUM format (timestamp tx ty tz qx qy qz qw); normalized copy written to gt.tum"
+  },
+  {
+    "seq": "MH_03_medium",
+    "success": false,
+    "rmse": null,
+    "traj_used": "",
+    "traj_reason": "",
+    "warnings": "",
+    "error": "OV2SLAM exited before final flush. Check /workspace/results/ov2slam_benchmark/all_cores_run_1544_28326/MH_03_medium/ov2slam.log.",
+    "gt_verdict": "MH_03_medium.txt is already valid TUM format (timestamp tx ty tz qx qy qz qw); normalized copy written to gt.tum"
+  }
+]

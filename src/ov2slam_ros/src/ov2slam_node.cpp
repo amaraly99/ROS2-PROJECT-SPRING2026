@@ -206,6 +206,8 @@ int main(int argc, char** argv)
 
     // Start the SLAM thread
     std::thread slamthread(&SlamManager::run, &slam);
+    pthread_setname_np(slamthread.native_handle(), "ov2_slam_manager_thread");
+
 
     // Create the Bag file reader & callback functions
     SensorsGrabber sb(&slam);
@@ -222,6 +224,7 @@ int main(int argc, char** argv)
 
     // Start a thread for providing new measurements to the SLAM
     std::thread sync_thread(&SensorsGrabber::sync_process, &sb);
+    pthread_setname_np(sync_thread.native_handle(), "ov2_measurement_feeder_thread");
 
     // ROS Spin
     rclcpp::spin(nh);

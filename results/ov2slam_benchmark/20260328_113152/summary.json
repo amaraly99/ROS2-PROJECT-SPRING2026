@@ -1,0 +1,12 @@
+[
+  {
+    "seq": "MH_03_medium",
+    "success": true,
+    "rmse": 0.385969,
+    "traj_used": "ov2slam_kfs_traj.txt",
+    "traj_reason": "paper-style choice: keyframe trajectory after online local BA / loop closure, without end-of-sequence full BA",
+    "warnings": "",
+    "error": "",
+    "gt_verdict": "MH_03_medium.txt is already valid TUM format (timestamp tx ty tz qx qy qz qw); normalized copy written to gt.tum"
+  }
+]

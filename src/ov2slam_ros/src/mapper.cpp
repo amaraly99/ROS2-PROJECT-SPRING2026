@@ -36,6 +36,8 @@ Mapper::Mapper(std::shared_ptr<SlamParams> pslamstate, std::shared_ptr<MapManage
     , ploopcloser_( new LoopCloser(pslamstate_, pmap_) )
 {
     std::thread mapper_thread(&Mapper::run, this);
+    pthread_setname_np(mapper_thread.native_handle(), "ov2slam_mapper");
+
     mapper_thread.detach();
 
     std::cout << "\nMapper Object is created!\n";
@@ -48,7 +50,10 @@ void Mapper::run()
     Keyframe kf;
 
     std::thread estimator_thread(&Estimator::run, pestimator_);
+    pthread_setname_np(estimator_thread.native_handle(), "ov2slam_estimator");
     std::thread lc_thread(&LoopCloser::run, ploopcloser_);
+    pthread_setname_np(lc_thread.native_handle(), "ov2slam_loopcloser");
+
 
     while( !bexit_required_ ) {
 
@@ -545,6 +550,7 @@ bool Mapper::matchingToLocalMap(Frame &frame)
     // Merge in a thread to avoid waiting for BA to finish
     // mergeMatches(frame, map_previd_newid);
     std::thread thread(&Mapper::mergeMatches, this, std::ref(frame), map_previd_newid);
+    pthread_setname_np(thread.native_handle(), "ov2slam_local_map_merger_thread");
     thread.detach();
 
     if( pslamstate_->debug_ || pslamstate_->log_timings_ )

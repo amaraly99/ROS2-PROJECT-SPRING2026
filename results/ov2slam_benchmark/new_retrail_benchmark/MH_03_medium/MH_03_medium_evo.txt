@@ -1,0 +1,38 @@
+--------------------------------------------------------------------------------
+Loaded 26302 stamps and poses from: /workspace/results/ov2slam_benchmark/new_retrail_benchmark/MH_03_medium/gt.tum
+Loaded 523 stamps and poses from: /workspace/results/ov2slam_benchmark/new_retrail_benchmark/MH_03_medium/ov2slam_kfs_traj.txt
+--------------------------------------------------------------------------------
+Synchronizing trajectories...
+Found 519 of max. 523 possible matching timestamps between...
+	/workspace/results/ov2slam_benchmark/new_retrail_benchmark/MH_03_medium/gt.tum
+and:	/workspace/results/ov2slam_benchmark/new_retrail_benchmark/MH_03_medium/ov2slam_kfs_traj.txt
+..with max. time diff.: 0.1 (s) and time offset: 0.0 (s).
+--------------------------------------------------------------------------------
+Aligning using Umeyama's method...
+Rotation of alignment:
+[[ 0.31900721  0.22551124 -0.92053195]
+ [ 0.94581222 -0.1378654   0.29399383]
+ [-0.06061059 -0.96443652 -0.25727135]]
+Translation of alignment:
+[ 4.65640207 -1.83263756  0.59097112]
+Scale correction: 1.0
+--------------------------------------------------------------------------------
+Compared 519 absolute pose pairs.
+Calculating APE for translation part pose relation...
+--------------------------------------------------------------------------------
+APE w.r.t. translation part (m)
+(with SE(3) Umeyama alignment)
+
+       max	0.093567
+      mean	0.046073
+    median	0.045039
+       min	0.004132
+      rmse	0.050564
+       sse	1.326916
+       std	0.020832
+
+--------------------------------------------------------------------------------
+Saving results to /workspace/results/ov2slam_benchmark/new_retrail_benchmark/MH_03_medium/MH_03_medium_evo.zip...
+
+Generated 2D XY APE plot: MH_03_medium_ape_xy.png
+Generated translational RPE plot: MH_03_medium_rpe_trans.png

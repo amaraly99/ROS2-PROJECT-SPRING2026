@@ -518,7 +518,7 @@ std::vector<cv::Point2f> FeatureExtractor::detectGridFAST(const cv::Mat &im, con
                 std::sort(vkps.begin(), vkps.end(), compare_response);
             }
 
-            if( vkps.at(0).response >= 20 ) {
+            if( vkps.at(0).response >= nfast_th_ ) {
                 cv::Point2f pxpt = vkps.at(0).pt;
                 
                 pxpt.x += x;
