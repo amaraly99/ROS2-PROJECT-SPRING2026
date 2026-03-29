@@ -1,0 +1,38 @@
+--------------------------------------------------------------------------------
+Loaded 23091 stamps and poses from: /workspace/results/ov2slam_benchmark/Latest_ACCURATE_Test/V2_02_medium/gt.tum
+Loaded 780 stamps and poses from: /workspace/results/ov2slam_benchmark/Latest_ACCURATE_Test/V2_02_medium/ov2slam_kfs_traj.txt
+--------------------------------------------------------------------------------
+Synchronizing trajectories...
+Found 778 of max. 780 possible matching timestamps between...
+	/workspace/results/ov2slam_benchmark/Latest_ACCURATE_Test/V2_02_medium/gt.tum
+and:	/workspace/results/ov2slam_benchmark/Latest_ACCURATE_Test/V2_02_medium/ov2slam_kfs_traj.txt
+..with max. time diff.: 0.1 (s) and time offset: 0.0 (s).
+--------------------------------------------------------------------------------
+Aligning using Umeyama's method...
+Rotation of alignment:
+[[-4.69136366e-02  2.89627164e-01 -9.55989130e-01]
+ [ 9.98898695e-01  1.42850899e-02 -4.46915335e-02]
+ [ 7.12508616e-04 -9.57032937e-01 -2.89978361e-01]]
+Translation of alignment:
+[-0.99077409  0.42224331  1.33181829]
+Scale correction: 1.0
+--------------------------------------------------------------------------------
+Compared 778 absolute pose pairs.
+Calculating APE for translation part pose relation...
+--------------------------------------------------------------------------------
+APE w.r.t. translation part (m)
+(with SE(3) Umeyama alignment)
+
+       max	0.101574
+      mean	0.049206
+    median	0.050150
+       min	0.003804
+      rmse	0.053746
+       sse	2.247328
+       std	0.021618
+
+--------------------------------------------------------------------------------
+Saving results to /workspace/results/ov2slam_benchmark/Latest_ACCURATE_Test/V2_02_medium/V2_02_medium_evo.zip...
+
+Generated 2D XY APE plot: V2_02_medium_ape_xy.png
+Generated translational RPE plot: V2_02_medium_rpe_trans.png

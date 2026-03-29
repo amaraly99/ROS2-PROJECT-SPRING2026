@@ -1,0 +1,38 @@
+--------------------------------------------------------------------------------
+Loaded 19753 stamps and poses from: /workspace/results/ov2slam_benchmark/Latest_ACCURATE_Test/MH_04_difficult/gt.tum
+Loaded 347 stamps and poses from: /workspace/results/ov2slam_benchmark/Latest_ACCURATE_Test/MH_04_difficult/ov2slam_kfs_traj.txt
+--------------------------------------------------------------------------------
+Synchronizing trajectories...
+Found 344 of max. 347 possible matching timestamps between...
+	/workspace/results/ov2slam_benchmark/Latest_ACCURATE_Test/MH_04_difficult/gt.tum
+and:	/workspace/results/ov2slam_benchmark/Latest_ACCURATE_Test/MH_04_difficult/ov2slam_kfs_traj.txt
+..with max. time diff.: 0.1 (s) and time offset: 0.0 (s).
+--------------------------------------------------------------------------------
+Aligning using Umeyama's method...
+Rotation of alignment:
+[[ 0.77453816 -0.25911265  0.57701931]
+ [-0.63252363 -0.32034681  0.70518918]
+ [ 0.00212286 -0.91117428 -0.41201569]]
+Translation of alignment:
+[ 4.70932329 -1.73284702  0.55120825]
+Scale correction: 1.0
+--------------------------------------------------------------------------------
+Compared 344 absolute pose pairs.
+Calculating APE for translation part pose relation...
+--------------------------------------------------------------------------------
+APE w.r.t. translation part (m)
+(with SE(3) Umeyama alignment)
+
+       max	0.143406
+      mean	0.064916
+    median	0.060291
+       min	0.013734
+      rmse	0.069219
+       sse	1.648184
+       std	0.024024
+
+--------------------------------------------------------------------------------
+Saving results to /workspace/results/ov2slam_benchmark/Latest_ACCURATE_Test/MH_04_difficult/MH_04_difficult_evo.zip...
+
+Generated 2D XY APE plot: MH_04_difficult_ape_xy.png
+Generated translational RPE plot: MH_04_difficult_rpe_trans.png

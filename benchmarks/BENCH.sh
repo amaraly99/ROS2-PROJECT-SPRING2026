@@ -1227,18 +1227,17 @@ generate_cpu_plots() {
   local info_json="$out_dir/ov2slam_pid_info.json"
   local process_plot="$out_dir/ov2slam_cpu_usage.png"
   local thread_bar_plot="$out_dir/ov2slam_threads_cpu_bar.png"
-  local named_thread_plot="$out_dir/ov2slam_named_threads_cpu_usage.png"
-  local named_thread_bar_plot="$out_dir/ov2slam_named_threads_cpu_bar.png"
+  local named_thread_plot="$out_dir/ov2slam_named_thread_roles_aggregated.png"
+  local named_thread_summary_csv="$out_dir/ov2slam_named_thread_roles_aggregated.csv"
 
   [[ -f "$process_csv" ]] || return 1
   [[ -f "$thread_csv" ]] || return 1
   [[ -f "$thread_summary_csv" ]] || return 1
 
-  if ! python3 - "$process_csv" "$thread_csv" "$thread_summary_csv" "$info_json" "$process_plot" "$thread_bar_plot" "$named_thread_plot" "$named_thread_bar_plot" "$seq_name" <<'PY'
+  if ! python3 - "$process_csv" "$thread_summary_csv" "$info_json" "$process_plot" "$thread_bar_plot" "$seq_name" <<'PY'
 import csv
 import json
 import sys
-from collections import defaultdict
 from pathlib import Path
 
 import matplotlib
@@ -1247,14 +1246,11 @@ import matplotlib.pyplot as plt
 
 
 process_csv = Path(sys.argv[1])
-thread_csv = Path(sys.argv[2])
-thread_summary_csv = Path(sys.argv[3])
-info_json = Path(sys.argv[4])
-process_plot = Path(sys.argv[5])
-thread_bar_plot = Path(sys.argv[6])
-named_thread_plot = Path(sys.argv[7])
-named_thread_bar_plot = Path(sys.argv[8])
-seq_name = sys.argv[9]
+thread_summary_csv = Path(sys.argv[2])
+info_json = Path(sys.argv[3])
+process_plot = Path(sys.argv[4])
+thread_bar_plot = Path(sys.argv[5])
+seq_name = sys.argv[6]
 
 info = {}
 if info_json.exists():
@@ -1262,18 +1258,6 @@ if info_json.exists():
         info = json.loads(info_json.read_text())
     except Exception:
         info = {}
-
-ov2slam_pid = info.get("ov2slam_pid")
-named_thread_names = {
-    "ov2_main",
-    "ov2_feed",
-    "ov2_map",
-    "ov2_est",
-    "ov2_lc",
-    "ov2_merge",
-    "ov2_vizkf",
-    "ov2_vizfr",
-}
 
 process_rows = []
 with process_csv.open() as f:
@@ -1305,36 +1289,6 @@ with thread_summary_csv.open() as f:
             continue
 
 thread_rows.sort(key=lambda item: (-item[2], item[1]))
-
-raw_thread_rows = []
-with thread_csv.open() as f:
-    reader = csv.DictReader(f)
-    for row in reader:
-        try:
-            raw_thread_rows.append(
-                (
-                    float(row["elapsed_s"]),
-                    int(row["tid"]),
-                    row["comm"],
-                    int(row["last_cpu"]),
-                    float(row["thread_cpu_percent"]),
-                )
-            )
-        except Exception:
-            continue
-
-
-def is_named_ov2slam_thread(comm: str, tid: int) -> bool:
-    return comm in named_thread_names or (ov2slam_pid is not None and tid == int(ov2slam_pid))
-
-
-named_thread_rows = [row for row in thread_rows if is_named_ov2slam_thread(row[0], row[1])]
-named_thread_rows.sort(key=lambda item: (-item[2], item[1]))
-
-named_thread_series = defaultdict(list)
-for elapsed_s, tid, comm, _last_cpu, cpu_pct in raw_thread_rows:
-    if is_named_ov2slam_thread(comm, tid):
-        named_thread_series[(comm, tid)].append((elapsed_s, cpu_pct))
 
 fig, ax = plt.subplots(figsize=(8, 4.5), dpi=160)
 times = [row[0] for row in process_rows]
@@ -1370,69 +1324,16 @@ if thread_rows:
     width = max(10, 0.65 * len(labels) + 3)
     fig, ax = plt.subplots(figsize=(width, 5.5), dpi=160)
     x = list(range(len(labels)))
-    ax.bar(x, values, color=colors)
+    bars = ax.bar(x, values, color=colors)
     ax.set_xticks(x)
     ax.set_xticklabels(labels, rotation=45, ha="right")
     ax.set_ylabel("mean CPU usage (%)")
     ax.set_ylim(0, 400)
     ax.set_title(f"{seq_name} thread CPU usage")
     ax.grid(True, axis="y", alpha=0.35)
+    ax.bar_label(bars, labels=[f"{value:.1f}" for value in values], padding=3, fontsize=8, rotation=90)
     fig.tight_layout()
     fig.savefig(thread_bar_plot, bbox_inches="tight")
-    plt.close(fig)
-
-if named_thread_series:
-    fig, ax = plt.subplots(figsize=(10, 5.5), dpi=160)
-    palette = plt.get_cmap("tab10")
-    for idx, ((comm, tid), series) in enumerate(sorted(named_thread_series.items(), key=lambda item: item[0][1])):
-        series.sort(key=lambda item: item[0])
-        label = f"{comm} [{tid}]"
-        if ov2slam_pid is not None and tid == int(ov2slam_pid):
-            label = f"{comm} [{tid}] main"
-        ax.plot(
-            [item[0] for item in series],
-            [item[1] for item in series],
-            label=label,
-            linewidth=1.25,
-            color=palette(idx % 10),
-        )
-
-    ax.set_xlabel("time since monitor start (s)")
-    ax.set_ylabel("thread CPU usage (%)")
-    ax.set_ylim(0, 400)
-    ax.set_title(f"{seq_name} OV2SLAM named-thread CPU usage")
-    ax.grid(True, alpha=0.35)
-    ax.legend(loc="upper right", fontsize=8, ncol=2)
-    fig.tight_layout()
-    fig.savefig(named_thread_plot, bbox_inches="tight")
-    plt.close(fig)
-
-if named_thread_rows:
-    labels = []
-    values = []
-    colors = []
-    palette = plt.get_cmap("tab10")
-    for idx, (comm, tid, mean_cpu, _max_cpu, dominant_core) in enumerate(named_thread_rows):
-        core_label = dominant_core if dominant_core != "" else "?"
-        label = f"{comm} [{tid}] @ CPU {core_label}"
-        if ov2slam_pid is not None and tid == int(ov2slam_pid):
-            label = f"{comm} [{tid}] main @ CPU {core_label}"
-        labels.append(label)
-        values.append(mean_cpu)
-        colors.append(palette(idx % 10))
-
-    width = max(8, 0.75 * len(labels) + 3)
-    fig, ax = plt.subplots(figsize=(width, 5.5), dpi=160)
-    x = list(range(len(labels)))
-    ax.bar(x, values, color=colors)
-    ax.set_xticks(x)
-    ax.set_xticklabels(labels, rotation=45, ha="right")
-    ax.set_ylabel("mean CPU usage (%)")
-    ax.set_ylim(0, 400)
-    ax.set_title(f"{seq_name} OV2SLAM named-thread CPU usage")
-    ax.grid(True, axis="y", alpha=0.35)
-    fig.tight_layout()
-    fig.savefig(named_thread_bar_plot, bbox_inches="tight")
     plt.close(fig)
 PY
   then
@@ -1440,10 +1341,21 @@ PY
     return 1
   fi
 
+  if ! THREAD_ROLE_SEQUENCE_DIR="$out_dir" \
+    THREAD_ROLE_THREAD_CSV="$thread_csv" \
+    THREAD_ROLE_PID_INFO_JSON="$info_json" \
+    THREAD_ROLE_OUTPUT_PNG="$named_thread_plot" \
+    THREAD_ROLE_SUMMARY_CSV="$named_thread_summary_csv" \
+    THREAD_ROLE_FIGURE_TITLE="$seq_name OV2SLAM named threads" \
+    python3 "$WORKSPACE_ROOT/benchmarks/plot_named_thread_roles.py"; then
+    LAST_ERROR="OV2SLAM named-thread role plot generation failed for $seq_name"
+    return 1
+  fi
+
   CPU_PLOT_PATH="$process_plot"
   THREAD_BAR_PLOT_PATH="$thread_bar_plot"
   NAMED_THREAD_PLOT_PATH="$named_thread_plot"
-  NAMED_THREAD_BAR_PLOT_PATH="$named_thread_bar_plot"
+  NAMED_THREAD_SUMMARY_CSV_PATH="$named_thread_summary_csv"
   return 0
 }
 
@@ -1770,7 +1682,7 @@ run_sequence_attempt() {
     log_info "  CPU  <- $(basename -- "$CPU_PLOT_PATH")"
     log_info "  CPU  <- $(basename -- "$THREAD_BAR_PLOT_PATH")"
     log_info "  CPU  <- $(basename -- "$NAMED_THREAD_PLOT_PATH")"
-    log_info "  CPU  <- $(basename -- "$NAMED_THREAD_BAR_PLOT_PATH")"
+    log_info "  CPU  <- $(basename -- "$NAMED_THREAD_SUMMARY_CSV_PATH")"
   else
     warnings+=("OV2SLAM CPU monitor plots were not generated.")
   fi

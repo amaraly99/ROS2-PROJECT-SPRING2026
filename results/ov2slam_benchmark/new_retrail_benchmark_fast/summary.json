@@ -2,7 +2,7 @@
   {
     "seq": "MH_05_difficult",
     "success": true,
-    "rmse": 0.212758,
+    "rmse": 0.142173,
     "traj_used": "ov2slam_kfs_traj.txt",
     "traj_reason": "paper-style choice: keyframe trajectory after online local BA / loop closure, without end-of-sequence full BA",
     "warnings": "",

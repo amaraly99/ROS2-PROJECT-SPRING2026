@@ -21,7 +21,7 @@ seq_range_start: ""
 seq_range_end: ""
 
 node_name: /ov2slam_node
-ov2slam_cores: "1,2,3,4"
+ov2slam_cores: "0,1,2,3"
 retries: 2
 
 node_wait_timeout: 45

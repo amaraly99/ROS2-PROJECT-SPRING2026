@@ -12,7 +12,7 @@
   "effective_camera": "stereo",
   "effective_speed": "fast",
   "node_name": "/ov2slam_node",
-  "ov2slam_cores": "1,2,3,4",
+  "ov2slam_cores": "0,1,2,3",
   "sequence_retries": "2",
   "bag_rate": "1.0",
   "evo_correct_scale": false,
