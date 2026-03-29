@@ -1,4 +1,0 @@
-tid,comm,samples,mean_cpu_percent,max_cpu_percent,dominant_core,last_cpu
-125341,ros2,354,0.107,37.959,1,1
-125369,ros2-ust,353,0.000,0.000,2,2
-125370,ros2-ust,353,0.000,0.000,3,3
