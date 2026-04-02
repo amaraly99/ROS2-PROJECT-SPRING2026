@@ -1,0 +1,102 @@
+[
+  {
+    "seq": "MH_01_easy",
+    "success": true,
+    "rmse": 0.039896,
+    "traj_used": "ov2slam_kfs_traj.txt",
+    "traj_reason": "paper-style choice: keyframe trajectory after online local BA / loop closure, without end-of-sequence full BA",
+    "warnings": "",
+    "error": "",
+    "gt_verdict": "MH_01_easy.txt is already valid TUM format (timestamp tx ty tz qx qy qz qw); normalized copy written to gt.tum"
+  },
+  {
+    "seq": "MH_02_easy",
+    "success": true,
+    "rmse": 0.038416,
+    "traj_used": "ov2slam_kfs_traj.txt",
+    "traj_reason": "paper-style choice: keyframe trajectory after online local BA / loop closure, without end-of-sequence full BA",
+    "warnings": "",
+    "error": "",
+    "gt_verdict": "MH_02_easy.txt is already valid TUM format (timestamp tx ty tz qx qy qz qw); normalized copy written to gt.tum"
+  },
+  {
+    "seq": "MH_03_medium",
+    "success": true,
+    "rmse": 2.826168,
+    "traj_used": "ov2slam_kfs_traj.txt",
+    "traj_reason": "paper-style choice: keyframe trajectory after online local BA / loop closure, without end-of-sequence full BA",
+    "warnings": "",
+    "error": "",
+    "gt_verdict": "MH_03_medium.txt is already valid TUM format (timestamp tx ty tz qx qy qz qw); normalized copy written to gt.tum"
+  },
+  {
+    "seq": "MH_04_difficult",
+    "success": true,
+    "rmse": 0.085816,
+    "traj_used": "ov2slam_kfs_traj.txt",
+    "traj_reason": "paper-style choice: keyframe trajectory after online local BA / loop closure, without end-of-sequence full BA",
+    "warnings": "",
+    "error": "",
+    "gt_verdict": "MH_04_difficult.txt is already valid TUM format (timestamp tx ty tz qx qy qz qw); normalized copy written to gt.tum"
+  },
+  {
+    "seq": "MH_05_difficult",
+    "success": true,
+    "rmse": 0.062531,
+    "traj_used": "ov2slam_kfs_traj.txt",
+    "traj_reason": "paper-style choice: keyframe trajectory after online local BA / loop closure, without end-of-sequence full BA",
+    "warnings": "",
+    "error": "",
+    "gt_verdict": "gt.tum is already valid TUM format (timestamp tx ty tz qx qy qz qw); normalized copy written to gt.tum"
+  },
+  {
+    "seq": "V1_01_easy",
+    "success": true,
+    "rmse": 0.056430,
+    "traj_used": "ov2slam_kfs_traj.txt",
+    "traj_reason": "paper-style choice: keyframe trajectory after online local BA / loop closure, without end-of-sequence full BA",
+    "warnings": "",
+    "error": "",
+    "gt_verdict": "V1_01_easy.txt is already valid TUM format (timestamp tx ty tz qx qy qz qw); normalized copy written to gt.tum"
+  },
+  {
+    "seq": "V1_02_medium",
+    "success": true,
+    "rmse": 0.077681,
+    "traj_used": "ov2slam_kfs_traj.txt",
+    "traj_reason": "paper-style choice: keyframe trajectory after online local BA / loop closure, without end-of-sequence full BA",
+    "warnings": "",
+    "error": "",
+    "gt_verdict": "V1_02_medium.txt is already valid TUM format (timestamp tx ty tz qx qy qz qw); normalized copy written to gt.tum"
+  },
+  {
+    "seq": "V1_03_difficult",
+    "success": true,
+    "rmse": 1.838089,
+    "traj_used": "ov2slam_kfs_traj.txt",
+    "traj_reason": "paper-style choice: keyframe trajectory after online local BA / loop closure, without end-of-sequence full BA",
+    "warnings": "",
+    "error": "",
+    "gt_verdict": "V1_03_difficult.txt is already valid TUM format (timestamp tx ty tz qx qy qz qw); normalized copy written to gt.tum"
+  },
+  {
+    "seq": "V2_01_easy",
+    "success": true,
+    "rmse": 0.075817,
+    "traj_used": "ov2slam_kfs_traj.txt",
+    "traj_reason": "paper-style choice: keyframe trajectory after online local BA / loop closure, without end-of-sequence full BA",
+    "warnings": "",
+    "error": "",
+    "gt_verdict": "V2_01_easy.txt is already valid TUM format (timestamp tx ty tz qx qy qz qw); normalized copy written to gt.tum"
+  },
+  {
+    "seq": "V2_02_medium",
+    "success": true,
+    "rmse": 0.738834,
+    "traj_used": "ov2slam_kfs_traj.txt",
+    "traj_reason": "paper-style choice: keyframe trajectory after online local BA / loop closure, without end-of-sequence full BA",
+    "warnings": "",
+    "error": "",
+    "gt_verdict": "V2_02_medium.txt is already valid TUM format (timestamp tx ty tz qx qy qz qw); normalized copy written to gt.tum"
+  }
+]

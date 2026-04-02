@@ -6,6 +6,7 @@ from __future__ import annotations
 import csv
 import math
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from statistics import mean
@@ -14,6 +15,12 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from report_common import parse_timing_log
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -134,7 +141,7 @@ def parse_evo_metrics(path: Path) -> EvoMetrics:
             raise ValueError(f"Could not parse {pattern!r} from {path}")
         return cast(match.group(1))
 
-    gt_count = extract(r"Loaded\s+(\d+)\s+stamps and poses from: .*gt\.tum", int)
+    gt_count = extract(r"Loaded\s+(\d+)\s+stamps and poses from: .*?(\.txt|gt\.tum)", int)
     est_count = extract(r"Loaded\s+(\d+)\s+stamps and poses from: .*ov2slam_kfs_traj\.txt", int)
     matched_found = extract(r"Found\s+(\d+)\s+of max\.\s+\d+\s+possible matching timestamps", int)
     matched_max = extract(r"Found\s+\d+\s+of max\.\s+(\d+)\s+possible matching timestamps", int)
@@ -165,6 +172,19 @@ def parse_timing_csv(path: Path) -> dict[str, tuple[float, float]]:
     if missing:
         raise ValueError(f"Missing timers in {path}: {missing}")
     return timings
+
+
+def parse_timers_any(seq_dir: Path) -> dict[str, tuple[float, float]]:
+    log_path = seq_dir / "ov2slam.log"
+    if log_path.exists():
+        timings = parse_timing_log(log_path)
+        missing = [key for key in TIMER_KEYS if key not in timings]
+        if not missing:
+            return timings
+    csv_path = seq_dir / "ov2slam_timings.csv"
+    if csv_path.exists():
+        return parse_timing_csv(csv_path)
+    raise FileNotFoundError(f"Missing both ov2slam.log and ov2slam_timings.csv for {seq_dir}")
 
 
 def parse_process_cpu_csv(path: Path) -> CpuMetrics:
@@ -217,7 +237,7 @@ def collect_sequences(report_root: Path) -> list[SequenceData]:
                 seq_dir=seq_dir,
                 evo=parse_evo_metrics(seq_dir / f"{name}_evo.txt"),
                 cpu=parse_process_cpu_csv(seq_dir / "ov2slam_process_cpu.csv"),
-                timers=parse_timing_csv(seq_dir / "ov2slam_timings.csv"),
+                timers=parse_timers_any(seq_dir),
                 roles=parse_role_csv(seq_dir / "ov2slam_named_thread_roles_aggregated.csv"),
             )
         )
@@ -361,7 +381,7 @@ def build_report(sequences: list[SequenceData], header: dict[str, str]) -> str:
         "- **APE and RPE visuals:** the report reuses the saved `*_ape_xy.png` and `*_rpe_trans.png` files already generated during benchmarking."
     )
     lines.append(
-        "- **Front-end and backend timing:** timing values come from `ov2slam_timings.csv`, specifically the `mean_ms` and `std_ms` columns for the selected timers."
+        "- **Front-end and backend timing:** timing values are taken from the final `Time Logs Summary` block in `ov2slam.log`; `ov2slam_timings.csv` is only used as a fallback if the log summary is unavailable."
     )
     lines.append(
         "- **Process CPU:** process-level CPU statistics are computed from the sampled `process_cpu_percent` values in `ov2slam_process_cpu.csv`."

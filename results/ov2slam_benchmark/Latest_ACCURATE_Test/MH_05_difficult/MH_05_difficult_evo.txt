@@ -1,0 +1,33 @@
+--------------------------------------------------------------------------------
+Loaded 22212 stamps and poses from: /home/amaraly/ROS2-PROJECT-SPRING2026/datasets/euroc/MH_05_difficult/MH_05_difficult.txt
+Loaded 368 stamps and poses from: /home/amaraly/ROS2-PROJECT-SPRING2026/results/ov2slam_benchmark/Latest_ACCURATE_Test/MH_05_difficult/ov2slam_kfs_traj.txt
+--------------------------------------------------------------------------------
+Synchronizing trajectories...
+Found 364 of max. 368 possible matching timestamps between...
+	/home/amaraly/ROS2-PROJECT-SPRING2026/datasets/euroc/MH_05_difficult/MH_05_difficult.txt
+and:	/home/amaraly/ROS2-PROJECT-SPRING2026/results/ov2slam_benchmark/Latest_ACCURATE_Test/MH_05_difficult/ov2slam_kfs_traj.txt
+..with max. time diff.: 0.1 (s) and time offset: 0.0 (s).
+--------------------------------------------------------------------------------
+Aligning using Umeyama's method...
+Rotation of alignment:
+[[ 0.74748969 -0.25830882  0.61199323]
+ [-0.66424671 -0.29891706  0.6851459 ]
+ [ 0.00595599 -0.91865399 -0.3950182 ]]
+Translation of alignment:
+[ 4.49030372 -1.73840769  0.56948969]
+Scale correction: 1.0
+--------------------------------------------------------------------------------
+Compared 364 absolute pose pairs.
+Calculating APE for translation part pose relation...
+--------------------------------------------------------------------------------
+APE w.r.t. translation part (m)
+(with SE(3) Umeyama alignment)
+
+       max	0.159809
+      mean	0.060201
+    median	0.056714
+       min	0.004687
+      rmse	0.066874
+       sse	1.627870
+       std	0.029121
+

@@ -7,22 +7,22 @@ dataset_root: ""
 output_root: ""
 
 # Leave empty to keep timestamp-based result folders.
-results_name: "Latest_2core_accurate_stereo"
+results_name: "Latest_FAST_Test"
 
 # Leave empty to use speed/camera-derived default params file.
 params_file: ""
 camera: stereo
-speed: accurate
+speed: fast
 trajectory_policy: paper
 
 # Use either `sequences` or `seq_range_start`/`seq_range_end`.
-sequences: [MH_01_easy, MH_02_easy, MH_03_medium, MH_04_difficult, MH_05_difficult, V1_01_easy, V1_02_medium, V1_03_difficult, V2_01_easy, V2_02_medium]
+sequences: [V1_03_difficult, V2_01_easy, V2_02_medium]
 seq_range_start: ""
 seq_range_end: ""
 
 node_name: /ov2slam_node
-ov2slam_cores: "0,1"
-retries: 3
+ov2slam_cores: "0,1,2,3"
+retries: 2
 
 node_wait_timeout: 45
 bag_timeout: 1200
