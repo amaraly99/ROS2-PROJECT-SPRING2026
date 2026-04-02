@@ -60,7 +60,7 @@ body_T_cam1: !!opencv-matrix
 # SLAM Parameters
 #--------------------------------------------------------------------------------------------
 debug: 0
-log_timings: 0
+log_timings: 1
 
 mono: 1
 stereo: 0

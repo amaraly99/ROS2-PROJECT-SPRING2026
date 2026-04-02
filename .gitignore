@@ -114,3 +114,33 @@ compile_commands.json
 # Calibration Images
 ############################################################
 ./camera_calib/calib_images/
+
+############################################################
+# Coding Agent Files
+############################################################
+.codex
+
+############################################################
+# Local MP4 testing
+############################################################
+My Movie.mp4
+My Movie_bag/
+mp4_to_bag.py
+stream_my_movie_frames.py
+streamed_images/
+
+############################################################
+# Research Paper copy / supplementary materials
+############################################################
+OV2SLAM.pdf
+OV2SLAM_HARDCODED_PARAMS.md
+mh04_named_thread_roles_aggregated.csv
+mh04_named_thread_roles_aggregated.png
+new_retrial_benchmark_metrics_report.md
+ov2slam_timings.csv
+
+############################################################
+# Results backups
+############################################################
+results/results_backup/
+	

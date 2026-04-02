@@ -29,7 +29,7 @@ Camera.k2l: 0.07653744
 Camera.p1l: -0.00246706
 Camera.p2l: 0.00278018
 
-# Right camera (EuRoC defaults - replace if using stereo)
+# Right camera (EuRoC defaults — replace if using stereo)
 Camera.fxr: 457.587
 Camera.fyr: 456.134
 Camera.cxr: 379.999
@@ -40,7 +40,7 @@ Camera.k2r:  0.07451284
 Camera.p1r: -0.00010473
 Camera.p2r: -3.555907e-05
 
-# Extrinsic T_body_cam0 (identity - replace if you have IMU)
+# Extrinsic T_body_cam0 (identity — replace if you have IMU)
 body_T_cam0: !!opencv-matrix
    rows: 4
    cols: 4
@@ -57,10 +57,18 @@ body_T_cam1: !!opencv-matrix
            0., 0., 0., 1.]
 
 #--------------------------------------------------------------------------------------------
-# SLAM Parameters
+# SLAM Parameters  (FAST profile — inspired by euroc_fast mono)
+#
+# Design: sacrifice accuracy for speed / low latency on Pi 5.
+#   - FAST detector (cheaper than cornerMinEigenVal)
+#   - No CLAHE pre-processing
+#   - Smaller KLT window (9 vs 15)
+#   - No loop closing
+#   - Larger feature spacing (50 px) = fewer features = less BA work
+#   - More lenient RANSAC / reproj thresholds (tolerate FAST jitter)
 #--------------------------------------------------------------------------------------------
-debug: 1
-log_timings: 0
+debug: 0
+log_timings: 1
 
 mono: 1
 stereo: 0
@@ -68,49 +76,63 @@ stereo: 0
 force_realtime: 1
 slam_mode: 1
 
+# No loop closing — saves a full thread
 buse_loop_closer: 0
 bdo_stereo_rect: 0
 alpha: 0.
 
+# OV5647 has mild distortion — must undistort
 bdo_undist: 1
-finit_parallax: 25. #25 — lowered for easier live init; raise back to 25 for more accurate triangulation
 
+# Init parallax — lowered from euroc's 20 to 15 because FAST features
+# attrit faster under KLT than Shi-Tomasi; need to init before they die
+finit_parallax: 15.
+
+# ── Feature Extractor ──
 use_shi_tomasi: 0
 use_fast: 1
 use_brief: 1
-use_singlescale_detector: 1
+use_singlescale_detector: 0   # cornerMinEigenVal per cell — fast AND trackable on OV5647
 
-nmaxdist: 35
+# Feature spacing — 35 gives ~18×13 = 234 cells at 640×480
+# (50 was too sparse — only ~108 cells, FAST couldn't fill enough)
+nmaxdist: 50
+
 nfast_th: 10
 dmaxquality: 0.001
 
-use_clahe: 1
+# Skip CLAHE — one less per-frame operation  (euroc_fast: 0)
+use_clahe: 0
 fclahe_val: 3
 
+# ── KLT Tracking ──
 do_klt: 1
 klt_use_prior: 1
-btrack_keyframetoframe: 0 #faster and allows for weird motion or fast motion
-nklt_win_size: 15
+btrack_keyframetoframe: 0   # frame-to-frame is cheaper
+nklt_win_size: 9            # euroc_fast uses 9 (vs 15 in accurate)
 nklt_pyr_lvl: 3
 
 nmax_iter: 30
 fmax_px_precision: 0.01
-fmax_fbklt_dist: 1.0
-nklt_err: 15 #30.
+fmax_fbklt_dist: 0.5        # euroc_fast: 0.5 — tighter forward-backward check
+nklt_err: 30.               # euroc_fast: 30 — more permissive error window
 
+# ── Local-Map Matching ──
 bdo_track_localmap: 1
 fmax_desc_dist: 0.2
 fmax_proj_pxdist: 2.
 
+# ── Outlier Rejection ──
 doepipolar: 1
 dop3p: 1
 bdo_random: 1
 nransac_iter: 100
-fransac_err: 1.5 #6.
+fransac_err: 3.              # euroc_fast: 3 — more lenient than accurate's 1.5
 
-fmax_reproj_err: 2.0 #6.
+fmax_reproj_err: 3.          # euroc_fast: 3 — matches RANSAC tolerance
 buse_inv_depth: 1
 
+# ── Ceres / BA ──
 robust_mono_th: 5.9915
 
 use_sparse_schur: 1
@@ -120,6 +142,8 @@ use_nonmonotic_step: 0
 
 apply_l2_after_robust: 1
 nmin_covscore: 25
-fkf_filtering_ratio: 0.80  # was 0.95 — lower = more aggressive KF culling = bounded map = stable CPU
+
+# KF filtering — euroc_fast uses 0.9 (keep more KFs for robustness)
+fkf_filtering_ratio: 0.9
 do_full_ba: 0
 
