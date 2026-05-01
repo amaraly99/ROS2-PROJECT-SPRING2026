@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  FastDDS / FastRTPS profile for HIL mode (alternative to cyclonedds_hil.xml).
+
+  Set environment before launching:
+    export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+    export FASTRTPS_DEFAULT_PROFILES_FILE=$PWD/config/hil/fastrtps_hil.xml
+    export ROS_DOMAIN_ID=0
+
+  Use this profile when the MATLAB side runs FastDDS (default for older
+  MATLAB ROS Toolbox versions). The participant adds the Windows host as a
+  unicast initial peer to bootstrap discovery across subnets / firewalls
+  that drop multicast.
+-->
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <participant profile_name="hil_participant" is_default_profile="true">
+    <rtps>
+      <builtin>
+        <discovery_config>
+          <discoveryProtocol>SIMPLE</discoveryProtocol>
+        </discovery_config>
+        <metatrafficUnicastLocatorList>
+          <locator>
+            <udpv4/>
+          </locator>
+        </metatrafficUnicastLocatorList>
+        <initialPeersList>
+          <!-- run_stack_hil.sh substitutes ${MATLAB_HOST_IP} via envsubst before launch -->
+          <locator>
+            <udpv4>
+              <address>${MATLAB_HOST_IP}</address>
+            </udpv4>
+          </locator>
+        </initialPeersList>
+      </builtin>
+    </rtps>
+  </participant>
+</profiles>
