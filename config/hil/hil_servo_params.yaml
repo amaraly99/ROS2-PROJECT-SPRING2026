@@ -1,0 +1,41 @@
+# ViSP Servo Parameters — HIL mode (Unreal NYC scene)
+#
+# Differs from src/visp_servo/config/servo_params.yaml only in:
+#   - target_class:  "person"  →  "car"   (NYC scene contains no people)
+#   - known_target_height:  1.7  →  1.5   (passenger sedan, meters)
+#
+# Camera intrinsics are unchanged: same OV5647 calibration is used because
+# OV2SLAM's hil_ov2slam.yaml carries the same fxl/fyl/cxl/cyl. ViSP and
+# SLAM must agree on intrinsics — keep these in sync if either is edited.
+visp_servo_node:
+  ros__parameters:
+    target_class: "car"
+    min_confidence: 0.3
+
+    image_width: 640
+    image_height: 480
+
+    lambda: 0.5
+    max_linear: 0.5
+    max_angular: 0.5
+
+    target_bbox_ratio: 0.35
+    bbox_ratio_tolerance: 0.05
+
+    lost_threshold: 15
+    search_timeout: 300
+    search_yaw_rate: 0.3
+    approach_ratio: 0.15
+    hover_error_thresh: 0.02
+
+    edge_margin_px: 50.0
+    vel_ramp_rate: 0.1
+
+    smoothing_window: 3
+
+    known_target_height: 1.5
+
+    cam_fx: 543.098
+    cam_fy: 539.702
+    cam_cx: 310.687
+    cam_cy: 222.928

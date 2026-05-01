@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  CycloneDDS profile for HIL mode (RPi5 ↔ MATLAB Windows host on same LAN).
+
+  Set environment before launching:
+    export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+    export CYCLONEDDS_URI=file://$PWD/config/hil/cyclonedds_hil.xml
+    export ROS_DOMAIN_ID=0
+
+  Override $MATLAB_HOST_IP via env before sourcing this file (run_stack_hil.sh
+  does this automatically). Multicast discovery is enabled but unicast peers
+  let the two hosts find each other even when multicast is filtered by the
+  network.
+-->
+<CycloneDDS xmlns="https://cdds.io/config" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+            xsi:schemaLocation="https://cdds.io/config https://raw.githubusercontent.com/eclipse-cyclonedds/cyclonedds/master/etc/cyclonedds.xsd">
+  <Domain id="any">
+    <General>
+      <AllowMulticast>spdp</AllowMulticast>
+      <Interfaces>
+        <NetworkInterface autodetermine="true" priority="default" multicast="default" />
+      </Interfaces>
+    </General>
+    <Discovery>
+      <Peers>
+        <!-- run_stack_hil.sh substitutes ${MATLAB_HOST_IP} via envsubst before launch -->
+        <Peer Address="${MATLAB_HOST_IP}"/>
+      </Peers>
+      <ParticipantIndex>auto</ParticipantIndex>
+    </Discovery>
+  </Domain>
+</CycloneDDS>
