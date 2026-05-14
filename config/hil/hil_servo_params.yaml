@@ -1,41 +1,112 @@
-# ViSP Servo Parameters — HIL mode (Unreal NYC scene)
+# ViSP Servo Parameters — HIL mode, stop-sign approach (v4: translation-only)
 #
-# Differs from src/visp_servo/config/servo_params.yaml only in:
-#   - target_class:  "person"  →  "car"   (NYC scene contains no people)
-#   - known_target_height:  1.7  →  1.5   (passenger sedan, meters)
+# State machine: SEARCHING → APPROACHING ↔ REACQUIRE → REACHED.
+# Filters at publish time: sim-stall override, floor clamp, velocity ramp.
 #
-# Camera intrinsics are unchanged: same OV5647 calibration is used because
-# OV2SLAM's hil_ov2slam.yaml carries the same fxl/fyl/cxl/cyl. ViSP and
-# SLAM must agree on intrinsics — keep these in sync if either is edited.
+# Coordinate convention (Simulink-confirmed):
+#   linear.x  = forward velocity  (+ = forward,  - = back)
+#   linear.y  = lateral velocity  (+ = LEFT,     - = RIGHT)
+#   linear.z  = vertical velocity (+ = UP,       - = DOWN)
+#   angular.y = pitch RATE        (+ = NOSE DOWN, integrated by Simulink)
+#   angular.z = yaw   RATE        (+ = YAW LEFT)
+#
+# Drone Simulink ICs: x=0, y=15, z=10, yaw=0, pitch=0.
+# Stop sign world position (from /sim/target_pose): (35.5, 23.7, 3.2, pi).
+#
 visp_servo_node:
   ros__parameters:
-    target_class: "car"
-    min_confidence: 0.3
-
-    image_width: 640
+    # ── Target selection ──────────────────────────────────────
+    target_class: "stop sign"
+    min_confidence: 0.20
+    image_width:  640
     image_height: 480
 
-    lambda: 0.5
-    max_linear: 0.5
-    max_angular: 0.5
+    # ── Control gains (translation-only during APPROACHING) ──
+    # vx = k_fwd * (target_bbox_ratio - bbox_ratio)         (≥ 0)
+    # vy = -k_lat * ex_norm                                  (full strength, NO mode switching)
+    # vz = -k_vz  * ey_norm   (when |ey_norm| > vert_deadband; clamped ≤ 0 during approach)
+    # wz = 0                                                 (yaw NEVER used to center)
+    # wy = -k_pitch_return * current_pitch                   (level the camera)
+    # Gains tuned aggressive — no physical-crash risk in sim, so prioritize
+    # visible motion in sim-time. If Windows-side sim_rate ≈ 0.05 (slow),
+    # observed wall-clock motion = sim_speed * sim_rate ≈ 5% of these caps.
+    k_fwd:           3.0
+    k_lat:           1.5
+    k_vz:            1.5
+    vert_deadband:   0.08
+    k_pitch_return:  1.0
+    pitch_zero_tol:  0.02
 
-    target_bbox_ratio: 0.35
-    bbox_ratio_tolerance: 0.05
+    # ── Velocity / acceleration limits ────────────────────────
+    max_linear:    3.0      # m/s in sim — fast since no real crash risk
+    max_angular:   0.8      # rad/s (kept moderate to avoid YOLO motion blur in SEARCH)
+    vel_ramp_rate: 1.5      # max Δv per tick — quick spool-up to commanded speed
 
-    lost_threshold: 15
-    search_timeout: 300
-    search_yaw_rate: 0.3
-    approach_ratio: 0.15
-    hover_error_thresh: 0.02
+    # ── Approach termination ──────────────────────────────────
+    # APPROACHING → REACHED when bbox_ratio ≥ hold_bbox_ratio AND
+    # |ex|<hold_center_tol AND |ey|<hold_center_tol, for reach_consec_ticks.
+    # target_bbox_ratio sets the asymptotic stop point (vx → 0 here);
+    # hold_bbox_ratio is the floor for declaring REACHED.
+    target_bbox_ratio:  0.55
+    hold_bbox_ratio:    0.50
+    hold_center_tol:    0.12
+    reach_consec_ticks: 8
 
-    edge_margin_px: 50.0
-    vel_ramp_rate: 0.1
+    # ── Lock-on (SEARCHING → APPROACHING) ─────────────────────
+    # Lock requires N consecutive detections AND |ex_norm| below tolerance
+    # (sign roughly facing us). Edge-of-frame detections in SEARCHING pull
+    # the search yaw target toward the sign via k_lockon_bias.
+    lockon_consec:  2
+    lockon_ex_tol:  0.5
+    k_lockon_bias:  0.5
 
-    smoothing_window: 3
+    # ── Search behavior (yaw-to-angle using ground-truth yaw) ─
+    # Sequence: anchor at startup yaw; target_R(-60°) → target_L(+60°)
+    # → target_CENTER(anchor) → strafe right → repeat (new anchor).
+    # k_search_yaw is a P gain on yaw error; settles when |err| < tol.
+    search_yaw_target_deg:     60.0
+    k_search_yaw:               1.0
+    search_yaw_arrive_tol_rad:  0.05    # ≈ 3°
+    search_settle_sec:          0.5     # hold after arrival for YOLO clean frames
+    search_strafe_speed:        0.6     # m/s right (Simulink -y)
+    search_strafe_dur_sec:      3.0     # → ~1.8m strafe per cycle
 
-    known_target_height: 1.5
+    # ── REACQUIRE (adaptive timeout) ──────────────────────────
+    # Triggered when detection drops during APPROACHING. Drone holds
+    # (zero cmd, pitch return). Timeout grows with how long approach has
+    # been active — long-tracked targets get longer benefit-of-the-doubt.
+    # timeout = clamp(base + k * approach_duration, base, max)
+    base_reacquire_sec: 1.0
+    k_persist:          0.3
+    max_reacquire_sec:  5.0
 
-    cam_fx: 543.098
-    cam_fy: 539.702
-    cam_cx: 310.687
-    cam_cy: 222.928
+    # ── Sim liveness (heartbeat watchdog) ─────────────────────
+    # /sim/heartbeat = Simulink simulation time (Float64, 20 Hz).
+    # SIM_PAUSED:  msgs arrive but sim_time advances < paused_rate × wall_time.
+    # SIM_DEAD:    no msg in dead_sec.
+    # When either holds, cmd_vel is forced to 0 (publish-time filter).
+    #
+    # paused_rate set very low (0.01) so a slow-but-running sim (rate ≈ 0.05)
+    # is NOT classified paused. Only near-zero rate trips the override.
+    # Bidirectional debounce (entry_sec + recovery_debounce_sec) prevents
+    # flicker when sim_rate sits near the threshold.
+    heartbeat_window_samples:  20      # sample-count window, ~1s at 20Hz
+    heartbeat_gap_sec:         0.2     # drop window if wall gap exceeds this
+    heartbeat_dead_sec:        1.5     # no heartbeat in this long = DEAD
+    sim_paused_rate:           0.01    # below this fraction of real-time = PAUSED
+    sim_unhealthy_entry_sec:   1.0     # must sustain unhealthy for this long before flipping
+    sim_recovery_debounce_sec: 0.5     # must sustain healthy for this long before resuming
+
+    # ── Floor safety (publish-time clamp) ─────────────────────
+    # If drone_z < safety_min_altitude and cmd.linear.z < 0, suppress
+    # further descent. Soft clamp — controller keeps running, never a state.
+    safety_min_altitude: 0.5
+    safety_pose_max_age: 2.0    # stale pose disables clamp (warn only)
+
+    # ── Watchdog & diagnostics ────────────────────────────────
+    watchdog_period_sec: 0.20   # if no det callback in 2× this, drive no-det path
+    diag_period_sec:     2.0
+
+    # ── Misc ──────────────────────────────────────────────────
+    smoothing_window:    5      # bbox sliding-mean window
+    debug_min_draw_conf: 0.15   # min conf to draw non-target detections in grey

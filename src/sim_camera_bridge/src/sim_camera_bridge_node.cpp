@@ -51,15 +51,18 @@ public:
 
         create_shm();
 
-        rclcpp::QoS qos(rclcpp::KeepLast(10));
-        qos.reliable().durability_volatile();
+        // BEST_EFFORT: drop dropped UDP fragments rather than retransmit. For raw
+        // 921 KB video frames, RELIABLE causes backpressure & rate collapse.
+        // MATLAB-side publisher must also be BEST_EFFORT — QoS handshake otherwise fails.
+        rclcpp::QoS qos(rclcpp::KeepLast(5));
+        qos.best_effort().durability_volatile();
         sub_ = create_subscription<Image>(
             input_topic_, qos,
             std::bind(&SimCameraBridge::on_image, this, std::placeholders::_1));
 
         RCLCPP_INFO(get_logger(),
-            "sim_camera_bridge: ready — subscribed to %s, writing %s SHM "
-            "(%dx%d NV12, %d slots)",
+            "sim_camera_bridge: ready — subscribed to %s (BEST_EFFORT), writing %s SHM "
+            "(%dx%d NV12, %d slots). NOTE: MATLAB publisher must also be BEST_EFFORT.",
             input_topic_.c_str(), shm_name_.c_str(),
             width_, height_, slots_);
     }

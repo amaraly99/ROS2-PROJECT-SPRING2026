@@ -1,50 +1,69 @@
-# ViSP Servo Parameters — Multi-Feature IBVS
+# ViSP Servo Parameters — non-HIL real-camera defaults (v4: translation-only).
+# Mirror of hil_servo_params.yaml with more conservative caps for real hardware.
+# State machine: SEARCHING → APPROACHING ↔ REACQUIRE → REACHED.
 visp_servo_node:
   ros__parameters:
     # ── Target selection ──────────────────────────────────────
-    target_class: "person"          # COCO class to track
-    min_confidence: 0.3             # Ignore detections below this
-
-    # ── Image dimensions (must match camera) ──────────────────
-    image_width: 640
+    target_class: "stop sign"
+    min_confidence: 0.30
+    image_width:  640
     image_height: 480
 
-    # ── IBVS gain ────────────────────────────────────────────
-    #   Controls convergence speed of all 4 corner features.
-    #   Higher = faster but may oscillate. Lower = smoother.
-    lambda: 0.5
+    # ── Control gains ────────────────────────────────────────
+    k_fwd:           1.0
+    k_lat:           0.4
+    k_vz:            0.4
+    vert_deadband:   0.08
+    k_pitch_return:  1.0
+    pitch_zero_tol:  0.02
 
-    # ── Velocity limits (m/s, rad/s) ──────────────────────────
-    max_linear: 0.5                 # Max linear velocity magnitude
-    max_angular: 0.5                # Max yaw rate
+    # ── Velocity / acceleration limits (conservative for real HW) ─
+    max_linear:    0.8
+    max_angular:   0.5
+    vel_ramp_rate: 0.30
 
-    # ── Desired distance (image-based) ────────────────────────
-    #   target_bbox_ratio: desired bbox height / image height
-    #   When the target fills this fraction, the drone is at the desired distance.
-    target_bbox_ratio: 0.35
-    bbox_ratio_tolerance: 0.05      # Dead-zone around target_bbox_ratio
+    # ── Approach termination ──────────────────────────────────
+    target_bbox_ratio:  0.55
+    hold_bbox_ratio:    0.50
+    hold_center_tol:    0.12
+    reach_consec_ticks: 8
 
-    # ── State machine ─────────────────────────────────────────
-    lost_threshold: 15              # Consecutive frames without detection → LOST
-    search_timeout: 300             # Frames of searching before giving up
-    search_yaw_rate: 0.3            # rad/s yaw rate during SEARCHING state
-    approach_ratio: 0.15            # bbox_ratio to transition APPROACHING → TRACKING
-    hover_error_thresh: 0.02        # Servo error norm below which → HOVERING
+    # ── Lock-on ───────────────────────────────────────────────
+    lockon_consec:  3
+    lockon_ex_tol:  0.5
+    k_lockon_bias:  0.5
 
-    # ── Safety ────────────────────────────────────────────────
-    edge_margin_px: 50.0            # Pixels from image edge to trigger re-centering
-    vel_ramp_rate: 0.1              # Max velocity change per callback (m/s per step)
+    # ── Search behavior ──────────────────────────────────────
+    search_yaw_target_deg:     60.0
+    k_search_yaw:               0.8
+    search_yaw_arrive_tol_rad:  0.05
+    search_settle_sec:          0.5
+    search_strafe_speed:        0.4
+    search_strafe_dur_sec:      3.0
 
-    # ── Smoothing ─────────────────────────────────────────────
-    smoothing_window: 3             # Moving average window for bbox corners
+    # ── REACQUIRE adaptive timeout ────────────────────────────
+    base_reacquire_sec: 1.0
+    k_persist:          0.3
+    max_reacquire_sec:  5.0
 
-    # ── Target geometry ───────────────────────────────────────
-    #   Known height of the target object (meters).
-    #   Used for depth estimation: Z = fy * known_height / bbox_height_px
-    known_target_height: 1.7        # Person height in meters
+    # ── Sim liveness ──────────────────────────────────────────
+    # Real hardware won't publish /sim/heartbeat; controller treats absence
+    # of heartbeat as healthy (grace state) so this section is mostly inert.
+    heartbeat_window_samples:  20
+    heartbeat_gap_sec:         0.2
+    heartbeat_dead_sec:        1.5
+    sim_paused_rate:           0.01
+    sim_unhealthy_entry_sec:   1.0
+    sim_recovery_debounce_sec: 0.5
 
-    # ── Camera intrinsics (OV5647 calibration) ────────────────
-    cam_fx: 543.098
-    cam_fy: 539.702
-    cam_cx: 310.687
-    cam_cy: 222.928
+    # ── Floor safety ──────────────────────────────────────────
+    safety_min_altitude: 0.5
+    safety_pose_max_age: 2.0
+
+    # ── Watchdog & diagnostics ────────────────────────────────
+    watchdog_period_sec: 0.20
+    diag_period_sec:     2.0
+
+    # ── Misc ──────────────────────────────────────────────────
+    smoothing_window:    5
+    debug_min_draw_conf: 0.15

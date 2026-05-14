@@ -16,13 +16,14 @@
 #             fastrtps via run_stack_hil.sh DDS=fastrtps option)
 #
 # Argument:
-#   target_class:=<coco_label>   default: car  (no people in NYC scene)
+#   target_class:=<coco_label>   default: stop sign (parking-lot scene)
 #
 # This launch file does not start sensors — sim_camera_bridge writes
 # directly into the SHM that ovcam_producer would fill on main.
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch.substitutions import EnvironmentVariable
 from launch_ros.actions import Node
@@ -31,15 +32,19 @@ from launch_ros.actions import Node
 def generate_launch_description():
     target_class = LaunchConfiguration('target_class')
     workspace    = LaunchConfiguration('workspace')
+    slam         = LaunchConfiguration('slam')
 
     return LaunchDescription([
         DeclareLaunchArgument(
-            'target_class', default_value='car',
-            description='COCO class for ViSP to track in the synthetic scene'),
+            'target_class', default_value='stop sign',
+            description='COCO class(es) for ViSP to track — comma-separated list'),
         DeclareLaunchArgument(
             'workspace', default_value=EnvironmentVariable('WORKSPACE_DIR',
                 default_value='/workspace'),
             description='Repo root inside the container (default: /workspace)'),
+        DeclareLaunchArgument(
+            'slam', default_value='true',
+            description='Set to false to skip OV2SLAM (useful for DDS-only testing)'),
 
         # 1. SHM filler — replaces ovcam_producer in HIL
         Node(
@@ -79,11 +84,12 @@ def generate_launch_description():
             executable='ov2slam_node',
             name='ov2slam',
             output='screen',
+            condition=IfCondition(slam),
             arguments=[PathJoinSubstitution(
                 [workspace, 'camera_calib', 'ov5647_ov2slam.yaml'])],
         ),
 
-        # 5. visp_servo — binary unchanged; HIL params override target_class to "car"
+        # 5. visp_servo — HIL params; target_class defaults to "stop sign"
         Node(
             package='visp_servo',
             executable='visp_servo_node',
