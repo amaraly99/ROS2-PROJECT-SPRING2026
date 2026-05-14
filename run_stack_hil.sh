@@ -23,6 +23,7 @@
 # Usage:
 #   ./run_stack_hil.sh [--no-slam]
 #   ./run_stack_hil.sh stop
+#   ./run_stack_hil.sh hz [topic]      # rate check with HIL DDS profile loaded
 #
 # Env vars (override before invoking):
 #   MATLAB_HOST_IP   — Windows host IP for unicast DDS discovery (REQUIRED)
@@ -33,7 +34,7 @@ cd "$(dirname "$0")"
 WS="$(pwd)"
 OPT="${1:-}"
 
-DDS="${DDS:-cyclonedds}"
+DDS="${DDS:-fastrtps}"
 ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-0}"
 
 log()  { echo "[hil] $*"; }
@@ -52,11 +53,32 @@ if [[ "$OPT" == "stop" ]]; then
     exit 0
 fi
 
+# ── hz <topic> — quick rate check with the right DDS env loaded ──────────────
+if [[ "$OPT" == "hz" ]]; then
+    TOPIC="${2:-/sim/camera/image_raw}"
+    RESOLVED="/tmp/fastrtps_hil.resolved.xml"
+    [[ -f "$RESOLVED" ]] || die "$RESOLVED not found — start the stack first"
+    DOCKER_TTY_FLAGS=""
+    [[ -t 0 && -t 1 ]] && DOCKER_TTY_FLAGS="-it"
+    sudo docker exec $DOCKER_TTY_FLAGS ros2_perception_stack bash -lc "
+        source /opt/ros/jazzy/setup.bash
+        source /workspace/install/setup.bash
+        export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+        export FASTRTPS_DEFAULT_PROFILES_FILE=${RESOLVED}
+        export ROS_DOMAIN_ID=${ROS_DOMAIN_ID}
+        ros2 topic hz ${TOPIC}
+    "
+    exit 0
+fi
+
 # ── pre-flight ────────────────────────────────────────────────────────────────
 command -v taskset >/dev/null    || die "'taskset' not found — install util-linux"
 command -v envsubst >/dev/null   || die "'envsubst' not found — install gettext-base"
 [[ -e /dev/hailo0 ]]             || die "/dev/hailo0 not found — Hailo HAT must be powered (yolo_producer needs it)"
-[[ -n "${MATLAB_HOST_IP:-}" ]]   || die "MATLAB_HOST_IP env var must be set (Windows host IP for DDS discovery)"
+MATLAB_HOST_IP="${MATLAB_HOST_IP:-192.168.56.1}"
+# Detect Pi's local IP on the same L2 segment as MATLAB (needed for interface whitelist)
+PI_LOCAL_IP=$(ip route get "${MATLAB_HOST_IP}" | grep -oP 'src \K[0-9.]+' | head -1)
+[[ -z "$PI_LOCAL_IP" ]] && die "Cannot determine local IP toward ${MATLAB_HOST_IP} — is eth0 up?"
 
 # Resolve DDS profile path + RMW
 case "$DDS" in
@@ -78,8 +100,32 @@ case "$DDS" in
 esac
 [[ -f "$DDS_TEMPLATE" ]] || die "DDS template not found: $DDS_TEMPLATE"
 
+# Kernel UDP buffers + IP fragment reassembly: MATLAB publishes raw 640x480 rgb8
+# frames (~921 KB) which fragment into ~660 UDP datagrams each at MTU 1500. The
+# stock RPi5 settings (rmem_max=208 KB, ipfrag_high_thresh=4 MB) drop fragments
+# under load and cap the receive rate near 13 Hz. Bumping to 16 MB / 32 MB lets
+# the full 30+ Hz stream through. Idempotent: only applies if not already set.
+NEEDED_RMEM=16777216
+NEEDED_FRAG_HIGH=33554432
+CUR_RMEM=$(sysctl -n net.core.rmem_max)
+CUR_FRAG=$(sysctl -n net.ipv4.ipfrag_high_thresh)
+if [[ "$CUR_RMEM" -lt "$NEEDED_RMEM" || "$CUR_FRAG" -lt "$NEEDED_FRAG_HIGH" ]]; then
+    log "Tuning kernel for MATLAB→Pi frame stream (sudo sysctl)..."
+    sudo sysctl -q \
+        net.core.rmem_max=16777216 \
+        net.core.rmem_default=16777216 \
+        net.core.wmem_max=16777216 \
+        net.core.wmem_default=16777216 \
+        net.ipv4.ipfrag_high_thresh=33554432 \
+        net.ipv4.ipfrag_low_thresh=25165824 \
+        net.ipv4.ipfrag_time=3 \
+        || die "sysctl tuning failed — DDS frame rate will be capped"
+fi
+
 # Substitute MATLAB_HOST_IP into the DDS profile (avoids hardcoded IPs in the repo)
-MATLAB_HOST_IP="$MATLAB_HOST_IP" envsubst < "$DDS_TEMPLATE" > "$DDS_RESOLVED"
+# Use sudo tee as fallback in case the file was previously created by root
+MATLAB_HOST_IP="$MATLAB_HOST_IP" PI_LOCAL_IP="$PI_LOCAL_IP" envsubst < "$DDS_TEMPLATE" > "$DDS_RESOLVED" \
+    || MATLAB_HOST_IP="$MATLAB_HOST_IP" PI_LOCAL_IP="$PI_LOCAL_IP" envsubst < "$DDS_TEMPLATE" | sudo tee "$DDS_RESOLVED" > /dev/null
 log "DDS=${DDS}  RMW=${RMW_IMPLEMENTATION}  profile=${DDS_RESOLVED}"
 log "MATLAB_HOST_IP=${MATLAB_HOST_IP}  ROS_DOMAIN_ID=${ROS_DOMAIN_ID}"
 
@@ -110,6 +156,7 @@ sleep 1
 LAUNCH_ARGS=""
 if [[ "$OPT" == "--no-slam" ]]; then
     log "OV2SLAM will be skipped (--no-slam)"
+    LAUNCH_ARGS="slam:=false"
 fi
 
 # ── 2. ROS2 launch (sim_camera_bridge + bridges + slam + visp) ────────────────
@@ -122,7 +169,7 @@ sudo docker exec -d ros2_perception_stack bash -lc "
     export ${DDS_ENV_VAR}
     export WORKSPACE_DIR=/workspace
     export LD_LIBRARY_PATH=/workspace/opencv/build/lib:\${LD_LIBRARY_PATH:-}
-    ros2 launch sim_camera_bridge hil_simulation.launch.py \
+    ros2 launch sim_camera_bridge hil_simulation.launch.py ${LAUNCH_ARGS} \
         > /tmp/hil_launch.log 2>&1
 "
 
@@ -136,8 +183,16 @@ done
     || die "sim_camera_bridge did not create /dev/shm/ovcam_frames — check /tmp/hil_launch.log"
 log "SHM created."
 
+# Fix permissions: sim_camera_bridge runs as root inside Docker and creates the
+# SHM + semaphore as root with umask-derived 0644. yolo_producer runs on the
+# host as a normal user and needs write access to sem_timedwait on /ovcam_ready.
+sudo chmod 666 /dev/shm/ovcam_frames /dev/shm/sem.ovcam_ready 2>/dev/null || true
+log "SHM permissions fixed (0666)."
+
 # ── 3. yolo_producer — host, Core 1 ───────────────────────────────────────────
 log "3/4  yolo_producer  →  core 1 (host, native)"
+# Ensure log file is writable (may have been left root-owned by a prior sudo run)
+sudo chmod 666 /tmp/yolo_producer.log 2>/dev/null || true
 taskset -c 1 python3 "${WS}/src/yolo_producer/yolo_producer.py" \
     --hef "${WS}/models/yolo26n_10h.hef" --no-image \
     > /tmp/yolo_producer.log 2>&1 &
@@ -163,5 +218,6 @@ echo "    /tmp/hil_launch.log     (ros2 launch — sim_camera_bridge, bridges, s
 echo "    /tmp/yolo_producer.log  (host, PID $YOLO_PID)"
 echo ""
 echo "  Stop:  ./run_stack_hil.sh stop"
+echo "  Rate:  ./run_stack_hil.sh hz [topic]    (defaults to /sim/camera/image_raw)"
 echo ""
 sep

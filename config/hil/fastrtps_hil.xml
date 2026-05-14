@@ -1,31 +1,48 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!--
-  FastDDS / FastRTPS profile for HIL mode (alternative to cyclonedds_hil.xml).
-
-  Set environment before launching:
-    export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-    export FASTRTPS_DEFAULT_PROFILES_FILE=$PWD/config/hil/fastrtps_hil.xml
-    export ROS_DOMAIN_ID=0
-
-  Use this profile when the MATLAB side runs FastDDS (default for older
-  MATLAB ROS Toolbox versions). The participant adds the Windows host as a
-  unicast initial peer to bootstrap discovery across subnets / firewalls
-  that drop multicast.
--->
 <profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+
+  <!-- Two UDPv4 transports:
+       udp_eth0 — 16 MB buffers, locked to eth0 (${PI_LOCAL_IP}) for MATLAB cross-machine
+                  frames.  Without this, DDS also uses wlan0 + docker0 and discovery
+                  breaks because MATLAB can only see eth0.
+       udp_lo   — loopback (127.0.0.1) for intra-Pi DDS between nodes in the container.
+                  Without this second transport, Pi nodes cannot discover or communicate
+                  with each other at all — /ovcam/image_raw, /yolo/detections, /cmd_vel
+                  all disappear from ros2 topic list. -->
+  <transport_descriptors>
+    <transport_descriptor>
+      <transport_id>udp_eth0</transport_id>
+      <type>UDPv4</type>
+      <sendBufferSize>16777216</sendBufferSize>
+      <receiveBufferSize>16777216</receiveBufferSize>
+      <interfaceWhiteList>
+        <address>${PI_LOCAL_IP}</address>
+      </interfaceWhiteList>
+    </transport_descriptor>
+    <transport_descriptor>
+      <transport_id>udp_lo</transport_id>
+      <type>UDPv4</type>
+      <interfaceWhiteList>
+        <address>127.0.0.1</address>
+      </interfaceWhiteList>
+    </transport_descriptor>
+  </transport_descriptors>
+
   <participant profile_name="hil_participant" is_default_profile="true">
     <rtps>
+      <userTransports>
+        <transport_id>udp_eth0</transport_id>
+        <transport_id>udp_lo</transport_id>
+      </userTransports>
+      <useBuiltinTransports>false</useBuiltinTransports>
       <builtin>
         <discovery_config>
           <discoveryProtocol>SIMPLE</discoveryProtocol>
+          <leaseDuration>
+            <sec>2147483647</sec>
+          </leaseDuration>
         </discovery_config>
-        <metatrafficUnicastLocatorList>
-          <locator>
-            <udpv4/>
-          </locator>
-        </metatrafficUnicastLocatorList>
         <initialPeersList>
-          <!-- run_stack_hil.sh substitutes ${MATLAB_HOST_IP} via envsubst before launch -->
           <locator>
             <udpv4>
               <address>${MATLAB_HOST_IP}</address>

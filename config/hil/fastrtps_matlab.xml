@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <participant profile_name="matlab_participant" is_default_profile="true">
+    <rtps>
+      <builtin>
+        <discovery_config>
+          <discoveryProtocol>SIMPLE</discoveryProtocol>
+        </discovery_config>
+        <metatrafficUnicastLocatorList>
+          <locator>
+            <udpv4>
+              <address>192.168.56.1</address>
+            </udpv4>
+          </locator>
+        </metatrafficUnicastLocatorList>
+        <metatrafficMulticastLocatorList/>
+        <initialPeersList>
+          <locator>
+            <udpv4>
+              <address>192.168.56.2</address>
+            </udpv4>
+          </locator>
+        </initialPeersList>
+      </builtin>
+      <defaultUnicastLocatorList>
+        <locator>
+          <udpv4>
+            <address>192.168.56.1</address>
+          </udpv4>
+        </locator>
+      </defaultUnicastLocatorList>
+      <defaultMulticastLocatorList/>
+    </rtps>
+  </participant>
+</profiles>

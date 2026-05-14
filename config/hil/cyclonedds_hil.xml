@@ -16,9 +16,9 @@
             xsi:schemaLocation="https://cdds.io/config https://raw.githubusercontent.com/eclipse-cyclonedds/cyclonedds/master/etc/cyclonedds.xsd">
   <Domain id="any">
     <General>
-      <AllowMulticast>spdp</AllowMulticast>
+      <AllowMulticast>false</AllowMulticast>
       <Interfaces>
-        <NetworkInterface autodetermine="true" priority="default" multicast="default" />
+        <NetworkInterface name="wlan0" priority="default" multicast="false" />
       </Interfaces>
     </General>
     <Discovery>
