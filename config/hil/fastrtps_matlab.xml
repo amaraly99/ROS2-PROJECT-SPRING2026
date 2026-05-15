@@ -1,4 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Fast DDS profile for the MATLAB/Simulink side of HIL mode.
+  This is a REFERENCE TEMPLATE — substitute your own values before use:
+
+    ${MATLAB_HOST_IP}  — IP address of the Windows machine running MATLAB
+                         (the interface MATLAB will bind for DDS traffic)
+    ${PI_ADDR}         — IP address of the Raspberry Pi (eth0)
+
+  Example: on the MATLAB machine, set these values to your actual IPs,
+  e.g. MATLAB_HOST_IP=192.168.X.Y  PI_ADDR=192.168.X.Z
+
+  Note: self-closing empty tags (e.g. <foo/>) crash Fast DDS v8.4.3.
+  They are intentionally absent from this file.
+-->
 <profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
   <participant profile_name="matlab_participant" is_default_profile="true">
     <rtps>
@@ -9,15 +23,14 @@
         <metatrafficUnicastLocatorList>
           <locator>
             <udpv4>
-              <address>192.168.56.1</address>
+              <address>${MATLAB_HOST_IP}</address>
             </udpv4>
           </locator>
         </metatrafficUnicastLocatorList>
-        <metatrafficMulticastLocatorList/>
         <initialPeersList>
           <locator>
             <udpv4>
-              <address>192.168.56.2</address>
+              <address>${PI_ADDR}</address>
             </udpv4>
           </locator>
         </initialPeersList>
@@ -25,11 +38,10 @@
       <defaultUnicastLocatorList>
         <locator>
           <udpv4>
-            <address>192.168.56.1</address>
+            <address>${MATLAB_HOST_IP}</address>
           </udpv4>
         </locator>
       </defaultUnicastLocatorList>
-      <defaultMulticastLocatorList/>
     </rtps>
   </participant>
 </profiles>

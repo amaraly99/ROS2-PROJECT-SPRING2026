@@ -18,7 +18,7 @@
     <General>
       <AllowMulticast>false</AllowMulticast>
       <Interfaces>
-        <NetworkInterface name="wlan0" priority="default" multicast="false" />
+        <NetworkInterface name="${PI_INTERFACE}" priority="default" multicast="false" />
       </Interfaces>
     </General>
     <Discovery>

@@ -76,9 +76,14 @@ command -v taskset >/dev/null    || die "'taskset' not found — install util-li
 command -v envsubst >/dev/null   || die "'envsubst' not found — install gettext-base"
 [[ -e /dev/hailo0 ]]             || die "/dev/hailo0 not found — Hailo HAT must be powered (yolo_producer needs it)"
 MATLAB_HOST_IP="${MATLAB_HOST_IP:-192.168.56.1}"
-# Detect Pi's local IP on the same L2 segment as MATLAB (needed for interface whitelist)
+if [[ "${MATLAB_HOST_IP}" == "192.168.56.1" ]]; then
+    log "WARNING: MATLAB_HOST_IP is the default (192.168.56.1) — set MATLAB_HOST_IP env var if your MATLAB machine uses a different address"
+fi
+# Detect Pi's local IP and outbound interface toward MATLAB (needed for DDS interface whitelist)
 PI_LOCAL_IP=$(ip route get "${MATLAB_HOST_IP}" | grep -oP 'src \K[0-9.]+' | head -1)
 [[ -z "$PI_LOCAL_IP" ]] && die "Cannot determine local IP toward ${MATLAB_HOST_IP} — is eth0 up?"
+PI_INTERFACE=$(ip route get "${MATLAB_HOST_IP}" | grep -oP 'dev \K\S+' | head -1)
+[[ -z "$PI_INTERFACE" ]] && die "Cannot determine network interface toward ${MATLAB_HOST_IP}"
 
 # Resolve DDS profile path + RMW
 case "$DDS" in
@@ -122,12 +127,15 @@ if [[ "$CUR_RMEM" -lt "$NEEDED_RMEM" || "$CUR_FRAG" -lt "$NEEDED_FRAG_HIGH" ]]; 
         || die "sysctl tuning failed — DDS frame rate will be capped"
 fi
 
-# Substitute MATLAB_HOST_IP into the DDS profile (avoids hardcoded IPs in the repo)
-# Use sudo tee as fallback in case the file was previously created by root
-MATLAB_HOST_IP="$MATLAB_HOST_IP" PI_LOCAL_IP="$PI_LOCAL_IP" envsubst < "$DDS_TEMPLATE" > "$DDS_RESOLVED" \
-    || MATLAB_HOST_IP="$MATLAB_HOST_IP" PI_LOCAL_IP="$PI_LOCAL_IP" envsubst < "$DDS_TEMPLATE" | sudo tee "$DDS_RESOLVED" > /dev/null
+# Substitute env vars into the DDS profile (avoids hardcoded IPs/interfaces in the repo).
+# PI_ADDR aliases PI_LOCAL_IP so fastrtps_matlab.xml template works if run manually.
+# Use sudo tee as fallback in case the file was previously created by root.
+MATLAB_HOST_IP="$MATLAB_HOST_IP" PI_LOCAL_IP="$PI_LOCAL_IP" PI_ADDR="$PI_LOCAL_IP" PI_INTERFACE="$PI_INTERFACE" \
+    envsubst < "$DDS_TEMPLATE" > "$DDS_RESOLVED" \
+    || MATLAB_HOST_IP="$MATLAB_HOST_IP" PI_LOCAL_IP="$PI_LOCAL_IP" PI_ADDR="$PI_LOCAL_IP" PI_INTERFACE="$PI_INTERFACE" \
+       envsubst < "$DDS_TEMPLATE" | sudo tee "$DDS_RESOLVED" > /dev/null
 log "DDS=${DDS}  RMW=${RMW_IMPLEMENTATION}  profile=${DDS_RESOLVED}"
-log "MATLAB_HOST_IP=${MATLAB_HOST_IP}  ROS_DOMAIN_ID=${ROS_DOMAIN_ID}"
+log "MATLAB_HOST_IP=${MATLAB_HOST_IP}  PI_LOCAL_IP=${PI_LOCAL_IP}  PI_INTERFACE=${PI_INTERFACE}  ROS_DOMAIN_ID=${ROS_DOMAIN_ID}"
 
 # ── clean stale state ─────────────────────────────────────────────────────────
 log "Cleaning up any stale processes / shm..."
