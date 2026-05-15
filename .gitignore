@@ -124,3 +124,8 @@ compile_commands.json
 # Calibration Images
 ############################################################
 ./camera_calib/calib_images/
+
+############################################################
+# Internal reports (contain private IPs / lab details)
+############################################################
+HIL_SYSTEM_STATUS_REPORT.md
