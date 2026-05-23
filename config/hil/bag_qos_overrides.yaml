@@ -1,0 +1,30 @@
+# QoS overrides for ros2 bag record
+# Pass via: ros2 bag record --qos-profile-overrides-path config/hil/bag_qos_overrides.yaml
+#
+# Without overrides, ros2 bag record subscribes with RELIABLE QoS. Topics
+# published BEST_EFFORT are DDS-incompatible with a RELIABLE subscriber and are
+# silently never received. The topics below use BEST_EFFORT publishers.
+
+/yolo/detections:
+  reliability: best_effort
+  durability: volatile
+  history: keep_last
+  depth: 10
+
+/yolo/annotated:
+  reliability: best_effort
+  durability: volatile
+  history: keep_last
+  depth: 2
+
+/visp/debug_image:
+  reliability: best_effort
+  durability: volatile
+  history: keep_last
+  depth: 2
+
+/sim/camera/image_raw:
+  reliability: best_effort
+  durability: volatile
+  history: keep_last
+  depth: 2

@@ -55,6 +55,7 @@ frame.raw
 # Benchmark results / experiment data (CSVs, figures, run dirs)
 ############################################################
 benchmarks/results/
+*.csv
 
 ############################################################
 # Claude Code internal files
@@ -65,11 +66,14 @@ benchmarks/results/
 # Datasets / bags / large files
 ############################################################
 datasets/
+bags/
 *.db3
 *.bag
+*.mcap
 *.zip
 *.tar
 *.tar.gz
+*.vsix
 
 ############################################################
 # Docker
