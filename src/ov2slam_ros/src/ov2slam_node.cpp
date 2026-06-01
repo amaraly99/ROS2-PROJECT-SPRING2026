@@ -235,5 +235,18 @@ int main(int argc, char** argv)
         std::this_thread::sleep_for(dura);
     }
 
-    return 0;
+    // Join worker threads before returning — omitting this causes std::terminate()
+    // because the local std::thread destructors fire on a still-joinable thread.
+    slamthread.join();
+    sync_thread.join();
+
+    // Flush C++ streams before _exit() — _exit() skips fflush() so all
+    // buffered cout/cerr would be silently dropped without this.
+    std::cout.flush();
+    std::cerr.flush();
+    // Skip normal C++ teardown: rmw_fastrtps destroys priority-ceiling mutexes
+    // during rcl handle destruction, triggering a glibc assertion on ARM64
+    // (tpp.c: new_prio outside FIFO range). _exit() bypasses local-var destructors;
+    // writeResults() was already called from SlamManager::run() before shutdown.
+    _exit(0);
 }

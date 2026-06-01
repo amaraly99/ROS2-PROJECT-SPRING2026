@@ -131,18 +131,22 @@ class OvcamReader:
 
     def wait_frame(self, timeout_s: float = 0.5) -> Tuple[np.ndarray, int]:
         """Wait for a new frame. Returns (rgb_image, timestamp_ns) or raises TimeoutError."""
-        # Wait on semaphore with timeout
-        now = time.clock_gettime(time.CLOCK_REALTIME)
-        ts = _Timespec(int(now + timeout_s), int(((now + timeout_s) % 1) * 1e9))
-        if _pt.sem_timedwait(self.sem, ctypes.byref(ts)) != 0:
-            raise TimeoutError("ovcam semaphore timeout")
-
-        # write_seq sits at offset 64 in ShmGlobal (alignas(64) member)
-        ws_buf = self.mm[64:72]
-        write_seq = struct.unpack("<Q", ws_buf)[0]
-
-        if write_seq == self._last_seq:
-            raise TimeoutError("no new frame")
+        # Poll write_seq instead of consuming the shared /ovcam_ready semaphore.
+        # That semaphore is ALSO drained by ovcam_bridge, and each sem_post wakes
+        # only ONE waiter — so with two consumers the wakeups split ~50/50 and our
+        # frame rate halves whenever ovcam_bridge runs (i.e. SLAM enabled).
+        # write_seq (offset 64) is the SHM's authoritative "latest frame" marker,
+        # so polling it lets every consumer observe every frame independently with
+        # no wakeup stealing. yolo_producer owns its core, so a 1 ms poll is
+        # negligible CPU and adds <=1 ms latency at 20 Hz.
+        deadline = time.monotonic() + timeout_s
+        while True:
+            write_seq = struct.unpack("<Q", self.mm[64:72])[0]
+            if write_seq != self._last_seq:
+                break
+            if time.monotonic() >= deadline:
+                raise TimeoutError("ovcam poll timeout")
+            time.sleep(0.001)
 
         # Determine slot index
         idx = ((write_seq - 1) % self.slot_count)

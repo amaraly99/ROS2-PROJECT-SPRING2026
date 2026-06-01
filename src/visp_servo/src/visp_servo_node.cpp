@@ -113,6 +113,7 @@ private:
     std::vector<std::string> target_classes_;
     double min_confidence_;
     int    image_width_, image_height_;
+    bool   debug_image_enabled_;
 
     // Control gains
     double k_fwd_, k_lat_, k_vz_;
@@ -310,6 +311,7 @@ private:
 
         declare_parameter("smoothing_window",     5);
         declare_parameter("debug_min_draw_conf",  0.15);
+        declare_parameter("debug_image_enabled",  true);
     }
 
     void load_parameters() {
@@ -325,8 +327,9 @@ private:
             start = comma + 1;
         }
         min_confidence_  = get_parameter("min_confidence").as_double();
-        image_width_     = get_parameter("image_width").as_int();
-        image_height_    = get_parameter("image_height").as_int();
+        image_width_          = get_parameter("image_width").as_int();
+        image_height_         = get_parameter("image_height").as_int();
+        debug_image_enabled_  = get_parameter("debug_image_enabled").as_bool();
 
         k_fwd_           = get_parameter("k_fwd").as_double();
         k_lat_           = get_parameter("k_lat").as_double();
@@ -386,9 +389,10 @@ private:
             "/yolo/detections", qos_be,
             std::bind(&VispServoNode::on_detections, this, std::placeholders::_1));
 
-        sub_image_ = create_subscription<Image>(
-            "/ovcam/image_raw", qos_rel,
-            std::bind(&VispServoNode::on_image, this, std::placeholders::_1));
+        if (debug_image_enabled_)
+            sub_image_ = create_subscription<Image>(
+                "/ovcam/image_raw", qos_rel,
+                std::bind(&VispServoNode::on_image, this, std::placeholders::_1));
 
         sub_sim_cam_ = create_subscription<Image>(
             "/sim/camera/image_raw", qos_be,
@@ -410,8 +414,9 @@ private:
             "/sim/heartbeat", rclcpp::QoS(10),
             std::bind(&VispServoNode::on_heartbeat, this, std::placeholders::_1));
 
-        pub_cmd_   = create_publisher<Twist>("/cmd_vel", 10);
-        pub_debug_ = create_publisher<Image>("/visp/debug_image", qos_be);
+        pub_cmd_ = create_publisher<Twist>("/cmd_vel", 10);
+        if (debug_image_enabled_)
+            pub_debug_ = create_publisher<Image>("/visp/debug_image", qos_be);
 
         auto t0 = now();
         last_log_time_          = t0;
@@ -439,6 +444,7 @@ private:
     // Callbacks
     // ─────────────────────────────────────────────────────────
     void on_image(const Image::SharedPtr msg) {
+        if (!debug_image_enabled_) return;
         ovcam_count_++;
         try {
             auto cv_ptr = cv_bridge::toCvShare(msg, "mono8");
@@ -1062,7 +1068,6 @@ private:
         if (dt < 0.5) return;
 
         double sim_cam_hz = sim_cam_count_ / dt;
-        double ovcam_hz   = ovcam_count_   / dt;
         double det_hz     = det_count_     / dt;
         double pitch_hz   = pitch_count_   / dt;
         double pose_hz    = pose_count_    / dt;
@@ -1088,14 +1093,26 @@ private:
             tgt_bearing_err_deg = wrap_to_pi(bearing - drone_yaw_rad_) * 180.0 / M_PI;
         }
 
-        RCLCPP_INFO(get_logger(),
-            "[diag] state=%s | /sim/cam=%.1f /ovcam=%.1f /yolo=%.1f /pitch=%.1f /pose=%.1f "
-            "/hb=%.1f /cmd=%.1f | sim=%s rate=%.2f sim_t=%.2f | xyz=(%.1f,%.1f,%.1f) "
-            "yaw=%.2f | tgt: dist=%.1fm bearing_err=%+.1f°",
-            state_name(state_), sim_cam_hz, ovcam_hz, det_hz, pitch_hz, pose_hz,
-            hb_hz, cmd_hz, sh_str, sim_rate_meas, last_hb_sim_,
-            drone_x_, drone_y_, drone_z_, drone_yaw_rad_,
-            tgt_dist, tgt_bearing_err_deg);
+        if (debug_image_enabled_) {
+            double ovcam_hz = ovcam_count_ / dt;
+            RCLCPP_INFO(get_logger(),
+                "[diag] state=%s | /sim/cam=%.1f /ovcam=%.1f /yolo=%.1f /pitch=%.1f /pose=%.1f "
+                "/hb=%.1f /cmd=%.1f | sim=%s rate=%.2f sim_t=%.2f | xyz=(%.1f,%.1f,%.1f) "
+                "yaw=%.2f | tgt: dist=%.1fm bearing_err=%+.1f°",
+                state_name(state_), sim_cam_hz, ovcam_hz, det_hz, pitch_hz, pose_hz,
+                hb_hz, cmd_hz, sh_str, sim_rate_meas, last_hb_sim_,
+                drone_x_, drone_y_, drone_z_, drone_yaw_rad_,
+                tgt_dist, tgt_bearing_err_deg);
+        } else {
+            RCLCPP_INFO(get_logger(),
+                "[diag] state=%s | /sim/cam=%.1f /ovcam=N/A(debug off) /yolo=%.1f /pitch=%.1f /pose=%.1f "
+                "/hb=%.1f /cmd=%.1f | sim=%s rate=%.2f sim_t=%.2f | xyz=(%.1f,%.1f,%.1f) "
+                "yaw=%.2f | tgt: dist=%.1fm bearing_err=%+.1f°",
+                state_name(state_), sim_cam_hz, det_hz, pitch_hz, pose_hz,
+                hb_hz, cmd_hz, sh_str, sim_rate_meas, last_hb_sim_,
+                drone_x_, drone_y_, drone_z_, drone_yaw_rad_,
+                tgt_dist, tgt_bearing_err_deg);
+        }
 
         sim_cam_count_ = ovcam_count_ = det_count_ = pitch_count_ = 0;
         pose_count_ = hb_count_ = cmd_count_ = 0;

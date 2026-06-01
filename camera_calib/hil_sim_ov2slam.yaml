@@ -1,0 +1,143 @@
+%YAML 1.0
+---
+
+#--------------------------------------------------------------------------------------------
+# Camera Parameters  (Simulink 3D Camera — synthetic, ideal pinhole, 640x480)
+#
+# CONFIRMED Simulink block settings (Parameters tab):
+#   Focal length : [554, 554] px   (corrected from Simulink-default 1109 that was for 1280x720)
+#   Optical center: [320, 240]     (corrected from 640,360 — was 1280x720 centre)
+#   Image size   : [480, 640]      rows x cols = 480x640
+#   Radial dist  : [0, 0]
+#   Tangential   : [0, 0]
+#   HFOV         : 60°   (fx = 320 / tan(30°) ≈ 554)
+#
+# DO NOT USE for the real OV5647 path — see ov5647_ov2slam.yaml.
+#
+# Diff from ov5647_ov2slam.yaml:
+#   fxl  543.097664 → 554.0
+#   fyl  539.701638 → 554.0
+#   cxl  310.686570 → 320.0
+#   cyl  222.928406 → 240.0
+#   k1l … p2l      → 0.0 (synthetic camera, no lens distortion)
+#   finit_parallax  25. → 10.  (14 Hz stream; drone may be slow to accumulate parallax)
+#   debug           0   → 1   (verbose for bring-up; set to 0 once stable)
+#--------------------------------------------------------------------------------------------
+
+Camera.topic_left:  /ovcam/image_raw
+Camera.topic_right: /ovcam/image_raw
+
+Camera.model_left:  pinhole
+Camera.model_right: pinhole
+
+Camera.left_nwidth:  640
+Camera.left_nheight: 480
+
+Camera.right_nwidth:  752
+Camera.right_nheight: 480
+
+# Intrinsics — Simulink 3D Camera, 60° HFOV, 640x480
+Camera.fxl: 554.0
+Camera.fyl: 554.0
+Camera.cxl: 320.0
+Camera.cyl: 240.0
+
+# Distortion — ideal pinhole, zero distortion
+Camera.k1l: 0.0
+Camera.k2l: 0.0
+Camera.p1l: 0.0
+Camera.p2l: 0.0
+
+# Right camera (EuRoC defaults — unused in mono mode)
+Camera.fxr: 457.587
+Camera.fyr: 456.134
+Camera.cxr: 379.999
+Camera.cyr: 255.238
+
+Camera.k1r: -0.28368365
+Camera.k2r:  0.07451284
+Camera.p1r: -0.00010473
+Camera.p2r: -3.555907e-05
+
+# Extrinsic T_body_cam0 (identity — no IMU)
+body_T_cam0: !!opencv-matrix
+   rows: 4
+   cols: 4
+   dt: d
+   data: [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+
+body_T_cam1: !!opencv-matrix
+   rows: 4
+   cols: 4
+   dt: d
+   data: [0.0125552670891, -0.999755099723,  0.0182237714554, -0.0198435579556,
+           0.999598781151,  0.0130119051815,  0.0251588363115,  0.0453689425024,
+          -0.0253898008918,  0.0179005838253,  0.999517347078,  0.00786212447038,
+           0., 0., 0., 1.]
+
+#--------------------------------------------------------------------------------------------
+# SLAM Parameters
+#--------------------------------------------------------------------------------------------
+debug: 1
+log_timings: 0
+
+mono: 1
+stereo: 0
+
+force_realtime: 1
+slam_mode: 1
+
+buse_loop_closer: 1
+bdo_stereo_rect: 0
+alpha: 0.
+
+bdo_undist: 1
+finit_parallax: 10.  # lowered from 25 — 14 Hz HIL stream + drone may be slow-moving at init
+
+use_shi_tomasi: 0
+use_fast: 0
+use_brief: 1
+use_singlescale_detector: 1
+
+nmaxdist: 35
+nfast_th: 10
+dmaxquality: 0.001
+
+use_clahe: 1
+fclahe_val: 3
+
+do_klt: 1
+klt_use_prior: 1
+btrack_keyframetoframe: 0
+nklt_win_size: 15
+nklt_pyr_lvl: 3
+
+nmax_iter: 30
+fmax_px_precision: 0.01
+fmax_fbklt_dist: 1.0
+nklt_err: 15
+
+bdo_track_localmap: 1
+fmax_desc_dist: 0.2
+fmax_proj_pxdist: 2.
+
+doepipolar: 1
+dop3p: 1
+bdo_random: 1
+nransac_iter: 100
+fransac_err: 1.5
+
+fmax_reproj_err: 2.0
+buse_inv_depth: 1
+
+robust_mono_th: 5.9915
+
+use_sparse_schur: 1
+use_dogleg: 0
+use_subspace_dogleg: 0
+use_nonmonotic_step: 0
+
+apply_l2_after_robust: 1
+nmin_covscore: 25
+fkf_filtering_ratio: 0.80
+do_full_ba: 0
