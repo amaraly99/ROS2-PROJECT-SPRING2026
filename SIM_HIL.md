@@ -69,19 +69,85 @@ Resolution other than 640 × 480 will be rejected by `sim_camera_bridge`.
 
 ## MATLAB startup sequence
 
-Run these steps **in order every session**. Never deviate — especially rule 3.
+Run these steps **in order every session**. Do not skip or reorder.
 
-| Step | Action | Notes |
+### Step 1 — Clear and set environment (before anything else)
+
+In the MATLAB Command Window immediately after opening MATLAB:
+
+```matlab
+clear all
+setenv('RMW_IMPLEMENTATION','rmw_fastrtps_cpp')
+setenv('ROS_DOMAIN_ID','0')
+setenv('FASTRTPS_DEFAULT_PROFILES_FILE','C:\path\to\matlab\HIL\fastrtps_matlab.xml')
+```
+
+> **Path note:** replace the `FASTRTPS_DEFAULT_PROFILES_FILE` path with the actual location of `fastrtps_matlab.xml` on your machine. The file ships with this repo at `matlab/` — copy it locally if needed.  
+> **`clear all` is only safe here.** Never run it again after step 2 — it destroys the ROS context and requires a full MATLAB restart.
+
+### Step 2 — Initialise ROS
+
+```matlab
+run hil_ros_init_LT
+```
+
+Creates the `/matlab_bridge` node, waits 3 s for FastRTPS peer discovery, and sets up all publishers and subscribers (`/sim/camera/image_raw`, `/cmd_vel`, `/vo_pose`, state topics). Watch for `=== LT Init complete ===` in the console.
+
+### Step 3 — Open the Simulink model
+
+Open `hil_closed_loop.slx`. Do **not** press Run yet.
+
+### Step 4 — Pre-register the MATLAB Function block
+
+In the Command Window:
+
+```matlab
+read_cmdvel_live_interp
+```
+
+This will print an error (wrong number of arguments) — **that is expected and safe to ignore.** Running it once forces MATLAB to compile and register the function. Without this step, pressing Run on the Simulink model produces a block-level error. After running it here, that error goes away.
+
+### Step 5 — Run the Simulink model
+
+Press **Run** on `hil_closed_loop.slx`. Set simulation pacing to 1 s wall clock (real time). Unreal Engine launches and `latest_frame` starts populating in the workspace. Confirm with:
+
+```matlab
+whos latest_frame   % expect 480x640x3 uint8
+```
+
+At this point, if the RPi5 stack is already running (`./run_stack_hil.sh`), the drone will begin moving according to the control law as soon as the Pi receives frames. If the Pi stack is not running yet, the drone sits idle — that is normal.
+
+### Step 6 — Start the camera publisher
+
+Once `latest_frame` is confirmed in the workspace:
+
+```matlab
+run sim_camera_publisher_timer_LT
+```
+
+Set `PUBLISH_HZ` at the top of the script before running (default 20). This starts sending bgr8 frames to the RPi5 at 20 Hz. The loop is now closed — the Pi receives frames, YOLO detects, ViSP computes `/cmd_vel`, and Simulink moves the drone.
+
+### Step 7 — Live view *(optional)*
+
+```matlab
+run live_camera_view_LT
+```
+
+Single-panel 5 Hz viewer showing exactly what the Pi is receiving. No network traffic (reads local workspace only). Close the figure or call `stop(live_view_timer_LT)` to stop.
+
+---
+
+**Summary**
+
+| # | Command | Gate |
 |---|---|---|
-| 1 | `run hil_ros_init_LT` | Sets middleware env vars, creates `/matlab_bridge` node, waits 3 s for FastRTPS discovery, creates all publishers/subscribers. **Do this before opening Simulink.** |
-| 2 | Open and run `hil_closed_loop.slx` | Set pacing = 1 s wall clock (real time). Unreal launches; `latest_frame` starts populating in the workspace. |
-| 3 | `run sim_camera_publisher_timer_LT` | Set `PUBLISH_HZ` at the top of the script first (default 20). Starts sending frames to the RPi5. |
-| 4 | `run live_camera_view_LT` *(optional)* | Single-panel 5 Hz live view of what the Pi is receiving. Close the figure or call `stop(live_view_timer_LT)` to stop. |
-
-**Critical rules**
-- `hil_ros_init_LT` sets `RMW_IMPLEMENTATION=rmw_fastrtps_cpp` and `ROS_DOMAIN_ID=0` automatically — do not set them manually beforehand.
-- **Never run `clear all` after step 1.** It destroys the RCL context; the only recovery is a full MATLAB restart.
-- `read_cmdvel_live_interp.m` is a MATLAB Function block embedded inside `hil_closed_loop.slx` — it does not need to be run manually. It reads `sim_cmdvel` / `sim_cmdvel_ver` written by `hil_ros_init_LT`'s `/cmd_vel` callback and writes `sim_pitch_angle` / `sim_pose` back for the state publisher.
+| 1 | `clear all` + 3× `setenv(...)` | Fresh MATLAB session only |
+| 2 | `run hil_ros_init_LT` | Must see `=== LT Init complete ===` |
+| 3 | Open `hil_closed_loop.slx` | — |
+| 4 | `read_cmdvel_live_interp` *(expect error — ignore)* | Fixes Simulink block error |
+| 5 | Run `hil_closed_loop.slx` | `latest_frame` must appear in workspace |
+| 6 | `run sim_camera_publisher_timer_LT` | Loop closes; Pi receives frames |
+| 7 | `run live_camera_view_LT` *(optional)* | — |
 
 ## MATLAB topics and workspace variables
 
