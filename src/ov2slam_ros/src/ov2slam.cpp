@@ -207,6 +207,12 @@ void SlamManager::run()
 
             // 3. Check if we are done with a sequence!
             // ========================================
+            // Floor cam_delay at 500 ms so intermittent streams (sim pauses, HIL gaps)
+            // cannot trigger auto-exit until 50 s of complete silence.
+            // At 10 Hz normal operation cam_delay≈0.1 s, so this floor is never reached;
+            // it only activates when back-to-back bursts (post-reset) drive it below 500 ms.
+            if( cam_delay > 0 )
+                cam_delay = std::max(cam_delay, 0.5);
             bool c1 = cam_delay > 0;
             bool c2 = ( nh->now().seconds() - last_img_time ) > 100. * cam_delay;
             bool c3 = !bnew_img_available_;

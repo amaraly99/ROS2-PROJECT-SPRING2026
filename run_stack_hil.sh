@@ -21,9 +21,12 @@
 #   Core 2,3   OV2SLAM
 #
 # Usage:
-#   ./run_stack_hil.sh [--no-slam]
+#   ./run_stack_hil.sh [--no-slam] [--debug-image]
 #   ./run_stack_hil.sh stop
 #   ./run_stack_hil.sh hz [topic]      # rate check with HIL DDS profile loaded
+#
+#   --no-slam       skip OV2SLAM (cores 2-3 free, ovcam_bridge also skipped)
+#   --debug-image   publish /visp/debug_image back to MATLAB (921 KB/frame extra)
 #
 # Env vars (override before invoking):
 #   MATLAB_HOST_IP   — Windows host IP for unicast DDS discovery (REQUIRED)
@@ -33,6 +36,14 @@
 cd "$(dirname "$0")"
 WS="$(pwd)"
 OPT="${1:-}"
+
+# Parse flags (scan all args so order doesn't matter)
+SLAM_ON=true
+DEBUG_IMAGE_ON=false
+for arg in "$@"; do
+    [[ "$arg" == "--no-slam"     ]] && SLAM_ON=false
+    [[ "$arg" == "--debug-image" ]] && DEBUG_IMAGE_ON=true
+done
 
 DDS="${DDS:-fastrtps}"
 ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-0}"
@@ -160,15 +171,22 @@ sudo docker run -d \
     ros2_perception_stack sleep infinity
 sleep 1
 
-# helper: launch the ROS2 node group inside the container
-LAUNCH_ARGS=""
-if [[ "$OPT" == "--no-slam" ]]; then
-    log "OV2SLAM will be skipped (--no-slam)"
-    LAUNCH_ARGS="slam:=false"
+# helper: build launch args from parsed flags.
+# OV2SLAM is always started separately (below) so we always pass slam:=false to the
+# launch file. This lets the drone begin its search pattern before SLAM initializes,
+# which prevents the premature auto-exit that fires when parallax is near-zero at
+# startup (buffered frames make cam_delay tiny → 100×cam_delay threshold fires fast).
+LAUNCH_ARGS=" slam:=false"
+[[ "$SLAM_ON"        == "false" ]] && log "OV2SLAM will be skipped (--no-slam)"
+[[ "$DEBUG_IMAGE_ON" == "true"  ]] && LAUNCH_ARGS+=" debug_image:=true" && log "Debug image enabled (--debug-image)"
+# ovcam_bridge is needed when SLAM will be started later, or debug is on
+if [[ "$SLAM_ON" == "false" && "$DEBUG_IMAGE_ON" == "false" ]]; then
+    LAUNCH_ARGS+=" ovcam:=false"
+    log "ovcam_bridge will be skipped (slam off + debug off)"
 fi
 
-# ── 2. ROS2 launch (sim_camera_bridge + bridges + slam + visp) ────────────────
-log "2/4  ros2 launch hil_simulation (cores 0,2,3)"
+# ── 2. ROS2 launch (sim_camera_bridge + bridges + visp — NO slam yet) ─────────
+log "2/4  ros2 launch hil_simulation (cores 0,2,3 — slam deferred)"
 sudo docker exec -d ros2_perception_stack bash -lc "
     source /opt/ros/jazzy/setup.bash
     source /workspace/install/setup.bash
@@ -201,8 +219,12 @@ log "SHM permissions fixed (0666)."
 log "3/4  yolo_producer  →  core 1 (host, native)"
 # Ensure log file is writable (may have been left root-owned by a prior sudo run)
 sudo chmod 666 /tmp/yolo_producer.log 2>/dev/null || true
-taskset -c 1 python3 "${WS}/src/yolo_producer/yolo_producer.py" \
-    --hef "${WS}/models/yolo26n_10h.hef" --no-image \
+# --conf 0.20: publish detections down to 0.20 so visp (min_confidence=0.20) can
+#   act on low-confidence stop signs (default 0.25 silently clipped the 0.20-0.25 band).
+# python3 -u: unbuffered stdout so the per-stage timing/fps log is readable live
+#   (block-buffered output otherwise leaves /tmp/yolo_producer.log empty for minutes).
+taskset -c 1 python3 -u "${WS}/src/yolo_producer/yolo_producer.py" \
+    --hef "${WS}/models/yolo26n_10h.hef" --no-image --conf 0.20 \
     > /tmp/yolo_producer.log 2>&1 &
 YOLO_PID=$!
 for i in $(seq 1 20); do
@@ -212,7 +234,49 @@ done
 [[ -e /dev/shm/yolo_shm ]] \
     || die "yolo_producer failed — check /tmp/yolo_producer.log"
 
-# ── 4. summary ────────────────────────────────────────────────────────────────
+# ── 4. OV2SLAM — deferred start + watchdog, cores 2,3 ────────────────────────
+if [[ "$SLAM_ON" == "true" ]]; then
+    log "4/4  OV2SLAM deferred: waiting 15 s for drone to begin motion before init..."
+    sleep 15
+    log "Starting OV2SLAM watchdog  →  cores 2,3 (Docker)"
+    # Watchdog loop: restarts ov2slam_node whenever it exits (crash or auto-exit).
+    # Runs in the background so run_stack_hil.sh returns immediately.
+    # Stops when the Docker container is gone (stack was stopped).
+    # Pre-create log file as root (via docker) so the host ahmed user can append.
+    sudo docker exec ros2_perception_stack bash -c "
+        touch /tmp/ov2slam_hil.log && chmod 666 /tmp/ov2slam_hil.log
+    " 2>/dev/null || true
+    (
+        RMW="${RMW_IMPLEMENTATION}"
+        DDS_VAR="${DDS_ENV_VAR}"
+        ROS_ID="${ROS_DOMAIN_ID}"
+        while sudo docker inspect ros2_perception_stack --format '{{.State.Running}}' 2>/dev/null | grep -q true; do
+            # Redirect inside the container (root) to avoid host permission issues.
+            sudo docker exec ros2_perception_stack bash -lc "
+                source /opt/ros/jazzy/setup.bash
+                source /workspace/install/setup.bash
+                export RMW_IMPLEMENTATION=${RMW}
+                export ROS_DOMAIN_ID=${ROS_ID}
+                export ${DDS_VAR}
+                export LD_LIBRARY_PATH=/workspace/opencv/build/lib:\${LD_LIBRARY_PATH:-}
+                taskset -c 2,3 ros2 run ov2slam ov2slam_node \
+                    /workspace/camera_calib/hil_sim_ov2slam.yaml \
+                    >> /tmp/ov2slam_hil.log 2>&1
+            "
+            sudo docker inspect ros2_perception_stack --format '{{.State.Running}}' 2>/dev/null | grep -q true \
+                && echo "[hil-watchdog] ov2slam exited — restarting in 3 s..." >> /tmp/ov2slam_hil.log \
+                && sleep 3
+        done
+        echo "[hil-watchdog] container gone — watchdog exiting" >> /tmp/ov2slam_hil.log
+    ) &
+    WATCHDOG_PID=$!
+    log "OV2SLAM watchdog PID $WATCHDOG_PID — log: /tmp/ov2slam_hil.log"
+else
+    log "4/4  OV2SLAM skipped (--no-slam)"
+    WATCHDOG_PID=""
+fi
+
+# ── 5. summary ────────────────────────────────────────────────────────────────
 sep
 echo ""
 echo "  HIL stack is running."
@@ -222,8 +286,11 @@ echo "    /sim/camera/image_raw  sensor_msgs/Image  rgb8  640x480  ~20 Hz"
 echo "    DDS=${DDS}  ROS_DOMAIN_ID=${ROS_DOMAIN_ID}"
 echo ""
 echo "  Logs:"
-echo "    /tmp/hil_launch.log     (ros2 launch — sim_camera_bridge, bridges, slam, visp)"
+echo "    /tmp/hil_launch.log     (ros2 launch — sim_camera_bridge, bridges, visp)"
 echo "    /tmp/yolo_producer.log  (host, PID $YOLO_PID)"
+if [[ "$SLAM_ON" == "true" ]]; then
+echo "    /tmp/ov2slam_hil.log    (OV2SLAM watchdog PID $WATCHDOG_PID — auto-restarts on exit)"
+fi
 echo ""
 echo "  Stop:  ./run_stack_hil.sh stop"
 echo "  Rate:  ./run_stack_hil.sh hz [topic]    (defaults to /sim/camera/image_raw)"

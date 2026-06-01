@@ -110,3 +110,10 @@ visp_servo_node:
     # ── Misc ──────────────────────────────────────────────────
     smoothing_window:    5      # bbox sliding-mean window
     debug_min_draw_conf: 0.15   # min conf to draw non-target detections in grey
+
+    # ── Debug image ───────────────────────────────────────────
+    # When false: /visp/debug_image is not published and /ovcam/image_raw is
+    # not subscribed — eliminates ~11 MB/s Pi→MATLAB DDS traffic and the
+    # GRAY→BGR + OpenCV draw + serialise pipeline on Core 0.
+    # Override at launch time: ros2 launch ... debug_image:=true
+    debug_image_enabled: false

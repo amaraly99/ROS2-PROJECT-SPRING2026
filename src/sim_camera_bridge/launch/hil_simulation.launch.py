@@ -30,9 +30,12 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    target_class = LaunchConfiguration('target_class')
-    workspace    = LaunchConfiguration('workspace')
-    slam         = LaunchConfiguration('slam')
+    target_class  = LaunchConfiguration('target_class')
+    workspace     = LaunchConfiguration('workspace')
+    slam          = LaunchConfiguration('slam')
+    ovcam         = LaunchConfiguration('ovcam')
+    debug_image   = LaunchConfiguration('debug_image')
+    calib_yaml    = LaunchConfiguration('calib_yaml')
 
     return LaunchDescription([
         DeclareLaunchArgument(
@@ -45,6 +48,18 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'slam', default_value='true',
             description='Set to false to skip OV2SLAM (useful for DDS-only testing)'),
+        DeclareLaunchArgument(
+            'ovcam', default_value='true',
+            description='Set to false to skip ovcam_bridge (safe only when slam:=false and debug_image:=false)'),
+        DeclareLaunchArgument(
+            'debug_image', default_value='false',
+            description='Publish /visp/debug_image back to MATLAB (expensive — 921 KB/frame)'),
+        DeclareLaunchArgument(
+            'calib_yaml',
+            default_value=PathJoinSubstitution(
+                [EnvironmentVariable('WORKSPACE_DIR', default_value='/workspace'),
+                 'camera_calib', 'hil_sim_ov2slam.yaml']),
+            description='OV2SLAM calibration YAML path — override to swap configs without editing this file'),
 
         # 1. SHM filler — replaces ovcam_producer in HIL
         Node(
@@ -62,12 +77,14 @@ def generate_launch_description():
             }],
         ),
 
-        # 2. ovcam_bridge — unchanged from main; reads SHM, publishes /ovcam/image_raw mono8
+        # 2. ovcam_bridge — reads SHM, publishes /ovcam/image_raw mono8
+        #    Only needed when slam:=true or debug_image:=true; skip otherwise.
         Node(
             package='ovcam_bridge',
             executable='ovcam_bridge_node',
             name='ovcam_bridge',
             output='screen',
+            condition=IfCondition(ovcam),
         ),
 
         # 3. yolo_bridge — unchanged from main; reads /yolo_shm, publishes /yolo/detections
@@ -78,18 +95,23 @@ def generate_launch_description():
             output='screen',
         ),
 
-        # 4. OV2SLAM — same yaml as main pipeline (intrinsics + topic match HIL)
+        # 4. OV2SLAM — HIL-specific calibration via calib_yaml arg (default: hil_sim_ov2slam.yaml).
+        #    Pinned to cores 2,3. Normally started by run_stack_hil.sh via ros2 run (slam:=false
+        #    is passed to this launch file) so this node block is only used for direct ros2 launch
+        #    invocations. The calib_yaml arg allows swapping configs without editing this file.
         Node(
             package='ov2slam',
             executable='ov2slam_node',
             name='ov2slam',
             output='screen',
+            prefix='taskset -c 2,3',
             condition=IfCondition(slam),
-            arguments=[PathJoinSubstitution(
-                [workspace, 'camera_calib', 'ov5647_ov2slam.yaml'])],
+            arguments=[calib_yaml],
         ),
 
         # 5. visp_servo — HIL params; target_class defaults to "stop sign"
+        #    debug_image_enabled overrides the YAML default so the launch arg
+        #    takes precedence without requiring a YAML edit.
         Node(
             package='visp_servo',
             executable='visp_servo_node',
@@ -98,7 +120,8 @@ def generate_launch_description():
             parameters=[
                 PathJoinSubstitution(
                     [workspace, 'config', 'hil', 'hil_servo_params.yaml']),
-                {'target_class': target_class},
+                {'target_class': target_class,
+                 'debug_image_enabled': debug_image},
             ],
         ),
     ])

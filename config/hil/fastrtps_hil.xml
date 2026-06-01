@@ -39,8 +39,12 @@
         <discovery_config>
           <discoveryProtocol>SIMPLE</discoveryProtocol>
           <leaseDuration>
-            <sec>2147483647</sec>
+            <sec>60</sec>
           </leaseDuration>
+          <!-- Re-announcement period = leaseDuration/3 = 20s.
+               Infinite (2147483647) caused FastRTPS to never re-announce,
+               so any node whose initial SPDP was missed (e.g. ovcam_bridge
+               during its 500ms SHM wait at launch) stayed invisible forever. -->
         </discovery_config>
         <initialPeersList>
           <locator>
