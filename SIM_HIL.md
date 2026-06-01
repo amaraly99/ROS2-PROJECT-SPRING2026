@@ -21,8 +21,8 @@ changes come from launch-file parameter overrides, not source edits.
 ```
 MATLAB/Simulink (Windows)                    
   Unreal NYC scene → ROS2 Image publisher → /sim/camera/image_raw
-                                            (rgb8, 640x480, ~20 Hz,
-                                             RELIABLE+VOLATILE)
+                                            (bgr8, 640x480, ~20 Hz,
+                                             BEST_EFFORT+VOLATILE)
                                                 ▼
 ┌──── RPi5  Docker (--ipc=host) ────────────────────────────────────┐
 │                                                                   │
@@ -56,16 +56,61 @@ MATLAB/Simulink (Windows)
 |---|---|
 | Topic | `/sim/camera/image_raw` |
 | Type | `sensor_msgs/Image` |
-| Encoding | `rgb8` |
+| Encoding | `bgr8` (Unreal RGB channels swapped before publish — YOLO/OpenCV expects BGR) |
 | Resolution | **640 × 480** (must match — `sim_camera_bridge` rejects mismatches) |
 | Rate | ~20 Hz (any rate ≤ 30 Hz is fine; pipeline runs at MATLAB publish rate) |
-| QoS | RELIABLE + VOLATILE + KEEP_LAST(10) |
+| QoS | BEST_EFFORT + VOLATILE + Depth 5 |
 | `ROS_DOMAIN_ID` | `0` |
 | DDS | matches the RPi5 side — choose one (see below) |
 
 The Hailo HEF model is compiled for **640 × 640** input; YOLO letterboxes
 the 640 × 480 frame internally with 80 px gray padding top/bottom.
 Resolution other than 640 × 480 will be rejected by `sim_camera_bridge`.
+
+## MATLAB startup sequence
+
+Run these steps **in order every session**. Never deviate — especially rule 3.
+
+| Step | Action | Notes |
+|---|---|---|
+| 1 | `run hil_ros_init_LT` | Sets middleware env vars, creates `/matlab_bridge` node, waits 3 s for FastRTPS discovery, creates all publishers/subscribers. **Do this before opening Simulink.** |
+| 2 | Open and run `hil_closed_loop.slx` | Set pacing = 1 s wall clock (real time). Unreal launches; `latest_frame` starts populating in the workspace. |
+| 3 | `run sim_camera_publisher_timer_LT` | Set `PUBLISH_HZ` at the top of the script first (default 20). Starts sending frames to the RPi5. |
+| 4 | `run live_camera_view_LT` *(optional)* | Single-panel 5 Hz live view of what the Pi is receiving. Close the figure or call `stop(live_view_timer_LT)` to stop. |
+
+**Critical rules**
+- `hil_ros_init_LT` sets `RMW_IMPLEMENTATION=rmw_fastrtps_cpp` and `ROS_DOMAIN_ID=0` automatically — do not set them manually beforehand.
+- **Never run `clear all` after step 1.** It destroys the RCL context; the only recovery is a full MATLAB restart.
+- `read_cmdvel_live_interp.m` is a MATLAB Function block embedded inside `hil_closed_loop.slx` — it does not need to be run manually. It reads `sim_cmdvel` / `sim_cmdvel_ver` written by `hil_ros_init_LT`'s `/cmd_vel` callback and writes `sim_pitch_angle` / `sim_pose` back for the state publisher.
+
+## MATLAB topics and workspace variables
+
+### Published by MATLAB → RPi5
+
+| Topic | Type | QoS | Rate | Purpose |
+|---|---|---|---|---|
+| `/sim/camera/image_raw` | `sensor_msgs/Image` | BEST_EFFORT + VOLATILE + Depth 5 | 20 Hz | bgr8 frames from Unreal, deduped on checksum |
+| `/sim/pitch_angle` | `std_msgs/Float64` | RELIABLE + VOLATILE | 20 Hz | Drone pitch (rad) for ViSP state feedback |
+| `/sim/drone_pose` | `std_msgs/Float64MultiArray` | RELIABLE + VOLATILE | 20 Hz | `[x, y, z, pitch, yaw]` from Simulink integrators |
+| `/sim/heartbeat` | `std_msgs/Float64` | RELIABLE + VOLATILE | 20 Hz | Simulink simulation time (used as image timestamp) |
+| `/sim/target_pose` | `std_msgs/Float64MultiArray` | RELIABLE + TRANSIENT_LOCAL | 1 Hz | Fixed target position `[35.5, 23.7, 3.2, π]` |
+
+### Subscribed by MATLAB ← RPi5
+
+| Topic | Type | Written to workspace | Purpose |
+|---|---|---|---|
+| `/cmd_vel` | `geometry_msgs/Twist` | `sim_vx`, `sim_vy`, `sim_vz`, `sim_wy`, `sim_wz`; batch: `sim_cmdvel`, `sim_cmdvel_ver` | ViSP velocity commands → Simulink drone dynamics |
+| `/vo_pose` | `geometry_msgs/PoseStamped` | `sim_vo_pose` `[x,y,z,qx,qy,qz,qw]`, `sim_vo_pose_count` | OV2SLAM output — logged for SLAM experiment |
+
+### Camera publish rate guide
+
+Test in order: **14 → 20 → 30 Hz** (set `PUBLISH_HZ` in `sim_camera_publisher_timer_LT.m`).
+
+| Rate | Bandwidth | Notes |
+|---|---|---|
+| 14 Hz | ~12.9 MB/s | Safe starting point |
+| 20 Hz | ~18.4 MB/s | Target; test after Pi backward traffic confirmed off |
+| 30 Hz | ~27.6 MB/s | Only try if 20 Hz shows zero sim lag. Simulink fixed-step is 50 ms so frames above 20 Hz are deduped and not re-sent. |
 
 ## DDS middleware — which side switches?
 
@@ -163,6 +208,11 @@ Expected log lines:
 | `config/hil/fastrtps_hil.xml` | FastDDS profile (alternate). |
 | `run_stack_hil.sh` | Bash wrapper — Docker + DDS env + ros2 launch + native yolo_producer. |
 | `SIM_HIL.md` | This file. |
+| `matlab/hil_ros_init_LT.m` | MATLAB session init — sets DDS env vars, creates ROS2 node, all publishers/subscribers. Run once per MATLAB session before Simulink. |
+| `matlab/sim_camera_publisher_timer_LT.m` | 20 Hz timer publisher — reads `latest_frame` from Simulink workspace, RGB→BGR, deduplication checksum, sends `sensor_msgs/Image` to `/sim/camera/image_raw`. |
+| `matlab/live_camera_view_LT.m` | Optional 5 Hz live viewer — shows `latest_frame` in a single figure panel. No network traffic (reads local workspace only). |
+| `matlab/read_cmdvel_live_interp.m` | MATLAB Function block embedded in `hil_closed_loop.slx` — reads `sim_cmdvel` from workspace (version-cached, 1–2 evalin calls per step), applies safety clamps `[±2, ±2, ±1, ±1, ±1]` m/s, writes `sim_pitch_angle` and `sim_pose` back for the state publisher. |
+| `matlab/hil_closed_loop.slx` | Simulink model — Unreal Engine NYC drone dynamics, `Simulation 3D Camera` block (640×480 RGB), `To Workspace` block (`latest_frame`), `read_cmdvel_live_interp` MATLAB Function block for `/cmd_vel` feedback. |
 
 ## Files NOT modified
 
