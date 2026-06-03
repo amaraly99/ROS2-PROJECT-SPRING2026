@@ -1,0 +1,12 @@
+[
+  {
+    "seq": "MH_01_easy",
+    "success": false,
+    "rmse": null,
+    "traj_used": "",
+    "traj_reason": "",
+    "warnings": "OV2SLAM did not auto-exit after final /clock; SIGINT fallback used.",
+    "error": "No supported OV2SLAM trajectory found in /workspace/results/ov2slam_benchmark/20260328_091731/MH_01_easy.",
+    "gt_verdict": "MH_01_easy.txt is already valid TUM format (timestamp tx ty tz qx qy qz qw); normalized copy written to gt.tum"
+  }
+]

@@ -1,0 +1,64 @@
+--------------------------------------------------------------------------------
+Loaded 29993 stamps and poses from: /workspace/results/ov2slam_benchmark/20260531_194334/MH_02_easy/run_01/gt.tum
+Loaded 410 stamps and poses from: /workspace/results/ov2slam_benchmark/20260531_194334/MH_02_easy/run_01/trajectory.tum
+--------------------------------------------------------------------------------
+Synchronizing trajectories...
+Found 403 of max. 410 possible matching timestamps between...
+	/workspace/results/ov2slam_benchmark/20260531_194334/MH_02_easy/run_01/gt.tum
+and:	/workspace/results/ov2slam_benchmark/20260531_194334/MH_02_easy/run_01/trajectory.tum
+..with max. time diff.: 0.1 (s) and time offset: 0.0 (s).
+--------------------------------------------------------------------------------
+Aligning using Umeyama's method...
+Rotation of alignment:
+[[ 0.21617023  0.27647348 -0.93639353]
+ [ 0.97431161 -0.12311185  0.18857457]
+ [-0.06314527 -0.95310329 -0.29598443]]
+Translation of alignment:
+[ 4.61307736 -1.92183506  0.58000916]
+Scale correction: 1.0
+--------------------------------------------------------------------------------
+Compared 403 absolute pose pairs.
+Calculating APE for translation part pose relation...
+--------------------------------------------------------------------------------
+APE w.r.t. translation part (m)
+(with SE(3) Umeyama alignment)
+
+       max	0.084224
+      mean	0.028591
+    median	0.021710
+       min	0.005207
+      rmse	0.033859
+       sse	0.462011
+       std	0.018138
+
+Authorization required, but no authorization protocol specified
+
+Authorization required, but no authorization protocol specified
+
+[ERROR] Unhandled error in evo.cli.ape
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/dist-packages/evo/tools/plot.py", line 65, in apply_settings
+    shell = get_ipython().__class__.__name__  # type: ignore
+            ^^^^^^^^^^^
+NameError: name 'get_ipython' is not defined
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/dist-packages/evo/cli/entry_points.py", line 96, in launch
+    main_module.run(args)
+  File "/usr/local/lib/python3.12/dist-packages/evo/cli/ape.py", line 106, in run
+    common.plot_result(
+  File "/usr/local/lib/python3.12/dist-packages/evo/cli/common_ape_rpe.py", line 173, in plot_result
+    from evo.tools import plot
+  File "/usr/local/lib/python3.12/dist-packages/evo/tools/plot.py", line 101, in <module>
+    apply_settings(SETTINGS)
+  File "/usr/local/lib/python3.12/dist-packages/evo/tools/plot.py", line 71, in apply_settings
+    mpl.use(settings.plot_backend)
+  File "/usr/lib/python3/dist-packages/matplotlib/__init__.py", line 1170, in use
+    plt.switch_backend(name)
+  File "/usr/lib/python3/dist-packages/matplotlib/pyplot.py", line 273, in switch_backend
+    raise ImportError(
+ImportError: Cannot load backend 'QtAgg' which requires the 'qt' interactive framework, as 'headless' is currently running
+
+[ERROR] evo module evo.cli.ape crashed - no logfile written (disabled)

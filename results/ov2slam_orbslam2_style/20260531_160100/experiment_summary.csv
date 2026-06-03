@@ -1,0 +1,2 @@
+sequence,run_name,success,rmse,traj_used,cpu_total_avg_pct,trajectory_poses
+MH_01_easy,run_01,False,,,7.233469465648855,

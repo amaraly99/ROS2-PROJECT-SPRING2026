@@ -1,0 +1,8 @@
+{
+  "launcher_pid": 541,
+  "ov_pid": 541,
+  "resolution": "resolved_root",
+  "comm": "bash",
+  "exe": "bash",
+  "cmdline": "bash -lc source_safe(){ if [ -f \"$1\" ]; then set +u; . \"$1\"; set -u; fi; }; source_safe /opt/ros/jazzy/setup.bash; source_safe /workspace/install/setup.bash; export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp; export LD_LIBRARY_PATH=/workspace/opencv/build/lib:${LD_LIBRARY_PATH:-}; exec ros2 run ov2slam ov2slam_node /workspace/src/ov2slam_ros/parameters_files/accurate/euroc/euroc_stereo.yaml --ros-args -p use_sim_time:=true"
+}

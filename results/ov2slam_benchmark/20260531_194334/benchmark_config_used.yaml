@@ -1,0 +1,68 @@
+# OV2SLAM EuRoC benchmark configuration
+# =======================================
+# Used by: benchmarks/ov2_benchmark.py
+#
+# Layout mirrors ~/ORB_SLAM2/experiment_configuration.yaml
+# ─────────────────────────────────────────────────────────
+
+experiment:
+  mode: stereo                    # stereo | mono
+  profile: accurate               # accurate | average | fast
+  trajectory_policy: paper        # paper | best
+  # paper  → prefers ov2slam_kfs_traj.txt (online, no full-BA)
+  # best   → prefers ov2slam_fullba_kfs_traj.txt (final offline-refined)
+
+dataset:
+  # Leave empty to auto-detect from workspace:
+  #   workspace_root  →  /workspace  when available, else repo root
+  #   dataset_root    →  <workspace_root>/datasets/euroc
+  workspace_root: ""
+  dataset_root: ""
+
+  # List specific sequences, or leave as-is for a full EuRoC suite.
+  # Use seq_range_start / seq_range_end to run a contiguous range instead.
+  sequences:
+    - MH_01_easy
+    - MH_02_easy
+    - MH_03_medium
+    - MH_04_difficult
+    - MH_05_difficult
+    - V1_01_easy
+    - V1_02_medium
+    - V1_03_difficult
+    - V2_01_easy
+    - V2_02_medium
+  seq_range_start: ""
+  seq_range_end: ""
+
+ov2slam:
+  # Absolute path to params YAML; leave empty to auto-select from
+  #   src/ov2slam_ros/parameters_files/<profile>/euroc/euroc_<mode>.yaml
+  params_file: ""
+  node_name: /ov2slam_node
+  node_wait_timeout: 45           # seconds to wait for /ov2slam_node to appear
+  # CPU core pinning — e.g. "0,1"  (empty = no taskset)
+  cores: "0,1"
+  setup_scripts:
+    - /opt/ros/jazzy/setup.bash
+    # workspace install/setup.bash is auto-appended if present
+
+playback:
+  bag_rate: 1.0
+  bag_timeout: 1200               # seconds; bag kills itself after this
+  startup_settle_sec: 15          # settle after node appears before bag starts
+  auto_exit_timeout: 600          # seconds to wait for OV2SLAM to auto-exit
+  final_clock_sec: 1450000000     # /clock t published after bag finishes
+  final_clock_nanosec: 0
+  clock_start_timeout: 10         # seconds to confirm /clock after ros2 bag play
+
+evaluation:
+  n_runs: 3                       # runs per sequence
+  retries: 3                      # retry attempts on failure before giving up
+  results_dir: ""                 # defaults to <workspace_root>/results/ov2slam_benchmark
+  results_name: ""                # defaults to UTC+4 timestamp
+  log_dir: ""                     # defaults to <workspace_root>/run_logs
+  t_max_diff: 0.1                 # evo_ape --t_max_diff
+  monitor_sample_sec: 0.05        # /proc sampling interval
+  inter_run_delay_sec: 10         # cooldown between runs / retries
+  sigint_timeout: 30              # seconds to wait for clean SIGINT exit

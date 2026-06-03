@@ -1,0 +1,51 @@
+# Standalone OV2SLAM benchmark config consumed by:
+#   benchmarks/run_benchmark_orbslam2_style.py
+#
+# This file is for the Python runner itself. It is not forwarded to BENCH.sh.
+
+# Leave empty to auto-detect sensible defaults:
+#   workspace_root -> /workspace when available, otherwise the repo root
+#   dataset_root   -> <workspace_root>/datasets/euroc
+#   output_root    -> <workspace_root>/results/ov2slam_orbslam2_style
+workspace_root: ""
+dataset_root: ""
+output_root: ""
+
+# Leave empty for a timestamped results directory.
+results_name: ""
+
+mode: stereo
+profile: accurate
+params_file: ""
+trajectory_policy: paper
+
+# Leave empty to benchmark every discovered sequence under dataset_root.
+sequences:
+  - MH_01_easy
+  - MH_02_easy
+  - MH_03_medium
+  - MH_04_difficult
+  - MH_05_difficult
+  - V1_01_easy
+  - V1_02_medium
+  - V1_03_difficult
+  - V2_01_easy
+  - V2_02_medium
+seq_range_start: ""
+seq_range_end: ""
+
+runs: 3
+retries: 3
+ov2slam_cores: ""
+
+node_name: /ov2slam_node
+node_wait_timeout: 45
+bag_timeout: 1200
+auto_exit_timeout: 600
+sigint_timeout: 30
+
+startup_settle_sec: 15
+inter_run_delay_sec: 10
+monitor_sample_sec: 0.05
+bag_play_rate: 1.0
+evo_t_max_diff: 0.1

@@ -1,0 +1,8 @@
+{
+  "launcher_pid": 256317,
+  "ov2slam_pid": 256347,
+  "resolution": "resolved_descendant_exact",
+  "ov2slam_comm": "ov2slam_node",
+  "ov2slam_exe": "ov2slam_node",
+  "ov2slam_cmdline": "/workspace/install/ov2slam/lib/ov2slam/ov2slam_node /workspace/src/ov2slam_ros/parameters_files/accurate/euroc/euroc_stereo.yaml --ros-args -p use_sim_time:=true"
+}

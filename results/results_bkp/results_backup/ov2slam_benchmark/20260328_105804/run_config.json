@@ -1,0 +1,23 @@
+{
+  "workspace_root": "/workspace",
+  "dataset_root": "/workspace/datasets/euroc",
+  "results_root": "/workspace/results/ov2slam_benchmark/20260328_105804",
+  "params_file": "/workspace/src/ov2slam_ros/parameters_files/accurate/euroc/euroc_stereo.yaml",
+  "requested_camera": "stereo",
+  "requested_speed": "accurate",
+  "trajectory_policy": "paper",
+  "effective_camera": "stereo",
+  "effective_speed": "accurate",
+  "node_name": "/ov2slam_node",
+  "ov2slam_cores": "",
+  "bag_rate": "1.0",
+  "evo_correct_scale": false,
+  "selected_sequences": ["MH_01_easy", "MH_02_easy", "MH_03_medium", "MH_04_difficult", "MH_05_difficult", "V1_01_easy", "V1_02_medium", "V1_03_difficult", "V2_01_easy", "V2_02_medium"],
+  "gt_verdict": "EuRoC *.txt files are already valid TUM pose files; normalized to gt.tum.",
+  "trajectory_candidates": [
+    {"file": "ov2slam_kfs_traj.txt", "reason": "paper-style choice: keyframe trajectory after online local BA / loop closure, without end-of-sequence full BA"},
+    {"file": "ov2slam_traj.txt", "reason": "paper-style fallback: raw frame trajectory when keyframe output is missing"},
+    {"file": "ov2slam_fullba_kfs_traj.txt", "reason": "last-resort fallback: full BA result exists, but this is an offline refinement beyond the paper's fully-online setting"}
+  ],
+  "excluded_from_evo": ["ov2slam_full_traj_wlc.txt", "ov2slam_full_traj_wlc_opt.txt"]
+}

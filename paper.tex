@@ -1,0 +1,1517 @@
+\documentclass[11pt]{article}
+
+\usepackage[a4paper,margin=1in]{geometry}
+
+\usepackage{booktabs}
+
+\usepackage{longtable}
+
+\usepackage{array}
+
+\usepackage{float}
+
+\usepackage{graphicx}
+
+\usepackage{caption}
+
+\usepackage{adjustbox}
+
+\usepackage{hyperref}
+
+\usepackage{xcolor}
+
+\title{OV$^{2}$SLAM, ORB-SLAM2, ORB-SLAM3, and RTAB-Map EuRoC Comparison Report}
+
+\author{Amar Aly}
+
+\date{13-04-2026}
+
+\begin{document}
+
+\maketitle
+% Source - https://stackoverflow.com/a/547072
+% Posted by godbyk
+% Retrieved 2026-04-13, License - CC BY-SA 2.5
+
+\hypersetup{%
+    pdfborder = {0 0 0}
+}
+
+\tableofcontents
+
+\section{Introduction}
+
+In this report, OV$^{2}$SLAM (Accurate and Fast), ORB-SLAM2, ORB-SLAM3, and RTAB-Map are benchmarked on the EuRoC MAV sequences. The purpose of this benchmarking is to provide insights on the bottlenecks and accuracy drops because of this setup shift. The benchmarking was done on 10 of the EuRoC MAV (Micro-Aerial Vehicle) sequences, with MH being Machine Hall and V being Vicon Room. Do note that the evaluation setup was done in a way such that it replicates the research papers results.
+
+\textbf{DISCLAIMER}: The experiments in this report are not fully reproducible (numbers-wise) due to the frequent failures and varying results experienced when running SLAM algorithm. A hypothesis for this would be the different CPU runtime conditions, thread scheduling, missing frames, and non-seeded random actions. ORB-SLAM3 and the OV$^{2}$SLAM variants mostly report \textbf{best-run} RMSE (closest to paper values after reruns). ORB-SLAM2 (batch \texttt{20260530\_232822}) and RTAB-Map report \textbf{mean$\pm$std} over repeated runs. Red sequence names mark known weak spots (often ORB-SLAM3 instability).
+
+\section{Hardware Details}
+All Experiments were ran on the Raspberry PI 5 with 16GB Memory. All Sequences were ran several times (on ORBSLAM2 and RTAB-Map) and the best RMSE for a sequence is defined as the RMSE that is the lowest but the path length is close to ground-truth length. 
+
+\section{Algorithm Implementation Details}
+
+The OV$^{2}$SLAM code was taken from its original source GitHub implementation and benchmarked directly in its ROS2-based form, with only limited changes required to support the experimental setup used in this work. In other words, OV$^{2}$SLAM already provided a ROS-ready code, so it was evaluated more directly than ORB-SLAM3.
+
+ORB-SLAM2 was evaluated through the local \texttt{ros2-ORB\_SLAM2} wrapper (stereo node, EuRoC YAML, automated shutdown). It needed less surgery than ORB-SLAM3 but still needed ROS2 bag bridging and timing/CPU hooks matching the other pipelines.
+
+RTAB-Map was evaluated through its native ROS2 launch pipeline with EuRoC-aligned stereo inputs, rosbag playback under simulated time, and the same external timing/CPU instrumentation used for the other systems. It integrated more smoothly than the ORB-SLAM wrappers, but still needed careful topic/remap alignment and controlled shutdown to keep runs reproducible.
+
+However, ORB-SLAM3 was messier as the original source code does \textbf{NOT} provide a ROS implementation, and rather reliance on community-maintained github repositories was necessary. Most repositories are ROS wrappers over the original ORB-SLAM3 code, despite this, the codebase iwht the following URL \url{https://github.com/Mechazo11/ros2_orb_slam3/tree/jazzy} was used as the base ROS2 Jazzy ORB-SLAM3. However, this codebase was only a starting skeleton (according to the github) and required extensive modification to make it suitable for benchmarking in the target environment.
+
+Modifications to ORB-SLAM3 ROS2 were needed in order to allow for smooth benchmarking.
+The modifications one where:
+\begin{itemize}
+    \item fixing hard-coded paths, correcting YAML and package path handling, resolving build and dependency issues related to Pangolin
+    \item fixing the code tendency to use streamed images rather than a bag file, by subscribing to the topic of images
+    \item adding Stereo mode, since the current github does \textbf{NOT} include it
+    \item inplementing a shutdown ACK-based sequence to allow for automated shutdown instead of manual CTRL+C
+    \item disabling autoAbortLBA when a new keyframe arrives because there was a case where the BA completed 44\% of its iterations, which was one of the major causes of high RMSE
+\end{itemize}
+
+
+shown in the table below
+\begin{table}[ht]
+\centering
+\caption{Comparison between ORB-SLAM2 and ORB-SLAM3.}
+\label{tab:orbslam2_vs_orbslam3}
+\renewcommand{\arraystretch}{1.2}
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{p{3.2cm}p{5.2cm}p{5.2cm}}
+\toprule
+\textbf{Aspect} & \textbf{ORB-SLAM2} & \textbf{ORB-SLAM3} \\
+\midrule
+Release / generation
+& Earlier generation system
+& Newer generation system, extending ORB-SLAM2 \\
+\midrule
+Supported visual sensors
+& Monocular, stereo, RGB-D
+& Monocular, stereo, RGB-D \\
+\midrule
+Visual-inertial support
+& No native IMU support
+& Yes, supports visual-inertial SLAM \\
+\midrule
+Lens models
+& Standard pinhole camera model
+& Pinhole and fisheye camera models \\
+\midrule
+Map handling
+& Single-map SLAM with map reuse
+& Multi-map SLAM with map creation and map merging \\
+\midrule
+Loop closing / relocalization
+& Yes
+& Yes, with improved place recognition and map merging capabilities \\
+\midrule
+Main novelty
+& Unified ORB-based SLAM for monocular, stereo, and RGB-D in real time
+& Extends ORB-SLAM2 with visual-inertial SLAM, multi-map operation, and stronger robustness \\
+\midrule
+Claimed accuracy
+& Accurate real-time SLAM on standard CPUs
+& Reported to be significantly more accurate, with paper claiming about 2$\times$ to 5$\times$ accuracy improvement over prior approaches in some settings \\
+\midrule
+Typical use case
+& Pure vision SLAM benchmarking and deployment
+& More advanced SLAM settings, especially when IMU or multi-session robustness is needed \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{HOWEVER}, neither algorithms were developed for edge-devices, and failure on edge devices should be expected.
+\section{Runtime Configuration}
+
+\subsection{ORB-SLAM3 Setup Details}
+
+
+\begin{table}[H]
+\centering
+\small
+\caption{ORB-SLAM3 key algorithm parameters from the EuRoC stereo settings file.}
+\label{tab:orb_algorithm_params}
+\begin{tabular}{lp{9.5cm}}
+\toprule
+Parameter & Value \\
+\midrule
+Camera type & PinHole \\
+Image size & 752 $\times$ 480 \\
+Camera FPS & 20 \\
+Color order & RGB (\texttt{Camera.RGB = 1}) \\
+Stereo depth threshold & \texttt{Stereo.ThDepth = 60.0} \\
+ORB features per image* & \texttt{ORBextractor.nFeatures = 1200} \\
+Scale factor & \texttt{ORBextractor.scaleFactor = 1.2} \\
+Pyramid levels* & \texttt{ORBextractor.nLevels = 8} \\
+FAST initial threshold & \texttt{ORBextractor.iniThFAST = 20} \\
+FAST minimum threshold & \texttt{ORBextractor.minThFAST = 7} \\
+Left/right topics & \texttt{/cam0/image\_raw}, \texttt{/cam1/image\_raw} via ROS2 wrapper \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{ORB-SLAM2 Setup Details}
+
+ORB-SLAM2 was run through the \texttt{ros2-ORB\_SLAM2} stereo node on ROS2 Jazzy with results taken from batch \texttt{20260530\_232822}. EuRoC bags were replayed at \texttt{bag\_rate: 1.0}. Each sequence was repeated three times; numbers in the ORB-SLAM2 section are means across clean runs unless noted otherwise.
+
+\begin{table}[H]
+\centering
+\small
+\caption{ORB-SLAM2 key algorithm parameters from the EuRoC stereo settings file.}
+\label{tab:orbslam2_algorithm_params}
+\begin{tabular}{lp{9.5cm}}
+\toprule
+Parameter & Value \\
+\midrule
+Camera model & Pinhole (rectified stereo pair) \\
+Image size & 752 $\times$ 480 \\
+Camera FPS & 20 \\
+Color order & BGR (\texttt{Camera.RGB = 0}) \\
+Stereo depth threshold & \texttt{ThDepth = 30.0} \\
+ORB features per image & \texttt{ORBextractor.nFeatures = 500} \\
+Scale factor & \texttt{ORBextractor.scaleFactor = 1.2} \\
+Pyramid levels & \texttt{ORBextractor.nLevels = 8} \\
+FAST initial threshold & \texttt{ORBextractor.iniThFAST = 15} \\
+FAST minimum threshold & \texttt{ORBextractor.minThFAST = 5} \\
+Left/right topics & \texttt{/camera/left}, \texttt{/camera/right} via ROS2 wrapper \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+*Regarding ORBSLAM3: ORB features per image and Pyramid levels were changed from sequences \textcolor{red}{MH\_04\_difficult} to V2\_02\_medium because of frequent failures. Reasons speculated to be: Low contrast settings requiring more features and more depth to identify changes in frames. Another speculation is that tracking delay was observed to exceed 50ms (20fps) in most sequences, which is faster than what the EuRoC streamer tracking speed of 20fps, which caused loss in keyframes and increased RMSE.
+
+\subsection{OV$^{2}$SLAM Setup Details}
+
+\begin{table}[H]
+\centering
+\small
+\caption{OV$^{2}$SLAM key algorithm parameters for accurate and fast stereo configurations.}
+\label{tab:ov2_algorithm_params}
+\begin{tabular}{lp{4.6cm}p{4.6cm}}
+\toprule
+Parameter & Accurate stereo & Fast stereo \\
+\midrule
+Loop closer & \texttt{buse\_loop\_closer = 1} & \texttt{buse\_loop\_closer = 0} \\
+Realtime flag & \texttt{force\_realtime = 1} & \texttt{force\_realtime = 1} \\
+FAST detector & \texttt{use\_fast = 0} & \texttt{use\_fast = 1} \\
+Shi-Tomasi detector* & \texttt{use\_shi\_tomasi = 0} & \texttt{use\_shi\_tomasi = 0} \\
+BRIEF descriptor & \texttt{use\_brief = 1} & \texttt{use\_brief = 1} \\
+Single-scale detector & \texttt{use\_singlescale\_detector = 1} & \texttt{use\_singlescale\_detector = 0} \\
+Max keypoint spacing & \texttt{nmaxdist = 25} & \texttt{nmaxdist = 50} \\
+FAST threshold & \texttt{nfast\_th = 10} & \texttt{nfast\_th = 10} \\
+CLAHE & \texttt{use\_clahe = 1} & \texttt{use\_clahe = 0} \\
+Track local map & \texttt{bdo\_track\_localmap = 1} & \texttt{bdo\_track\_localmap = 1} \\
+P3P enabled & \texttt{dop3p = 0} & \texttt{dop3p = 1} \\
+Loop / mapping mode & \texttt{slam\_mode = 1} & \texttt{slam\_mode = 1} \\
+KLT enabled & \texttt{do\_klt = 1} & \texttt{do\_klt = 1} \\
+Keyframe filtering ratio & \texttt{fkf\_filtering\_ratio = 0.95} & \texttt{fkf\_filtering\_ratio = 0.9} \\
+Final full BA & \texttt{do\_full\_ba = 1} & \texttt{do\_full\_ba = 0} \\
+Stereo rectification & \texttt{bdo\_stereo\_rect = 0} & \texttt{bdo\_stereo\_rect = 0} \\
+Undistortion & \texttt{bdo\_undist = 0} & \texttt{bdo\_undist = 0} \\
+Image size & 752 $\times$ 480 & 752 $\times$ 480 \\
+Topics & \texttt{/cam0/image\_raw}, \texttt{/cam1/image\_raw} & \texttt{/cam0/image\_raw}, \texttt{/cam1/image\_raw} \\
+\bottomrule
+\end{tabular}
+\end{table}
+* OV$^{2}$SLAM claims to use Shi-Tomsai, but code is showing that OV$^{2}$SLAM is using a custom keypoint extractor.
+\subsection{RTAB-Map Setup Details}
+
+RTAB-Map was evaluated in stereo frame-to-map odometry mode using the \texttt{rtabmap\_ros} package under ROS2 Jazzy. Camera images were first rectified via two \texttt{image\_proc/rectify} nodes and camera info published by a custom \texttt{euroc\_caminfo\_pub.py} node. The \texttt{stereo\_odometry} node performed visual odometry using GFTT feature detection and FLANN-based matching, while the \texttt{rtabmap} node performed global SLAM with appearance-based loop closure via a bag-of-words index. All sequences were replayed from \texttt{.db3} ROS2 bags without time manipulation (\texttt{bag\_rate: 1.0}); frame dropping is therefore possible when processing exceeds the 50\,ms / 20\,Hz budget.
+
+\begin{table}[H]
+\centering
+\small
+\caption{RTAB-Map key algorithm parameters used for EuRoC stereo evaluation.}
+\label{tab:rtabmap_algorithm_params}
+\begin{tabular}{ll}
+\toprule
+Parameter & Value \\
+\midrule
+Feature detector & GFTT (\texttt{Kp/DetectorStrategy = 1}) \\
+Max features per frame & \texttt{Kp/MaxFeatures = 300} \\
+GFTT min distance & \texttt{GFTT/MinDistance = 4} \\
+Odometry map size & \texttt{OdomF2M/MaxSize = 1000} \\
+Visual features (odometry) & \texttt{Vis/MaxFeatures = 600} \\
+Odometry strategy & Frame-to-map (\texttt{OdomF2M}) \\
+Process most recent frame & \texttt{always\_process\_most\_recent\_frame = false} \\
+RTAB-Map time threshold & \texttt{Rtabmap/TimeThr = 0} (disabled) \\
+RTAB-Map memory threshold & \texttt{Rtabmap/MemoryThr = 0} (disabled) \\
+Subscribe stereo & \texttt{subscribe\_stereo = true} \\
+Subscribe depth & \texttt{subscribe\_depth = false} \\
+Camera FPS (bag) & 20 Hz \\
+Left/right topics & \texttt{/stereo\_camera/left/image\_rect}, \texttt{.../right/image\_rect} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{OV$^{2}$SLAM Results}
+
+\begin{table}[H]
+\centering
+\small
+\caption{OV$^{2}$SLAM accurate stereo vs fast stereo per-sequence RMSE comparison.}
+\label{tab:ov2_accurate_fast_rmse_summary}
+\begin{tabular}{lrrr}
+\toprule
+Sequence & Accurate RMSE (m) & Fast RMSE (m) & RMSE delta (m) fast-accurate \\
+\midrule
+MH\_01\_easy & 0.040 & 0.054 & 0.014 \\
+MH\_02\_easy & 0.049 & 0.052 & 0.003 \\
+MH\_03\_medium & 0.046 & 0.079 & 0.032 \\
+\textcolor{red}{MH\_04\_difficult} & 0.069 & 0.152 & 0.083 \\
+MH\_05\_difficult & 0.067 & 0.142 & 0.075 \\
+V1\_01\_easy & 0.055 & 0.094 & 0.039 \\
+\textcolor{red}{V1\_02\_medium} & 0.088 & 0.095 & 0.006 \\
+\textcolor{red}{V1\_03\_difficult} & 0.118 & 0.670 & 0.552 \\
+\textcolor{red}{V2\_01\_easy} & 0.072 & 0.086 & 0.015 \\
+V2\_02\_medium & 0.054 & 0.204 & 0.150 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\small
+\caption{OV$^{2}$SLAM accurate stereo vs fast stereo frontend latency comparison.}
+\label{tab:ov2_accurate_fast_fe_summary}
+\begin{tabular}{lrrr}
+\toprule
+Sequence & Accurate FE mean (ms) & Fast FE mean (ms) & FE speedup \\
+\midrule
+MH\_01\_easy & 17.083 & 4.895 & 3.49x \\
+MH\_02\_easy & 17.088 & 5.025 & 3.40x \\
+MH\_03\_medium & 19.522 & 5.088 & 3.84x \\
+\textcolor{red}{MH\_04\_difficult} & 15.578 & 4.990 & 3.12x \\
+MH\_05\_difficult & 15.815 & 5.036 & 3.14x \\
+V1\_01\_easy & 19.733 & 5.114 & 3.86x \\
+\textcolor{red}{V1\_02\_medium} & 21.698 & 5.698 & 3.81x \\
+\textcolor{red}{V1\_03\_difficult} & 21.225 & 6.105 & 3.48x \\
+\textcolor{red}{V2\_01\_easy} & 15.033 & 4.908 & 3.06x \\
+V2\_02\_medium & 20.488 & 5.793 & 3.54x \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{images/ov2_rmse_by_sequence.png}
+\caption{OV$^{2}$SLAM accurate vs fast RMSE by sequence.}
+\label{fig:ov2_rmse}
+\end{figure}
+
+As seen from the plot above, the Fast mode of OV$^{2}$SLAM is consistently worse RMSE than the Accurate mode, with notably one example being \textcolor{red}{V1\_03\_difficult} having very high RMSE compared to the research paper. It can be observed that this sequence \textcolor{red}{V1\_03\_difficult} has very intertwined paths that increase the RMSE and confuse a SLAM system.
+
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{images/ov2_rmse_delta_by_sequence.png}
+\caption{OV$^{2}$SLAM RMSE delta by sequence (fast minus accurate).}
+\label{fig:ov2_rmse_delta}
+\end{figure}
+
+From this plot, we can observe that the differences between the Fast and Accurate modes on the EuRoC dataset is generally small, with the expection of \textcolor{red}{V1\_03\_difficult} and V2\_02\_medium due to its very difficult trajectory (seen below). This further supports the fact that the Fast mode is better suited for edge devices due to its speed and acceptable accuracy loss.
+
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{images/ov2_frontend_latency_by_sequence.png}
+\caption{OV$^{2}$SLAM frontend latency by sequence.}
+\label{fig:ov2_fe_latency}
+\end{figure}
+
+In this plot, we observe the front-end latency when running OV2SLAM on each sequence. The lowest latency always comes from the Fast configuration and it has the least standard deviation compared to the Accurate mode. The least possible total front-end latency is around 5ms which corresponds to 200 Hz in Fast mode, while the Accurate mode has a least possible total front-end latency of around 15ms, which is 66 Hz.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{images/ov2_process_cpu_by_sequence.png}
+\caption{OV$^{2}$SLAM mean process CPU utilization by sequence.}
+\label{fig:ov2_cpu}
+\end{figure}
+From this plot, we observe that Accurate mode consistently uses significantly more CPU than Fast mode across all sequences. Accurate mode can reach up to 250\%+ CPU utilization and even higher due to the sudden utilization spikes by the Loop Closure threads. In contrast, Fast mode has much lower CPU utilization and can typically run in \lt 2 cores, though 2 cores would be ideal. This shows that while Accurate mode maximizes estimation accuracy, it comes at a significant cost for edge devices, compared to Fast mode which can have reasonably closer accuracy and much lower latency (3x times reduction in front-end delay)
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{images/ov2_role_means.png}
+\caption{OV$^{2}$SLAM logical thread-role utilization: accurate vs fast.}
+\label{fig:ov2_roles}
+\end{figure}
+From this plot, we observe that CPU usage in Accurate mode is dominated by the estimator thread, which is responsible for performing local bundle adjustment. The second most computationally intensive thread is the loop closure thread, which adds a substantial amount of CPU consumption on top of the existing processing threads. In contrast, Fast mode shows significantly lower CPU usage across all threads, reflecting its lightweight design. This reduction in computational load supports the idea that Fast mode is more suitable for edge devices while still maintaining high processing speed.
+
+\subsection{OV$^{2}$SLAM Paper Comparison}
+
+\begin{table}[H]
+\centering
+\small
+\caption{OV$^{2}$SLAM accurate stereo vs OV$^{2}$SLAM paper stereo rows with loop closure enabled.}
+\label{tab:ov2_accurate_vs_paper}
+\begin{tabular}{lrrr}
+\toprule
+Sequence & Accurate stereo RMSE (m) & Paper OV$^{2}$SLAM w. LC (m) & Delta (m) \\
+\midrule
+MH\_01\_easy & 0.040 & 0.040 & 0.000 \\
+MH\_02\_easy & 0.049 & 0.040 & 0.009 \\
+MH\_03\_medium & 0.046 & 0.040 & 0.006 \\
+\textcolor{red}{MH\_04\_difficult} & 0.069 & 0.060 & 0.009 \\
+MH\_05\_difficult & 0.067 & 0.070 & -0.003 \\
+V1\_01\_easy & 0.055 & 0.090 & -0.035 \\
+\textcolor{red}{V1\_02\_medium} & 0.088 & 0.070 & 0.018 \\
+\textcolor{red}{V1\_03\_difficult} & 0.118 & 0.090 & 0.028 \\
+\textcolor{red}{V2\_01\_easy} & 0.072 & 0.070 & 0.002 \\
+V2\_02\_medium & 0.054 & 0.060 & -0.006 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\small
+\caption{OV$^{2}$SLAM fast stereo vs OV$^{2}$SLAM paper stereo rows without loop closure.}
+\label{tab:ov2_fast_vs_paper}
+\begin{tabular}{lrrr}
+\toprule
+Sequence & Fast stereo RMSE (m) & Paper OV$^{2}$SLAM no LC (m) & Delta (m) \\
+\midrule
+MH\_01\_easy & 0.054 & 0.050 & 0.004 \\
+MH\_02\_easy & 0.052 & 0.040 & 0.012 \\
+MH\_03\_medium & 0.079 & 0.050 & 0.029 \\
+\textcolor{red}{MH\_04\_difficult} & 0.152 & 0.120 & 0.032 \\
+MH\_05\_difficult & 0.142 & 0.100 & 0.042 \\
+V1\_01\_easy & 0.094 & 0.090 & 0.004 \\
+\textcolor{red}{V1\_02\_medium} & 0.095 & 0.080 & 0.015 \\
+\textcolor{red}{V1\_03\_difficult} & 0.670 & 0.170 & 0.500 \\
+\textcolor{red}{V2\_01\_easy} & 0.086 & 0.100 & -0.014 \\
+V2\_02\_medium & 0.204 & 0.100 & 0.104 \\
+\bottomrule
+\end{tabular}
+\end{table}
+\textbf{Note:} there is no official OV$^{2}$SLAM Fast Mode testing results, rather they tested the Fast mode on sped-up versions of the EuRoC sequences instead. Therefore, I used the OV$^{2}$SLAM no LC mode as the closest comparison to my Test OV$^{2}$SLAM Fast mode.
+
+\subsection{OV$^{2}$SLAM Thread Roles}
+\begin{table}[H]
+\centering
+\scriptsize
+\caption{OV$^{2}$SLAM logical thread-role mean utilization aggregated across sequences.}
+\label{tab:ov2_role_means_table}
+\begin{tabular}{lrrr}
+\toprule
+Role & Accurate mean (\%) & Fast mean (\%) & Delta (fast-accurate) \\
+\midrule
+ov2\_est & 63.386 & 14.445 & -48.941 \\
+ov2\_lc & 42.399 & n/a & n/a \\
+ov2\_main & 14.343 & 6.192 & -8.150 \\
+ov2\_map & 12.944 & 4.509 & -8.435 \\
+ov2\_feed & 1.085 & 0.626 & -0.459 \\
+OV$^{2}$SLAM\_node\_main & 1.118 & 0.801 & -0.318 \\
+ov2\_merge & 0.000 & 0.000 & 0.000 \\
+ov2\_vizfr & 0.000 & 0.000 & 0.000 \\
+ov2\_vizkf & 0.000 & 0.000 & 0.000 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\scriptsize
+\caption{OV$^{2}$SLAM logical thread-role utilization variability across sequences.}
+\label{tab:ov2_role_std_table}
+\begin{tabular}{lrr}
+\toprule
+Role & Accurate std across sequences (\%) & Fast std across sequences (\%) \\
+\midrule
+ov2\_est & 6.659 & 2.293 \\
+ov2\_lc & 11.259 & n/a \\
+ov2\_main & 0.982 & 0.786 \\
+ov2\_map & 3.184 & 1.274 \\
+ov2\_feed & 0.073 & 0.021 \\
+OV$^{2}$SLAM\_node\_main & 0.080 & 0.041 \\
+ov2\_merge & 0.000 & 0.000 \\
+ov2\_vizfr & 0.000 & 0.000 \\
+ov2\_vizkf & 0.000 & 0.000 \\
+\bottomrule
+\end{tabular}
+\end{table}
+\subsection{OV$^{2}$SLAM Timing Deltas}
+
+\refstepcounter{table}
+\noindent\textbf{Table \thetable.} OV2SLAM accurate vs fast timing deltas by sequence and timer.
+\label{tab:ov2_timing_deltas}
+
+\begin{longtable}{llrrrr}
+\toprule
+Sequence & Timer & Accurate (ms) & Fast (ms) & Delta & \% change \\
+\midrule
+\endfirsthead
+\multicolumn{6}{c}{Table~\ref{tab:ov2_timing_deltas} continued} \\
+\toprule
+Sequence & Timer & Accurate (ms) & Fast (ms) & Delta & \% change \\
+\midrule
+\endhead
+\midrule
+\multicolumn{6}{r}{Continued on next page} \\
+\endfoot
+\bottomrule
+\endlastfoot
+MH\_01\_easy & Full FE & 17.083 & 4.895 & $\downarrow$ 12.188 & -71.3\% \\
+MH\_01\_easy & FE Track & 15.028 & 4.383 & $\downarrow$ 10.645 & -70.8\% \\
+MH\_01\_easy & FE KF create & 16.872 & 3.763 & $\downarrow$ 13.109 & -77.7\% \\
+MH\_01\_easy & Mapper KF proc & 47.601 & 8.310 & $\downarrow$ 39.291 & -82.5\% \\
+MH\_01\_easy & Local BA & 292.162 & 41.283 & $\downarrow$ 250.879 & -85.9\% \\
+MH\_01\_easy & LC ProcessKF & 82.758 & n/a & n/a & n/a \\
+MH\_02\_easy & Full FE & 17.088 & 5.025 & $\downarrow$ 12.064 & -70.6\% \\
+MH\_02\_easy & FE Track & 14.631 & 4.427 & $\downarrow$ 10.204 & -69.7\% \\
+MH\_02\_easy & FE KF create & 17.054 & 3.876 & $\downarrow$ 13.178 & -77.3\% \\
+MH\_02\_easy & Mapper KF proc & 51.340 & 8.460 & $\downarrow$ 42.881 & -83.5\% \\
+MH\_02\_easy & Local BA & 280.729 & 38.392 & $\downarrow$ 242.338 & -86.3\% \\
+MH\_02\_easy & LC ProcessKF & 83.636 & n/a & n/a & n/a \\
+MH\_03\_medium & Full FE & 19.522 & 5.088 & $\downarrow$ 14.434 & -73.9\% \\
+MH\_03\_medium & FE Track & 15.628 & 4.313 & $\downarrow$ 11.315 & -72.4\% \\
+MH\_03\_medium & FE KF create & 20.002 & 3.800 & $\downarrow$ 16.202 & -81.0\% \\
+MH\_03\_medium & Mapper KF proc & 57.868 & 8.497 & $\downarrow$ 49.371 & -85.3\% \\
+MH\_03\_medium & Local BA & 211.707 & 33.928 & $\downarrow$ 177.779 & -84.0\% \\
+MH\_03\_medium & LC ProcessKF & 64.739 & n/a & n/a & n/a \\
+\textcolor{red}{MH\_04\_difficult} & Full FE & 15.578 & 4.990 & $\downarrow$ 10.589 & -68.0\% \\
+\textcolor{red}{MH\_04\_difficult} & FE Track & 12.727 & 4.170 & $\downarrow$ 8.557 & -67.2\% \\
+\textcolor{red}{MH\_04\_difficult} & FE KF create & 16.121 & 4.220 & $\downarrow$ 11.902 & -73.8\% \\
+\textcolor{red}{MH\_04\_difficult} & Mapper KF proc & 31.519 & 6.961 & $\downarrow$ 24.558 & -77.9\% \\
+\textcolor{red}{MH\_04\_difficult} & Local BA & 195.941 & 28.558 & $\downarrow$ 167.383 & -85.4\% \\
+\textcolor{red}{MH\_04\_difficult} & LC ProcessKF & 64.356 & n/a & n/a & n/a \\
+MH\_05\_difficult & Full FE & 15.815 & 5.036 & $\downarrow$ 10.779 & -68.2\% \\
+MH\_05\_difficult & FE Track & 13.087 & 4.273 & $\downarrow$ 8.814 & -67.3\% \\
+MH\_05\_difficult & FE KF create & 16.426 & 4.229 & $\downarrow$ 12.197 & -74.3\% \\
+MH\_05\_difficult & Mapper KF proc & 33.355 & 6.370 & $\downarrow$ 26.985 & -80.9\% \\
+MH\_05\_difficult & Local BA & 223.581 & 31.544 & $\downarrow$ 192.037 & -85.9\% \\
+MH\_05\_difficult & LC ProcessKF & 66.218 & n/a & n/a & n/a \\
+V1\_01\_easy & Full FE & 19.733 & 5.114 & $\downarrow$ 14.618 & -74.1\% \\
+V1\_01\_easy & FE Track & 16.799 & 4.309 & $\downarrow$ 12.490 & -74.4\% \\
+V1\_01\_easy & FE KF create & 20.179 & 4.086 & $\downarrow$ 16.093 & -79.8\% \\
+V1\_01\_easy & Mapper KF proc & 71.542 & 8.346 & $\downarrow$ 63.195 & -88.3\% \\
+V1\_01\_easy & Local BA & 271.416 & 32.296 & $\downarrow$ 239.120 & -88.1\% \\
+V1\_01\_easy & LC ProcessKF & 75.109 & n/a & n/a & n/a \\
+\textcolor{red}{V1\_02\_medium} & Full FE & 21.698 & 5.698 & $\downarrow$ 16.001 & -73.7\% \\
+\textcolor{red}{V1\_02\_medium} & FE Track & 14.990 & 4.156 & $\downarrow$ 10.834 & -72.3\% \\
+\textcolor{red}{V1\_02\_medium} & FE KF create & 20.409 & 4.315 & $\downarrow$ 16.094 & -78.9\% \\
+\textcolor{red}{V1\_02\_medium} & Mapper KF proc & 43.554 & 7.464 & $\downarrow$ 36.090 & -82.9\% \\
+\textcolor{red}{V1\_02\_medium} & Local BA & 140.398 & 17.691 & $\downarrow$ 122.707 & -87.4\% \\
+\textcolor{red}{V1\_02\_medium} & LC ProcessKF & 73.415 & n/a & n/a & n/a \\
+\textcolor{red}{V1\_03\_difficult} & Full FE & 21.225 & 6.105 & $\downarrow$ 15.120 & -71.2\% \\
+\textcolor{red}{V1\_03\_difficult} & FE Track & 13.773 & 3.886 & $\downarrow$ 9.887 & -71.8\% \\
+\textcolor{red}{V1\_03\_difficult} & FE KF create & 20.282 & 5.953 & $\downarrow$ 14.329 & -70.6\% \\
+\textcolor{red}{V1\_03\_difficult} & Mapper KF proc & 35.529 & 4.934 & $\downarrow$ 30.595 & -86.1\% \\
+\textcolor{red}{V1\_03\_difficult} & Local BA & 86.274 & 7.846 & $\downarrow$ 78.428 & -90.9\% \\
+\textcolor{red}{V1\_03\_difficult} & LC ProcessKF & 66.747 & n/a & n/a & n/a \\
+\textcolor{red}{V2\_01\_easy} & Full FE & 15.033 & 4.908 & $\downarrow$ 10.125 & -67.4\% \\
+\textcolor{red}{V2\_01\_easy} & FE Track & 12.450 & 4.093 & $\downarrow$ 8.357 & -67.1\% \\
+\textcolor{red}{V2\_01\_easy} & FE KF create & 16.287 & 4.733 & $\downarrow$ 11.554 & -70.9\% \\
+\textcolor{red}{V2\_01\_easy} & Mapper KF proc & 34.761 & 7.099 & $\downarrow$ 27.662 & -79.6\% \\
+\textcolor{red}{V2\_01\_easy} & Local BA & 212.102 & 28.772 & $\downarrow$ 183.330 & -86.4\% \\
+\textcolor{red}{V2\_01\_easy} & LC ProcessKF & 68.419 & n/a & n/a & n/a \\
+V2\_02\_medium & Full FE & 20.488 & 5.793 & $\downarrow$ 14.695 & -71.7\% \\
+V2\_02\_medium & FE Track & 14.194 & 4.038 & $\downarrow$ 10.156 & -71.6\% \\
+V2\_02\_medium & FE KF create & 18.857 & 5.329 & $\downarrow$ 13.529 & -71.7\% \\
+V2\_02\_medium & Mapper KF proc & 42.090 & 10.646 & $\downarrow$ 31.444 & -74.7\% \\
+V2\_02\_medium & Local BA & 107.253 & 16.232 & $\downarrow$ 91.021 & -84.9\% \\
+V2\_02\_medium & LC ProcessKF & 74.974 & n/a & n/a & n/a \\
+\end{longtable}
+The task with the highest average delay is Local BA (local bundle adjustment). In the accurate stereo configuration, it has the largest mean runtime of around 202.16 ms, which is much higher than the front-end tracking stages by about 187ms. This is normal because the local bundle adjustment is an optimization algorithm that refines the camera poses and map points, and it is much more computationally expensive. Interestingly, the same operation is being used in the Front-end thread according to the paper, however, this Front-end thread is only a small motion-only PnP refinement of the current pose with fixed map points and a very tight number of iterations, while the actual local bundle adjustment optimizes multiple keyframes and map points which takes significantly more time.
+\clearpage
+
+\section{ORB-SLAM3 Results}
+
+\begin{table}[H]
+\centering
+\small
+\caption{Current ORB-SLAM3 keyframe RMSE measurements vs ORB-SLAM3 stereo paper rows.}
+\label{tab:orb_vs_paper_accuracy}
+\begin{tabular}{lrrr}
+\toprule
+Sequence & Measured ORB keyframe RMSE (m) & Paper ORB-SLAM3 stereo (m) & Delta (m) \\
+\midrule
+MH\_01\_easy & 0.043 & 0.029 & 0.014 \\
+MH\_02\_easy & 0.071 & 0.019 & 0.052 \\
+MH\_03\_medium & 0.247 & 0.024 & 0.223 \\
+\textcolor{red}{MH\_04\_difficult} & 0.039 & 0.085 & -0.046 \\
+MH\_05\_difficult & 0.091 & 0.052 & 0.039 \\
+V1\_01\_easy & 0.131 & 0.035 & 0.096 \\
+\textcolor{red}{V1\_02\_medium} & 0.331 & 0.025 & 0.306 \\
+\textcolor{red}{V1\_03\_difficult} & 0.069 & 0.061 & 0.008 \\
+\textcolor{red}{V2\_01\_easy} & n/a & 0.041 & n/a \\
+V2\_02\_medium & 0.228 & 0.028 & 0.200 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+A significant problem that faced me when benchmarking ORB-SLAM3 was the instability of the runs. Some runs got very low RMSE (e.g. 0.01) which appears to be an amazing run, but in reality, ORB-SLAM only processed 4/84 seconds of a sequence. In other cases, the RMSE went as high as RMSE=1 and 0.9, and in some others it fluctuates between 0.24, 0.35, and 0.12. A possible explanation of this phenomenon are the 3 things below:
+\begin{itemize}
+    \item ORB-SLAM3 tracking being too expensive CPU-operations wise, for example it was not parallelized so it causes more delays and more frame dropping $\to$ higher RMSE (the problem with this is that I allowed ORB-SLAM3 to work on all cores) 
+    \item ROS overhead is a possibility since the original code was never packaged with ROS and a community-maintained wrapper was downloaded to allow for ROS functionalities
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\small
+\caption{Current ORB-SLAM3 timing summary for the same sequences used in the paper-comparison table. Loop-closing means are taken from the end-of-run ORB log when present.}
+\label{tab:orb_vs_paper_timing}
+\begin{tabular}{lrrrr}
+\toprule
+Sequence & Track mean (ms) & Track P95 (ms) & LBA mean (ms) & Loop close mean (ms) \\
+\midrule
+MH\_01\_easy & 50.106 & 66.792 & 9.315 & n/a \\
+MH\_02\_easy & 48.757 & 69.400 & 8.003 & n/a \\
+MH\_03\_medium & 51.713 & 77.086 & 4.928 & 92.345 \\
+\textcolor{red}{MH\_04\_difficult} & 38.323 & 59.090 & 4.115 & 175.540 \\
+MH\_05\_difficult & 46.074 & 80.017 & 5.702 & 108.900 \\
+V1\_01\_easy & 32.325 & 37.799 & 2.746 & n/a \\
+\textcolor{red}{V1\_02\_medium} & 37.758 & 45.515 & 1.437 & n/a \\
+\textcolor{red}{V1\_03\_difficult} & 46.427 & 65.468 & 1.696 & n/a \\
+\textcolor{red}{V2\_01\_easy} & n/a & n/a & n/a & n/a \\
+V2\_02\_medium & 36.495 & 45.114 & 3.871 & 49.983 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{images/orbslam_cpu_by_sequence.png}
+\caption{ORB-SLAM3 mean process CPU utilization by sequence with standard deviation error bars and value labels.}
+\label{fig:orb_cpu_by_sequence}
+\end{figure}
+
+From the figure above, we can observe that ORB-SLAM3 can reach up to a maximum of $\sim$217+\% CPU utilization, which suggests that it should be run on 3 cores to avoid contention, but current experiments show that with all 4 cores, the algorithm is not fully stable.
+
+\clearpage
+
+\section{ORB-SLAM2 Results}
+
+ORB-SLAM2 was evaluated with the same Raspberry Pi~5 setup and three repeated runs per sequence (batch \texttt{20260530\_232822}). All ten sequences completed on all three runs. Reported RMSE values are \textbf{mean$\pm$std across clean runs} with Sim(3) Umeyama alignment via \texttt{evo\_ape}, matching the RTAB-Map reporting style.
+
+\subsection{ORB-SLAM2 RMSE Summary}
+
+\begin{table}[H]
+\centering
+\small
+\caption{ORB-SLAM2 mean$\pm$std RMSE per sequence (3/3 valid runs) vs.\ other systems.}
+\label{tab:orbslam2_rmse}
+\begin{tabular}{lrrrrr}
+\toprule
+Sequence & ORB-SLAM2 avg (m) & OV2 acc (m) & OV2 fast (m) & ORB-SLAM3 (m) & RTAB-Map avg (m) \\
+\midrule
+MH\_01\_easy       & $0.046 \pm 0.004$ & 0.040 & 0.054 & 0.043 & $0.102 \pm 0.063$ \\
+MH\_02\_easy       & $0.054 \pm 0.006$ & 0.049 & 0.052 & 0.071 & $0.190 \pm 0.143$ \\
+MH\_03\_medium     & $0.046 \pm 0.004$ & 0.046 & 0.079 & 0.247 & $0.146 \pm 0.038$ \\
+\textcolor{red}{MH\_04\_difficult} & $0.077 \pm 0.010$ & 0.069 & 0.152 & 0.039 & $0.224 \pm 0.070$ \\
+MH\_05\_difficult  & $0.066 \pm 0.023$ & 0.067 & 0.142 & 0.091 & $0.166$ (1/3 valid) \\
+V1\_01\_easy       & $0.058 \pm 0.006$ & 0.055 & 0.094 & 0.131 & $0.096 \pm 0.029$ \\
+\textcolor{red}{V1\_02\_medium}   & $0.091 \pm 0.007$ & 0.088 & 0.095 & 0.331 & $0.081$ (1/3 valid) \\
+\textcolor{red}{V1\_03\_difficult}& $0.128 \pm 0.012$ & 0.118 & 0.670 & 0.069 & $0.133 \pm 0.046$ \\
+\textcolor{red}{V2\_01\_easy}     & $0.061 \pm 0.002$ & 0.072 & 0.086 & n/a & $0.161 \pm 0.052$ \\
+V2\_02\_medium     & $0.093 \pm 0.013$ & 0.054 & 0.204 & 0.228 & $0.244 \pm 0.035$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{images/orbslam2_rmse_per_sequence.png}
+\caption{ORB-SLAM2 mean APE RMSE per sequence with $\pm$1\,std across runs. Dashed lines mark 5\,cm and 10\,cm.}
+\label{fig:orbslam2_rmse}
+\end{figure}
+
+ORB-SLAM2 finished every sequence on all three runs, which is already a practical advantage over ORB-SLAM3 on this board (\textcolor{red}{V2\_01} failed there for ORB-SLAM3). Average RMSE sits around 7--13\,cm on most sequences, with \textcolor{red}{V1\_03\_difficult} the worst at $\approx$13\,cm mean.
+
+\subsection{ORB-SLAM2 Frontend Timing}
+
+Timing uses the \texttt{frontend/full\_tracking} timer (full stereo tracking callback per processed frame), averaged across clean runs.
+
+\begin{table}[H]
+\centering
+\small
+\caption{ORB-SLAM2 frontend full-tracking time per sequence (mean, run-to-run std).}
+\label{tab:orbslam2_timing}
+\begin{tabular}{lrr}
+\toprule
+Sequence & Mean (ms) & Std (ms) \\
+\midrule
+MH\_01\_easy       & 46.1 & 2.1 \\
+MH\_02\_easy       & 45.4 & 2.6 \\
+MH\_03\_medium     & 47.6 & 1.5 \\
+\textcolor{red}{MH\_04\_difficult} & 40.6 & 1.0 \\
+MH\_05\_difficult  & 39.2 & 0.4 \\
+V1\_01\_easy       & 59.6 & 0.8 \\
+\textcolor{red}{V1\_02\_medium}   & 50.8 & 3.4 \\
+\textcolor{red}{V1\_03\_difficult}& 47.7 & 1.2 \\
+\textcolor{red}{V2\_01\_easy}     & 49.9 & 0.3 \\
+V2\_02\_medium     & 55.2 & 2.2 \\
+\midrule
+\textbf{Mean}      & \textbf{48.2} & \textbf{1.6} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{images/orbslam2_frontend_timing_per_sequence.png}
+\caption{ORB-SLAM2 frontend full-tracking time per sequence ($\pm$1\,std across runs). Red dashed line = 20\,Hz (50\,ms) budget.}
+\label{fig:orbslam2_timing}
+\end{figure}
+
+Mean frontend time is $\approx$48\,ms, so ORB-SLAM2 is usually just above the EuRoC real-time line, similar to ORB-SLAM3 and much slower than OV$^2$SLAM Fast ($\approx$5\,ms).
+
+\subsection{ORB-SLAM2 CPU Utilization}
+
+\begin{table}[H]
+\centering
+\small
+\caption{ORB-SLAM2 total process CPU per sequence (\% of one core, mean over clean runs).}
+\label{tab:orbslam2_cpu}
+\begin{tabular}{lrr}
+\toprule
+Sequence & Mean (\%) & Run-to-run std (\%) \\
+\midrule
+MH\_01\_easy       & 161.4 & 3.6 \\
+MH\_02\_easy       & 162.5 & 6.3 \\
+MH\_03\_medium     & 162.8 & 3.0 \\
+\textcolor{red}{MH\_04\_difficult} & 144.3 & 5.0 \\
+MH\_05\_difficult  & 139.3 & 1.6 \\
+V1\_01\_easy       & 198.9 & 3.9 \\
+\textcolor{red}{V1\_02\_medium}   & 171.7 & 9.4 \\
+\textcolor{red}{V1\_03\_difficult}& 184.4 & 1.9 \\
+\textcolor{red}{V2\_01\_easy}     & 190.3 & 1.9 \\
+V2\_02\_medium     & 205.4 & 5.1 \\
+\midrule
+\textbf{Mean}      & \textbf{172.1} & \textbf{4.2} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{images/orbslam2_cpu_per_sequence.png}
+\caption{ORB-SLAM2 mean process CPU per sequence with run-to-run $\pm$1\,std error bars.}
+\label{fig:orbslam2_cpu}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.55\textwidth]{images/orbslam2_cpu_per_thread.png}
+\caption{ORB-SLAM2 logical thread-role CPU usage aggregated across sequences and runs.}
+\label{fig:orbslam2_roles}
+\end{figure}
+
+\texttt{ORBGBA} dominates when global bundle adjustment fires, then \texttt{ORBLocalMap} and \texttt{ORBFrontEnd}.
+
+\subsection{ORB-SLAM2 Paper Comparison}
+
+\begin{table}[H]
+\centering
+\small
+\caption{ORB-SLAM2 measured mean RMSE vs.\ published EuRoC stereo RMSE from the original ORB-SLAM2 paper. The paper reports median RMSE over five runs on an Intel Core i7-4790 desktop.}
+\label{tab:orbslam2_vs_paper}
+\begin{tabular}{lrrr}
+\toprule
+Sequence & Measured avg (m) & Paper stereo (m) & Delta (m) \\
+\midrule
+MH\_01\_easy       & $0.046 \pm 0.004$ & 0.035 & +0.011 \\
+MH\_02\_easy       & $0.054 \pm 0.006$ & 0.018 & +0.036 \\
+MH\_03\_medium     & $0.046 \pm 0.004$ & 0.028 & +0.018 \\
+\textcolor{red}{MH\_04\_difficult} & $0.077 \pm 0.010$ & 0.119 & -0.042 \\
+MH\_05\_difficult  & $0.066 \pm 0.023$ & 0.060 & +0.006 \\
+V1\_01\_easy       & $0.058 \pm 0.006$ & 0.035 & +0.023 \\
+\textcolor{red}{V1\_02\_medium}   & $0.091 \pm 0.007$ & 0.020 & +0.071 \\
+\textcolor{red}{V1\_03\_difficult}& $0.128 \pm 0.012$ & 0.048 & +0.080 \\
+\textcolor{red}{V2\_01\_easy}     & $0.061 \pm 0.002$ & 0.037 & +0.024 \\
+V2\_02\_medium     & $0.093 \pm 0.013$ & 0.035 & +0.058 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The gap vs.\ the original paper is still expected on Pi~5 with ROS~2 bag playback and a different runtime environment, but the corrected EuRoC paper values show that our wrapper stays in the same order of magnitude on most sequences. ORB-SLAM2 nevertheless remained the most \emph{reliable} ORB-family system in this batch.
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\subsection{ORB-SLAM3 Thread Roles}
+\begin{table}[H]
+\centering
+\small
+\caption{ORB-SLAM3 logical thread-role utilization aggregated across completed sequences.}
+\label{tab:orb_role_table}
+\begin{tabular}{lrrr}
+\toprule
+Role & Mean CPU (\%) & Std across sequences (\%) & Sequences present \\
+\midrule
+orb\_gba & 78.657 & 8.950 & 4 \\
+orb\_lmap & 20.356 & 14.882 & 9 \\
+orb\_track & 19.150 & 1.803 & 9 \\
+stereo\_node\_cpp & 2.892 & 0.225 & 9 \\
+orb\_loop & 2.082 & 1.561 & 9 \\
+recvUC & 1.068 & 0.079 & 9 \\
+\bottomrule
+\end{tabular}
+\end{table}
+As seen and as expected, bundle adjustment is the highest CPU-consuming thread.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{images/orbslam_role_means.png}
+\caption{ORB-SLAM3 logical thread-role utilization aggregated across completed sequences.}
+\label{fig:orb_roles}
+\end{figure}
+
+\clearpage
+\clearpage
+
+\section{RTAB-Map Results}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\subsection{RTAB-Map RMSE Summary}
+
+The RTAB-Map stereo odometry + SLAM pipeline was evaluated across all ten EuRoC sequences. Each sequence was repeated three times; results are reported as \textbf{mean$\pm$std across all valid runs}, where a run is valid if it has RMSE $>0.01$\,m and $\geq$50 recorded poses (low-RMSE, low-pose runs correspond to early tracking loss producing trivially small errors). The evaluation metric is Absolute Pose Error (APE) with Sim(3) Umeyama alignment using \texttt{evo\_ape}.
+
+\begin{table}[H]
+\centering
+\small
+\caption{RTAB-Map mean$\pm$std RMSE per sequence (across valid runs) vs.\ OV$^2$SLAM Accurate and ORB-SLAM3 (both best run). n/a = algorithm did not complete the sequence.}
+\label{tab:rtabmap_rmse}
+\begin{tabular}{lrrrr}
+\toprule
+Sequence & RTAB-Map avg (m) & Valid runs & OV2 acc (m) & ORB-SLAM3 (m) \\
+\midrule
+MH\_01\_easy       & $0.102 \pm 0.063$ & 3/3 & 0.040 & 0.043 \\
+MH\_02\_easy       & $0.190 \pm 0.143$ & 3/3 & 0.049 & 0.071 \\
+MH\_03\_medium     & $0.146 \pm 0.038$ & 3/3 & 0.046 & 0.247 \\
+\textcolor{red}{MH\_04\_difficult} & $0.224 \pm 0.070$ & 3/3 & 0.069 & 0.039 \\
+MH\_05\_difficult  & $0.166$ (2/3 lost tracking) & 1/3 & 0.067 & 0.091 \\
+V1\_01\_easy       & $0.096 \pm 0.029$ & 3/3 & 0.055 & 0.131 \\
+\textcolor{red}{V1\_02\_medium}   & $0.081$ (2/3 lost tracking) & 1/3 & 0.088 & 0.331 \\
+\textcolor{red}{V1\_03\_difficult}& $0.133 \pm 0.046$ & 3/3 & 0.118 & 0.069 \\
+\textcolor{red}{V2\_01\_easy}     & $0.161 \pm 0.052$ & 3/3 & 0.072 & n/a \\
+V2\_02\_medium     & $0.244 \pm 0.035$ & 3/3 & 0.054 & 0.228 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{images/rtabmap_rmse_per_sequence.png}
+\caption{RTAB-Map mean APE RMSE per sequence with $\pm$1\,std error bars across valid runs. Green bars = easy sequences; red = medium/difficult sequences. Sequences with only one valid run show no error bar. Dashed lines mark 5\,cm and 10\,cm reference thresholds.}
+\label{fig:rtabmap_rmse}
+\end{figure}
+
+Comparing the three systems: RTAB-Map's average RMSE is consistently higher than OV$^2$SLAM Accurate. Against ORB-SLAM3 the picture is mixed: ORB-SLAM3 wins on sequences where it runs successfully (e.g.\ MH\_01: 0.043 vs.\ 0.102\,m; V1\_03: 0.069 vs.\ 0.133\,m; MH\_04: 0.039 vs.\ 0.224\,m), but completely fails on \textcolor{red}{V1\_02\_medium} (0.331\,m vs.\ RTAB-Map's 0.081\,m) and does not run on \textcolor{red}{V2\_01\_easy}. RTAB-Map is the only system that completes every sequence. The large standard deviations (e.g.\ MH\_02: $\pm$0.143\,m) reflect the hardware bottleneck: at 8.4--10.5\,Hz effective odometry, outcomes are sensitive to OS scheduling and which frames happen to be queued, making results non-deterministic across runs.
+
+\subsection{RTAB-Map Stereo Odometry Timing}
+
+The \texttt{stereo\_odometry} node runs the GFTT+FLANN feature-based tracking pipeline for each incoming stereo frame. Timing is measured from the \texttt{OdomInfo.time\_estimation} and \texttt{local\_bundle\_time} fields published on \texttt{/odom\_info}. Values are averaged across all valid runs per sequence.
+
+\begin{table}[H]
+\centering
+\small
+\caption{RTAB-Map stereo odometry estimation time per sequence (average over valid runs).}
+\label{tab:rtabmap_timing_odom}
+\begin{tabular}{lrrr}
+\toprule
+Sequence & Mean (ms) & Std (ms) & P95 (ms) \\
+\midrule
+MH\_01\_easy       & 101.7 & 29.9 & 160.0 \\
+MH\_02\_easy       & 104.4 & 28.5 & 168.3 \\
+MH\_03\_medium     & 97.2  & 28.3 & 137.7 \\
+MH\_04\_difficult  & 104.2 & 30.3 & 157.6 \\
+MH\_05\_difficult  & 88.3  & 24.8 & 133.3 \\
+V1\_01\_easy       & 103.6 & 30.0 & 161.3 \\
+V1\_02\_medium     & 93.0  & 27.6 & 147.8 \\
+V1\_03\_difficult  & 92.8  & 27.5 & 135.0 \\
+V2\_01\_easy       & 100.3 & 27.2 & 153.2 \\
+V2\_02\_medium     & 90.4  & 23.4 & 135.5 \\
+\midrule
+\textbf{Mean}      & \textbf{97.6} & \textbf{27.7} & \textbf{149.0} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\small
+\caption{RTAB-Map local bundle adjustment time per sequence (average over valid runs). Triggered selectively on keyframe creation; zero when no keyframe is created.}
+\label{tab:rtabmap_timing_lb}
+\begin{tabular}{lrr}
+\toprule
+Sequence & Mean (ms) & Std (ms) \\
+\midrule
+MH\_01\_easy       & 25.6 & 12.8 \\
+MH\_02\_easy       & 24.7 & 12.9 \\
+MH\_03\_medium     & 13.7 & 14.8 \\
+MH\_04\_difficult  & 25.8 & 17.2 \\
+MH\_05\_difficult  & 22.3 & 13.8 \\
+V1\_01\_easy       & 23.0 & 13.0 \\
+V1\_02\_medium     & 15.5 & 16.5 \\
+V1\_03\_difficult  & 9.3  & 15.1 \\
+V2\_01\_easy       & 22.4 & 13.6 \\
+V2\_02\_medium     & 8.2  & 11.2 \\
+\midrule
+\textbf{Mean}      & \textbf{19.1} & \textbf{14.1} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{images/rtabmap_odom_timing_per_sequence.png}
+\caption{RTAB-Map stereo odometry timing per sequence. Blue bars = mean odometry estimation time ($\pm$1\,std); orange bars = mean local bundle time ($\pm$1\,std); red triangles ($\blacktriangle$) = P95 estimation time. The red dashed line marks 50\,ms (20\,Hz budget); the orange dotted line marks 100\,ms (10\,Hz).}
+\label{fig:rtabmap_timing}
+\end{figure}
+
+A critical observation is that the mean odometry estimation time \textbf{consistently exceeds 88--104\,ms across all sequences} (std $\approx$\,25--30\,ms, P95 = 133--162\,ms), which is \textbf{more than double the 50\,ms budget} imposed by the 20\,Hz stereo stream. This means that RTAB-Map's \texttt{stereo\_odometry} cannot process every incoming frame in real time on the Raspberry Pi 5. With \texttt{always\_process\_most\_recent\_frame = false}, the node queues incoming frames, gradually accumulating a backlog. The effective odometry processing rate was verified directly from the \texttt{/odom\_info} timestamps recorded during each run: the node processes at \textbf{8.4--10.5\,Hz} across all sequences, roughly half of the 20\,Hz input rate. This means approximately every other frame is eventually processed, with increasing temporal lag relative to the camera. This frame lag introduces growing misalignment between the motion model and the actual camera trajectory, which is the primary contributor to the elevated RMSE on the more dynamic and difficult sequences.
+
+The P95 processing time (133--162\,ms) is especially important: it means that at peak load, a single odometry call takes over 3$\times$ the frame budget, causing the backlog to deepen temporarily. These spikes coincide with keyframe creation events where the local bundle adjustment (orange bars, mean 8--26\,ms, std 11--18\,ms) runs on top of the feature estimation, as seen from the wide standard deviation of the local bundle time.
+
+\subsection{RTAB-Map CPU Utilization}
+
+CPU usage was monitored using a custom \texttt{monitor\_cpu.py} sampler running at 1\,Hz throughout each sequence. CPU percentages are measured as $\Delta$(user+system time) / $\Delta$(wall time) per thread, where 100\% represents full utilization of one CPU core. The monitored pipeline consists of two ROS2 nodes: \texttt{stereo\_odometry} and \texttt{rtabmap}.
+
+\begin{table}[H]
+\centering
+\small
+\caption{RTAB-Map CPU utilization per sequence (average over valid runs, pipeline = stereo\_odometry + rtabmap).}
+\label{tab:rtabmap_cpu}
+\begin{tabular}{lrrr}
+\toprule
+Sequence & stereo\_odometry (\%) & rtabmap (\%) & Combined (\%) \\
+\midrule
+MH\_01\_easy       & 80.7  & 51.7 & 132.3 \\
+MH\_02\_easy       & 86.6  & 48.0 & 134.6 \\
+MH\_03\_medium     & 88.0  & 37.3 & 125.3 \\
+MH\_04\_difficult  & 87.3  & 42.7 & 130.0 \\
+MH\_05\_difficult  & 85.8  & 45.4 & 131.2 \\
+V1\_01\_easy       & 83.4  & 47.7 & 131.1 \\
+V1\_02\_medium     & 80.0  & 40.1 & 120.1 \\
+V1\_03\_difficult  & 87.2  & 33.1 & 120.3 \\
+V2\_01\_easy       & 87.0  & 41.2 & 128.2 \\
+V2\_02\_medium     & 89.5  & 33.5 & 123.0 \\
+\midrule
+\textbf{Mean}      & \textbf{85.6} & \textbf{42.1} & \textbf{127.6} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{images/rtabmap_cpu_per_sequence.png}
+\caption{RTAB-Map average CPU utilization per sequence, broken down by node. Stacked bars show \texttt{stereo\_odometry} (blue) and \texttt{rtabmap} (red); black error bars indicate $\pm$1\,std of the combined total across all 1\,Hz CPU samples. Labels show mean$\pm$std. Dashed lines mark 100\% (one core) and 200\% (two cores).}
+\label{fig:rtabmap_cpu_per_sequence}
+\end{figure}
+
+The combined RTAB-Map pipeline consumes an average of \textbf{127.6\%} CPU, meaning it consistently requires slightly more than one full CPU core across the entire Raspberry Pi 5's four-core budget. The \texttt{stereo\_odometry} node dominates at \textbf{85.6\%}, driven by the GFTT feature detection, FLANN matching, and RANSAC outlier rejection — all of which internally exploit OpenCV's parallel primitives across the available cores. The \texttt{rtabmap} node contributes a further \textbf{42.1\%} on average, reflecting the SLAM graph update, working memory management, and loop closure detection running on a separate thread.
+
+\textbf{Note:} these measurements cover only the two RTAB-Map nodes. The additional pipeline components (two \texttt{rectify\_node} instances for stereo rectification, \texttt{euroc\_caminfo\_pub.py}, and \texttt{ros2 bag play}) are not included and would raise the total system CPU consumption further.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.55\textwidth]{images/rtabmap_cpu_per_thread.png}
+\caption{RTAB-Map average CPU per node, averaged across all sequences and valid runs ($\pm$1\,std across sequences shown as error bars). DDS transport threads excluded. Y-axis extends to 400\% for comparison with the four-core budget.}
+\label{fig:rtabmap_cpu_per_thread}
+\end{figure}
+
+\subsection{RTAB-Map Paper Comparison}
+
+The reference results are taken from Table~7 of Labb{\'e} \& Michaud (2024) (\textit{RTAB-Map as an Open-Source Lidar and Visual SLAM Library}, arXiv:2403.06341), which reports ATE in centimetres for each odometry strategy on EuRoC stereo. The row used is \textbf{F2M} (Frame-to-Map), which corresponds to the \texttt{OdomF2M} strategy configured in this experiment. The paper results were obtained on a desktop-class CPU running the odometry node only (no SLAM/loop-closure node). By contrast, the measurements here include the full pipeline: F2M stereo odometry \emph{plus} the \texttt{rtabmap} SLAM node with appearance-based loop closure. Loop closure can improve accuracy on revisited areas but adds CPU cost that further loads the Raspberry Pi 5.
+
+\begin{table}[H]
+\centering
+\small
+\caption{RTAB-Map mean RMSE (averaged across valid runs) vs.\ F2M odometry-only results from Labb{\'e} \& Michaud (2024), Table~7 (desktop CPU, no loop closure).}
+\label{tab:rtabmap_vs_paper}
+\begin{tabular}{lrrr}
+\toprule
+Sequence & Measured avg RMSE (m) & Paper F2M ATE (m) & Delta avg (m) \\
+\midrule
+MH\_01\_easy       & $0.102 \pm 0.063$ & 0.017 & +0.085 \\
+MH\_02\_easy       & $0.190 \pm 0.143$ & 0.025 & +0.165 \\
+MH\_03\_medium     & $0.146 \pm 0.038$ & 0.068 & +0.078 \\
+MH\_04\_difficult  & $0.224 \pm 0.070$ & 0.160 & +0.064 \\
+MH\_05\_difficult  & $0.166$ (1/3 runs valid) & 0.076 & +0.090 \\
+V1\_01\_easy       & $0.096 \pm 0.029$ & 0.071 & +0.025 \\
+V1\_02\_medium     & $0.081$ (1/3 runs valid) & 0.040 & +0.041 \\
+V1\_03\_difficult  & $0.133 \pm 0.046$ & 0.097 & +0.036 \\
+V2\_01\_easy       & $0.161 \pm 0.052$ & 0.082 & +0.079 \\
+V2\_02\_medium     & $0.244 \pm 0.035$ & 0.120 & +0.124 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Several observations stand out:
+\begin{itemize}
+    \item The gap is now larger than it appeared with best-run values, because the average captures the full variability across runs. The high std on MH\_02 ($\pm$0.143\,m) reflects one catastrophically drifting run (RMSE = 0.390\,m) alongside two good ones.
+    \item The tightest sequences relative to the paper are \textbf{V1\_01} (+25\,mm), \textbf{V1\_02} (+41\,mm), and \textbf{V1\_03} (+36\,mm), suggesting loop closure is most effective in the Vicon Room environment.
+    \item The largest gaps are on \textbf{MH\_02} (+0.165\,m) and \textbf{V2\_02\_medium} (+0.124\,m), where both frame lag and scene complexity cause run-to-run inconsistency.
+    \item The comparison is inherently unfair: the paper runs odometry-only at 20\,Hz on a desktop, while the measured results run full SLAM at 8.4--10.5\,Hz on a 4-core ARM.
+\end{itemize}
+
+\clearpage
+
+\section{Per-sequence Trajectories}
+
+This section collects the XY trajectory overlays for OV2SLAM accurate, OV2SLAM fast, ORB-SLAM3, ORB-SLAM2, and RTAB-Map for each EuRoC sequence.
+
+\subsection{MH\_01\_easy}
+
+\begin{figure}[H]
+\centering
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/ov2_accurate_MH_01_easy_trajectory_xy.png}
+\\
+\footnotesize OV2 accurate
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/ov2_fast_MH_01_easy_trajectory_xy.png}
+\\
+\footnotesize OV2 fast
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/orbslam3_MH_01_easy_trajectory_xy.png}
+\\
+\footnotesize ORB-SLAM3
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/orbslam2_MH_01_easy_trajectory_xy.png}
+\\
+\footnotesize ORB-SLAM2 (run 2)
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/rtabmap_MH_01_easy_trajectory_xy.png}
+\\
+\footnotesize RTAB-Map (run 3)
+\end{minipage}
+\caption{MH\_01\_easy XY trajectory overlays: OV2SLAM accurate, OV2SLAM fast, ORB-SLAM3, ORB-SLAM2, and RTAB-Map best run.}
+\label{fig:trajectory_MH_01_easy}
+\end{figure}
+
+\subsection{MH\_02\_easy}
+
+\begin{figure}[H]
+\centering
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/ov2_accurate_MH_02_easy_trajectory_xy.png}
+\\
+\footnotesize OV2 accurate
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/ov2_fast_MH_02_easy_trajectory_xy.png}
+\\
+\footnotesize OV2 fast
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/orbslam3_MH_02_easy_trajectory_xy.png}
+\\
+\footnotesize ORB-SLAM3
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/orbslam2_MH_02_easy_trajectory_xy.png}
+\\
+\footnotesize ORB-SLAM2 (run 3)
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/rtabmap_MH_02_easy_trajectory_xy.png}
+\\
+\footnotesize RTAB-Map (run 2)
+\end{minipage}
+\caption{MH\_02\_easy XY trajectory overlays: OV2SLAM accurate, OV2SLAM fast, ORB-SLAM3, ORB-SLAM2, and RTAB-Map best run.}
+\label{fig:trajectory_MH_02_easy}
+\end{figure}
+
+\subsection{MH\_03\_medium}
+
+\begin{figure}[H]
+\centering
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/ov2_accurate_MH_03_medium_trajectory_xy.png}
+\\
+\footnotesize OV2 accurate
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/ov2_fast_MH_03_medium_trajectory_xy.png}
+\\
+\footnotesize OV2 fast
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/orbslam3_MH_03_medium_trajectory_xy.png}
+\\
+\footnotesize ORB-SLAM3
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/orbslam2_MH_03_medium_trajectory_xy.png}
+\\
+\footnotesize ORB-SLAM2 (run 1)
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/rtabmap_MH_03_medium_trajectory_xy.png}
+\\
+\footnotesize RTAB-Map (run 1)
+\end{minipage}
+\caption{MH\_03\_medium XY trajectory overlays: OV2SLAM accurate, OV2SLAM fast, ORB-SLAM3, ORB-SLAM2, and RTAB-Map best run.}
+\label{fig:trajectory_MH_03_medium}
+\end{figure}
+
+\subsection{\textcolor{red}{MH\_04\_difficult}}
+
+\begin{figure}[H]
+\centering
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/ov2_accurate_MH_04_difficult_trajectory_xy.png}
+\\
+\footnotesize OV2 accurate
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/ov2_fast_MH_04_difficult_trajectory_xy.png}
+\\
+\footnotesize OV2 fast
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/orbslam3_MH_04_difficult_trajectory_xy.png}
+\\
+\footnotesize ORB-SLAM3
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/orbslam2_MH_04_difficult_trajectory_xy.png}
+\\
+\footnotesize ORB-SLAM2 (run 2)
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/rtabmap_MH_04_difficult_trajectory_xy.png}
+\\
+\footnotesize RTAB-Map (run 3)
+\end{minipage}
+\caption{\textcolor{red}{MH\_04\_difficult} XY trajectory overlays: OV2SLAM accurate, OV2SLAM fast, ORB-SLAM3, ORB-SLAM2, and RTAB-Map best run.}
+\label{fig:trajectory_MH_04_difficult}
+\end{figure}
+
+\subsection{MH\_05\_difficult}
+
+\begin{figure}[H]
+\centering
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/ov2_accurate_MH_05_difficult_trajectory_xy.png}
+\\
+\footnotesize OV2 accurate
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/ov2_fast_MH_05_difficult_trajectory_xy.png}
+\\
+\footnotesize OV2 fast
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/orbslam3_MH_05_difficult_trajectory_xy.png}
+\\
+\footnotesize ORB-SLAM3
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/orbslam2_MH_05_difficult_trajectory_xy.png}
+\\
+\footnotesize ORB-SLAM2 (run 2)
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/rtabmap_MH_05_difficult_trajectory_xy.png}
+\\
+\footnotesize RTAB-Map (run 1)
+\end{minipage}
+\caption{MH\_05\_difficult XY trajectory overlays: OV2SLAM accurate, OV2SLAM fast, ORB-SLAM3, ORB-SLAM2, and RTAB-Map best run.}
+\label{fig:trajectory_MH_05_difficult}
+\end{figure}
+
+\subsection{V1\_01\_easy}
+
+\begin{figure}[H]
+\centering
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/ov2_accurate_V1_01_easy_trajectory_xy.png}
+\\
+\footnotesize OV2 accurate
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/ov2_fast_V1_01_easy_trajectory_xy.png}
+\\
+\footnotesize OV2 fast
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/orbslam3_V1_01_easy_trajectory_xy.png}
+\\
+\footnotesize ORB-SLAM3
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/orbslam2_V1_01_easy_trajectory_xy.png}
+\\
+\footnotesize ORB-SLAM2 (run 3)
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/rtabmap_V1_01_easy_trajectory_xy.png}
+\\
+\footnotesize RTAB-Map (run 3)
+\end{minipage}
+\caption{V1\_01\_easy XY trajectory overlays: OV2SLAM accurate, OV2SLAM fast, ORB-SLAM3, ORB-SLAM2, and RTAB-Map best run.}
+\label{fig:trajectory_V1_01_easy}
+\end{figure}
+
+\subsection{\textcolor{red}{V1\_02\_medium}}
+
+\begin{figure}[H]
+\centering
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/ov2_accurate_V1_02_medium_trajectory_xy.png}
+\\
+\footnotesize OV2 accurate
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/ov2_fast_V1_02_medium_trajectory_xy.png}
+\\
+\footnotesize OV2 fast
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/orbslam3_V1_02_medium_trajectory_xy.png}
+\\
+\footnotesize ORB-SLAM3
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/orbslam2_V1_02_medium_trajectory_xy.png}
+\\
+\footnotesize ORB-SLAM2 (run 3)
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/rtabmap_V1_02_medium_trajectory_xy.png}
+\\
+\footnotesize RTAB-Map (run 3)
+\end{minipage}
+\caption{\textcolor{red}{V1\_02\_medium} XY trajectory overlays: OV2SLAM accurate, OV2SLAM fast, ORB-SLAM3, ORB-SLAM2, and RTAB-Map best run.}
+\label{fig:trajectory_V1_02_medium}
+\end{figure}
+
+\subsection{\textcolor{red}{V1\_03\_difficult}}
+
+\begin{figure}[H]
+\centering
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/ov2_accurate_V1_03_difficult_trajectory_xy.png}
+\\
+\footnotesize OV2 accurate
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/ov2_fast_V1_03_difficult_trajectory_xy.png}
+\\
+\footnotesize OV2 fast
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/orbslam3_V1_03_difficult_trajectory_xy.png}
+\\
+\footnotesize ORB-SLAM3
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/orbslam2_V1_03_difficult_trajectory_xy.png}
+\\
+\footnotesize ORB-SLAM2 (run 3)
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/rtabmap_V1_03_difficult_trajectory_xy.png}
+\\
+\footnotesize RTAB-Map (run 2)
+\end{minipage}
+\caption{\textcolor{red}{V1\_03\_difficult} XY trajectory overlays: OV2SLAM accurate, OV2SLAM fast, ORB-SLAM3, ORB-SLAM2, and RTAB-Map best run.}
+\label{fig:trajectory_V1_03_difficult}
+\end{figure}
+
+\subsection{\textcolor{red}{V2\_01\_easy}}
+
+\begin{figure}[H]
+\centering
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/ov2_accurate_V2_01_easy_trajectory_xy.png}
+\\
+\footnotesize OV2 accurate
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/ov2_fast_V2_01_easy_trajectory_xy.png}
+\\
+\footnotesize OV2 fast
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\fbox{\parbox[c][2.2cm][c]{0.9\linewidth}{\centering\footnotesize ORB-SLAM3 n/a}}
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/orbslam2_V2_01_easy_trajectory_xy.png}
+\\
+\footnotesize ORB-SLAM2 (run 1)
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/rtabmap_V2_01_easy_trajectory_xy.png}
+\\
+\footnotesize RTAB-Map (run 2)
+\end{minipage}
+\caption{\textcolor{red}{V2\_01\_easy} XY trajectory overlays: OV2SLAM accurate, OV2SLAM fast, ORB-SLAM3 (n/a), ORB-SLAM2, and RTAB-Map best run.}
+\label{fig:trajectory_V2_01_easy}
+\end{figure}
+
+\subsection{V2\_02\_medium}
+
+\begin{figure}[H]
+\centering
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/ov2_accurate_V2_02_medium_trajectory_xy.png}
+\\
+\footnotesize OV2 accurate
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/ov2_fast_V2_02_medium_trajectory_xy.png}
+\\
+\footnotesize OV2 fast
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/orbslam3_V2_02_medium_trajectory_xy.png}
+\\
+\footnotesize ORB-SLAM3
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/orbslam2_V2_02_medium_trajectory_xy.png}
+\\
+\footnotesize ORB-SLAM2 (run 1)
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.18\textwidth}
+\centering
+\includegraphics[width=\linewidth]{images/rtabmap_V2_02_medium_trajectory_xy.png}
+\\
+\footnotesize RTAB-Map (run 3)
+\end{minipage}
+\caption{V2\_02\_medium XY trajectory overlays: OV2SLAM accurate, OV2SLAM fast, ORB-SLAM3, ORB-SLAM2, and RTAB-Map best run.}
+\label{fig:trajectory_V2_02_medium}
+\end{figure}
+
+\clearpage
+
+
+\section{Conclusions}
+
+While OV$^{2}$SLAM was benchmarked to the best of my ability, ORB-SLAM3 presents a significant challenge, particularly because it is not available on the official ROS GitHub and is unstable during runtime. My hypothesis is that
+\begin{itemize}
+    \item \textbf{Hypothesis 1: Pipeline Latency.} The rosbag adapter publishes stereo frames at real-time rate (\texttt{playback\_rate: 1.0}), but ROS2 topic transport and subscriber callback overhead MAY have introduced sufficient latency that by the time each stereo pair reaches the ORB-SLAM3 tracking thread, the subsequent frame has already been published. The bounded stereo buffer (maximum 20 frames per channel) then makes non-deterministic keep/drop decisions under load, causing different frames to survive across runs and producing run-to-run RMSE variability.
+
+    \item \textbf{Hypothesis 2: Tracking Budget Exceeded.} The ORB-SLAM3 tracking thread exceeds the 50\,ms per-frame budget imposed by EuRoC's 20\,Hz stereo input. When per-frame tracking time surpasses this threshold, the pipeline accumulates a backlog faster than it can be consumed. The bounded buffer subsequently drops frames non-deterministically depending on OS thread scheduling, causing divergent map evolution paths and unstable trajectory estimates across repeated runs.
+\end{itemize}
+
+\subsection*{Five-way summary (see Tables~\ref{tab:master_comparison_rmse} and~\ref{tab:master_comparison_frontend} for full numbers)}
+
+RTAB-Map presents a well-integrated ROS2 pipeline and completed every run without crashing — a key advantage over ORB-SLAM3. The system is limited primarily by hardware: the stereo odometry pipeline takes 88--104\,ms per frame (P95 up to 162\,ms), more than double the 50\,ms budget at 20\,Hz. The effective processing rate was verified from \texttt{/odom\_info} timestamps at \textbf{8.4--10.5\,Hz} — roughly every other frame is processed with growing temporal lag.
+
+\paragraph{RMSE comparison (averaged across valid runs).}
+\begin{itemize}
+    \item \textbf{OV$^2$SLAM Accurate} achieves the lowest average RMSE (mean $\approx$\,0.066\,m), tracking all sequences reliably with results close to its published paper values.
+    \item \textbf{OV$^2$SLAM Fast} is worse than Accurate on harder sequences (mean $\approx$\,0.106\,m excl.\ V1\_03) and catastrophically fails on \textcolor{red}{V1\_03\_difficult} (0.670\,m).
+    \item \textbf{ORB-SLAM2} (three runs per sequence, batch \texttt{20260530\_232822}) averages $\approx$\,7.2\,cm RMSE with low run-to-run spread, completes all sequences, and uses $\approx$\,172\% CPU with $\approx$\,48\,ms frontend time — similar cost to ORB-SLAM3 but far more stable here.
+    \item \textbf{ORB-SLAM3} delivers competitive best-run results on sequences it completes (0.039--0.247\,m), but shows severe instability: it fails entirely on \textcolor{red}{V2\_01\_easy} (n/a), produces 0.331\,m on \textcolor{red}{V1\_02\_medium}, and has high run-to-run variability (average across successful sequences $\approx$\,0.139\,m). Unlike RTAB-Map, its failures are not always detectable from pose count alone.
+    \item \textbf{RTAB-Map} has the highest mean RMSE ($\approx$\,0.154\,m) but is the only system completing all sequences. It beats ORB-SLAM3 on \textcolor{red}{V1\_02\_medium} (0.081 vs.\ 0.331\,m) and MH\_03\_medium (0.146 vs.\ 0.247\,m). Its failure mode — early tracking loss producing a low pose count — is easy to detect and flag automatically.
+\end{itemize}
+
+\paragraph{Frontend/odometry latency comparison.}
+\begin{itemize}
+    \item \textbf{OV$^2$SLAM Fast}: $\approx$\,5\,ms mean — the fastest, comfortably within the 50\,ms budget.
+    \item \textbf{OV$^2$SLAM Accurate}: $\approx$\,16--22\,ms mean — still well within the 50\,ms budget.
+    \item \textbf{ORB-SLAM3}: $\approx$\,32--52\,ms mean — at or slightly above the budget, causing non-deterministic frame drops.
+    \item \textbf{RTAB-Map}: \textbf{88--104\,ms mean} ($\pm$25--30\,ms std, P95 up to 162\,ms) — consistently over 2$\times$ the budget, forcing operation at 8.4--10.5\,Hz.
+\end{itemize}
+
+\paragraph{CPU utilization comparison.}
+\begin{itemize}
+    \item \textbf{OV$^2$SLAM Fast}: $\approx$\,43--52\% mean — the lightest, easily fitting in a single core.
+    \item \textbf{RTAB-Map}: $\approx$\,120--135\% mean — uses just over one full core; the most CPU-efficient \emph{complete SLAM system} evaluated.
+    \item \textbf{ORB-SLAM3}: $\approx$\,87--150\% mean — similar to RTAB-Map but less stable.
+    \item \textbf{OV$^2$SLAM Accurate}: $\approx$\,141--165\% mean — highest average CPU of the four, driven by its local bundle adjustment and loop closure threads.
+\end{itemize}
+
+\paragraph{Overall assessment.} On a Raspberry Pi 5, OV$^2$SLAM Fast is the clear winner for edge deployment: lowest latency, lowest CPU, and acceptable accuracy. OV$^2$SLAM Accurate is the best choice when accuracy matters and CPU budget allows $\approx$1.6 cores. RTAB-Map's odometry is too slow for 20\,Hz real-time operation on this hardware but its failure mode is graceful and its loop closure can partially compensate for drift. ORB-SLAM3 remains the least suitable due to non-deterministic instability.
+
+
+\clearpage
+
+\section{Total Comparison Across All Algorithms}
+\label{sec:total_comparison}
+
+This section compares all five evaluated configurations on the same ten EuRoC stereo sequences: OV$^2$SLAM Accurate, OV$^2$SLAM Fast, ORB-SLAM3 (best run), ORB-SLAM2 (mean$\pm$std over three runs, batch \texttt{20260530\_232822}), and RTAB-Map (mean$\pm$std over valid runs). Frontend metric definitions match the per-algorithm sections (OV$^2$ full FE; ORB-SLAM2/3 tracking path; RTAB-Map stereo odometry time).
+
+\subsection{Master comparison tables}
+
+\begin{table}[H]
+\centering
+\scriptsize
+\setlength{\tabcolsep}{5pt}
+\caption{EuRoC per-sequence APE RMSE comparison (m). OV$^2$SLAM and ORB-SLAM3 are best-run values; ORB-SLAM2 and RTAB-Map show mean$\pm$std across repeated runs where available.}
+\label{tab:master_comparison_rmse}
+\begin{tabular}{lrrrrr}
+\toprule
+Sequence & OV2 acc & OV2 fast & ORB3 & ORB2 & RTAB \\
+\midrule
+MH\_01\_easy & 0.040 & 0.054 & 0.043 & $0.046 \pm 0.004$ & $0.102 \pm 0.063$ \\
+MH\_02\_easy & 0.049 & 0.052 & 0.071 & $0.054 \pm 0.006$ & $0.190 \pm 0.143$ \\
+MH\_03\_medium & 0.046 & 0.079 & 0.247 & $0.046 \pm 0.004$ & $0.146 \pm 0.038$ \\
+\textcolor{red}{MH\_04\_difficult} & 0.069 & 0.152 & 0.039 & $0.077 \pm 0.010$ & $0.224 \pm 0.070$ \\
+MH\_05\_difficult & 0.067 & 0.142 & 0.091 & $0.066 \pm 0.023$ & 0.166 \\
+V1\_01\_easy & 0.055 & 0.094 & 0.131 & $0.058 \pm 0.006$ & $0.096 \pm 0.029$ \\
+\textcolor{red}{V1\_02\_medium} & 0.088 & 0.095 & 0.331 & $0.091 \pm 0.007$ & 0.081 \\
+\textcolor{red}{V1\_03\_difficult} & 0.118 & 0.670 & 0.069 & $0.128 \pm 0.012$ & $0.133 \pm 0.046$ \\
+\textcolor{red}{V2\_01\_easy} & 0.072 & 0.086 & n/a & $0.061 \pm 0.002$ & $0.161 \pm 0.052$ \\
+V2\_02\_medium & 0.054 & 0.204 & 0.228 & $0.093 \pm 0.013$ & $0.244 \pm 0.035$ \\
+\midrule
+\textbf{Cross-seq.\ mean} & \textbf{0.066} & \textbf{0.163} & \textbf{0.139} & \textbf{0.072} & \textbf{0.154} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\scriptsize
+\setlength{\tabcolsep}{5pt}
+\caption{EuRoC per-sequence frontend / odometry time comparison (ms). OV$^2$SLAM and ORB-SLAM3 are best-run values; ORB-SLAM2 shows mean$\pm$std tracking time across repeated runs; RTAB-Map reports stereo odometry time.}
+\label{tab:master_comparison_frontend}
+\begin{tabular}{lrrrrr}
+\toprule
+Sequence & OV2 acc & OV2 fast & ORB3 & ORB2 & RTAB \\
+\midrule
+MH\_01\_easy & 17.1 & 4.9 & 50.1 & $46.1 \pm 2.1$ & 101.7 \\
+MH\_02\_easy & 17.1 & 5.0 & 48.8 & $45.4 \pm 2.6$ & 104.4 \\
+MH\_03\_medium & 19.5 & 5.1 & 51.7 & $47.6 \pm 1.5$ & 97.2 \\
+\textcolor{red}{MH\_04\_difficult} & 15.6 & 5.0 & 38.3 & $40.6 \pm 1.0$ & 104.2 \\
+MH\_05\_difficult & 15.8 & 5.0 & 46.1 & $39.2 \pm 0.4$ & 88.3 \\
+V1\_01\_easy & 19.7 & 5.1 & 32.3 & $59.6 \pm 0.8$ & 103.6 \\
+\textcolor{red}{V1\_02\_medium} & 21.7 & 5.7 & 37.8 & $50.8 \pm 3.4$ & 93.0 \\
+\textcolor{red}{V1\_03\_difficult} & 21.2 & 6.1 & 46.4 & $47.7 \pm 1.2$ & 92.8 \\
+\textcolor{red}{V2\_01\_easy} & 15.0 & 4.9 & n/a & $49.9 \pm 0.3$ & 100.3 \\
+V2\_02\_medium & 20.5 & 5.8 & 36.5 & $55.2 \pm 2.2$ & 90.4 \\
+\midrule
+\textbf{Cross-seq.\ mean} & \textbf{18.2} & \textbf{5.2} & \textbf{43.0} & \textbf{48.2} & \textbf{97.6} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Comparison plots}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{images/comparison_rmse_all_algorithms.png}
+\caption{Per-sequence RMSE comparison across all five configurations. Error bars: ORB-SLAM2 and RTAB-Map run-to-run std.}
+\label{fig:comparison_rmse}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{images/comparison_latency_all_algorithms.png}
+\caption{Per-sequence frontend / odometry latency comparison. Dashed lines: 50\,ms (20\,Hz) and 100\,ms (10\,Hz).}
+\label{fig:comparison_latency}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{images/comparison_cpu_all_algorithms.png}
+\caption{Per-sequence process CPU comparison (\% of one core). Dashed lines: 100\% and 200\%.}
+\label{fig:comparison_cpu}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{images/comparison_overall_means.png}
+\caption{Cross-sequence average RMSE, frontend time, and CPU for each configuration.}
+\label{fig:comparison_overall}
+\end{figure}
+
+\subsection{Comparison summary}
+
+\begin{itemize}
+  \item \textbf{Accuracy:} OV$^2$SLAM Accurate still has the lowest typical RMSE; ORB-SLAM2 is next-best among systems that always finish ($\approx$7\,cm mean on easy MH, up to $\approx$13\,cm on \textcolor{red}{V1\_03}). ORB-SLAM3 can beat everyone on a lucky best run but fails or spikes on several sequences.
+  \item \textbf{Speed:} OV$^2$SLAM Fast ($\approx$5\,ms) is the only mode clearly inside the 20\,Hz budget. ORB-SLAM2 and ORB-SLAM3 sit near or above 50\,ms. RTAB-Map is slowest ($\approx$88--104\,ms).
+  \item \textbf{CPU:} OV$^2$SLAM Fast uses $<$0.5 core. RTAB-Map and ORB-SLAM2/3 use $\approx$1.3--2 cores. OV$^2$SLAM Accurate is heaviest when loop closure runs.
+  \item \textbf{Reliability:} ORB-SLAM2 and RTAB-Map completed every sequence in their batches; ORB-SLAM3 missed \textcolor{red}{V2\_01} and often needed cherry-picked best runs.
+\end{itemize}
+
+\paragraph{Why ORB-SLAM3 fails more than RTAB-Map despite being faster per frame.}
+ORB-SLAM3's descriptor matching can fail abruptly under backlog, while RTAB-Map's flow-based odometry degrades more softly — see per-algorithm sections for detail.
+
+\end{document}

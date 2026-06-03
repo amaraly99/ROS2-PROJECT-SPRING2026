@@ -1,0 +1,69 @@
+# Standalone ORB_SLAM3_ROS2 benchmark config consumed by:
+#   benchmarks/run_benchmark_orbslam3_ros2_style.py
+
+# Leave empty to auto-detect sensible defaults:
+#   workspace_root -> /workspace when available, otherwise the repo root
+#   dataset_root   -> <workspace_root>/datasets/euroc
+#   output_root    -> <workspace_root>/results/orbslam3_ros2_orbslam2_style
+workspace_root: ""
+dataset_root: ""
+output_root: ""
+
+# Leave empty for a timestamped results directory.
+results_name: ""
+
+# Supported modes here are the ROS2 package executables:
+#   mono, stereo, stereo-inertial, rgbd
+mode: stereo-inertial
+
+# Leave empty to use the EuRoC defaults for mono/stereo/stereo-inertial.
+settings_file: ""
+
+# Leave empty to use:
+#   <workspace_root>/src/ORB_SLAM3_ROS2/vocabulary/ORBvoc.txt
+# If that file is missing but ORBvoc.txt.tar.gz exists beside it, the runner
+# will extract it automatically.
+vocabulary_file: ""
+
+rectify: false
+equalize: false
+
+# Leave empty to use mode-specific EuRoC remaps automatically.
+bag_remaps:
+  - /cam0/image_raw:=/camera/left
+  - /cam1/image_raw:=/camera/right
+  - /imu0:=/imu
+
+# Leave empty to benchmark every discovered sequence under dataset_root.
+sequences:
+  - MH_01_easy
+  - MH_02_easy
+  - MH_03_medium
+  - MH_04_difficult
+  - MH_05_difficult
+  - V1_01_easy
+  - V1_02_medium
+  - V1_03_difficult
+  - V2_01_easy
+  - V2_02_medium
+seq_range_start: ""
+seq_range_end: ""
+
+runs: 1
+retries: 1
+orbslam3_cores: ""
+
+node_name: /ORB_SLAM3_ROS2
+node_wait_timeout: 45
+bag_timeout: 1200
+sigint_timeout: 30
+
+startup_settle_sec: 2
+post_bag_settle_sec: 5
+inter_run_delay_sec: 10
+monitor_sample_sec: 0.05
+bag_play_rate: 1.0
+evo_t_max_diff: 0.1
+
+# Set true when benchmarking monocular mode and you want evo to estimate scale.
+use_scale_correction: false

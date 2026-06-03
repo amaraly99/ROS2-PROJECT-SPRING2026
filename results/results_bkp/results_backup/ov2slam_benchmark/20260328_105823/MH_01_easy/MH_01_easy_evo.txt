@@ -1,0 +1,37 @@
+--------------------------------------------------------------------------------
+Loaded 36382 stamps and poses from: /workspace/results/ov2slam_benchmark/20260328_105823/MH_01_easy/gt.tum
+Loaded 411 stamps and poses from: /workspace/results/ov2slam_benchmark/20260328_105823/MH_01_easy/ov2slam_kfs_traj.txt
+--------------------------------------------------------------------------------
+Synchronizing trajectories...
+Found 401 of max. 411 possible matching timestamps between...
+	/workspace/results/ov2slam_benchmark/20260328_105823/MH_01_easy/gt.tum
+and:	/workspace/results/ov2slam_benchmark/20260328_105823/MH_01_easy/ov2slam_kfs_traj.txt
+..with max. time diff.: 0.1 (s) and time offset: 0.0 (s).
+--------------------------------------------------------------------------------
+Aligning using Umeyama's method...
+Rotation of alignment:
+[[ 0.34450032  0.2779699  -0.89668961]
+ [ 0.93807853 -0.13900803  0.31730969]
+ [-0.03644451 -0.95047856 -0.30864591]]
+Translation of alignment:
+[ 4.68860063 -1.77258703  0.93170599]
+Scale correction: 1.0
+--------------------------------------------------------------------------------
+Compared 401 absolute pose pairs.
+Calculating APE for translation part pose relation...
+--------------------------------------------------------------------------------
+APE w.r.t. translation part (m)
+(with SE(3) Umeyama alignment)
+
+       max	0.078706
+      mean	0.033876
+    median	0.026732
+       min	0.005653
+      rmse	0.040148
+       sse	0.646346
+       std	0.021547
+
+--------------------------------------------------------------------------------
+Saving results to /workspace/results/ov2slam_benchmark/20260328_105823/MH_01_easy/MH_01_easy_evo.zip...
+
+Generated 2D XY plot: MH_01_easy_ape_xy.png

@@ -1,0 +1,17 @@
+OV2SLAM EuRoC Benchmark Summary
+Date        : 2026-03-28 09:06:15
+Dataset root: /workspace/datasets/euroc
+Params file : /workspace/src/ov2slam_ros/parameters_files/accurate/euroc/euroc_stereo.yaml
+Camera mode : stereo
+Speed mode  : accurate
+Traj policy : paper
+Bag rate    : 1.0x
+GT verdict  : EuRoC *.txt files in this repo are already valid TUM pose format; the runner validates and normalizes them into gt.tum.
+Trajectory  : `paper` prefers ov2slam_kfs_traj.txt; `best` prefers ov2slam_fullba_kfs_traj.txt.
+Excluded    : ov2slam_full_traj_wlc*.txt are not used for evo here because column 1 is a frame index, not a timestamp.
+----------------------------------------------------------------------------------------
+Sequence           Status RMSE (m)     Trajectory                  
+----------------------------------------------------------------------------------------
+MH_01_easy         FAIL   -            -                           
+  error: No supported OV2SLAM trajectory found in /workspace/results/ov2slam_benchmark/20260328_090214/MH_01_easy.
+----------------------------------------------------------------------------------------

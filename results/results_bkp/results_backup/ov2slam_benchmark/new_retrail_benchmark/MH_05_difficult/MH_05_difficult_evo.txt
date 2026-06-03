@@ -1,0 +1,38 @@
+--------------------------------------------------------------------------------
+Loaded 22212 stamps and poses from: /workspace/results/ov2slam_benchmark/new_retrail_benchmark/MH_05_difficult/gt.tum
+Loaded 360 stamps and poses from: /workspace/results/ov2slam_benchmark/new_retrail_benchmark/MH_05_difficult/ov2slam_kfs_traj.txt
+--------------------------------------------------------------------------------
+Synchronizing trajectories...
+Found 356 of max. 360 possible matching timestamps between...
+	/workspace/results/ov2slam_benchmark/new_retrail_benchmark/MH_05_difficult/gt.tum
+and:	/workspace/results/ov2slam_benchmark/new_retrail_benchmark/MH_05_difficult/ov2slam_kfs_traj.txt
+..with max. time diff.: 0.1 (s) and time offset: 0.0 (s).
+--------------------------------------------------------------------------------
+Aligning using Umeyama's method...
+Rotation of alignment:
+[[ 0.74656676 -0.25950479  0.61261354]
+ [-0.66528589 -0.29910973  0.68405267]
+ [ 0.00572372 -0.91825412 -0.39595025]]
+Translation of alignment:
+[ 4.42552407 -1.70579172  0.558136  ]
+Scale correction: 1.0
+--------------------------------------------------------------------------------
+Compared 356 absolute pose pairs.
+Calculating APE for translation part pose relation...
+--------------------------------------------------------------------------------
+APE w.r.t. translation part (m)
+(with SE(3) Umeyama alignment)
+
+       max	0.140788
+      mean	0.054803
+    median	0.052344
+       min	0.008169
+      rmse	0.060975
+       sse	1.323585
+       std	0.026732
+
+--------------------------------------------------------------------------------
+Saving results to /workspace/results/ov2slam_benchmark/new_retrail_benchmark/MH_05_difficult/MH_05_difficult_evo.zip...
+
+Generated 2D XY APE plot: MH_05_difficult_ape_xy.png
+Generated translational RPE plot: MH_05_difficult_rpe_trans.png
