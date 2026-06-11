@@ -23,6 +23,7 @@
 #include <atomic>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 using Image          = sensor_msgs::msg::Image;
@@ -51,6 +52,33 @@ public:
         shm_name_ = declare_parameter("shm_name", std::string("/yolo_shm"));
         sem_name_ = declare_parameter("sem_name", std::string("/yolo_ready"));
         frame_id_ = declare_parameter("frame_id", std::string("camera"));
+
+        // class_name_map: "id:name,id:name" — overrides for non-YOLO producers
+        // whose class_ids are not COCO (e.g. "0:object" for the OpenCV detector,
+        // "100:vlm_detection" for the VLM detector). Checked before the COCO
+        // table so an override of an id < 80 also works. Empty = COCO only.
+        auto map_str = declare_parameter("class_name_map", std::string(""));
+        size_t start = 0;
+        while (start < map_str.size()) {
+            size_t comma = map_str.find(',', start);
+            if (comma == std::string::npos) comma = map_str.size();
+            std::string tok = map_str.substr(start, comma - start);
+            size_t colon = tok.find(':');
+            if (colon != std::string::npos) {
+                try {
+                    int id = std::stoi(tok.substr(0, colon));
+                    class_name_map_[id] = tok.substr(colon + 1);
+                } catch (const std::exception&) {
+                    RCLCPP_WARN(get_logger(), "class_name_map: bad entry '%s'",
+                                tok.c_str());
+                }
+            }
+            start = comma + 1;
+        }
+        if (!class_name_map_.empty())
+            RCLCPP_INFO(get_logger(), "class_name_map: %zu custom entr%s",
+                        class_name_map_.size(),
+                        class_name_map_.size() == 1 ? "y" : "ies");
 
         // Best-effort QoS: YOLO data is ephemeral — always use freshest
         auto qos = rclcpp::QoS(1).best_effort();
@@ -166,8 +194,10 @@ private:
             for (uint32_t i = 0; i < det_count; ++i) {
                 const auto& d = dets_src[i];
                 Detection det;
-                det.class_name  = (d.class_id < 80)
-                    ? COCO_NAMES[d.class_id] : std::to_string(d.class_id);
+                auto it = class_name_map_.find(d.class_id);
+                det.class_name  = (it != class_name_map_.end()) ? it->second
+                    : (d.class_id < 80) ? COCO_NAMES[d.class_id]
+                    : std::to_string(d.class_id);
                 det.confidence  = d.confidence;
                 det.center_x    = (d.x1 + d.x2) / 2.0;
                 det.center_y    = (d.y1 + d.y2) / 2.0;
@@ -205,6 +235,7 @@ private:
     }
 
     std::string shm_name_, sem_name_, frame_id_;
+    std::unordered_map<int, std::string> class_name_map_;
 
     void*                 base_      = MAP_FAILED;
     size_t                shm_total_ = 0;

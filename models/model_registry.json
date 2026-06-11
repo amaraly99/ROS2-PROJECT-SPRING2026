@@ -1,0 +1,123 @@
+{
+  "schema_version": 1,
+  "_comment": [
+    "Single source of truth for the plug-and-play YOLO framework.",
+    "On-disk filenames are INCONSISTENT across families (yolov11n.hef vs yolo11n.onnx,",
+    "*_nms_config.json only ships for v8), so generic indexers cannot glob reliably.",
+    "This registry maps each logical id -> concrete artifact paths + metadata.",
+    "Paths are RELATIVE to this file's directory (the models/ root).",
+    "layout/postproc hints are advisory: the predictors still auto-detect from the",
+    "actual tensor shapes/names at load time and use these values only as a fallback."
+  ],
+  "defaults": {
+    "input_size": 640,
+    "classes": 80,
+    "reg_max": 16,
+    "conf": 0.25,
+    "iou": 0.45
+  },
+  "models": {
+    "yolov8n": {
+      "family": "v8", "variant": "n",
+      "input_size": 640, "classes": 80,
+      "hef": "hef/yolov8n.hef",
+      "onnx": "onnx/yolov8n/yolov8n.onnx",
+      "nms_config": "onnx/yolov8n/yolov8n_nms_config.json",
+      "onnx_layout": "v8_anchors",
+      "hef_postproc": "ondevice_nms",
+      "conf": 0.25, "iou": 0.45
+    },
+    "yolov8s": {
+      "family": "v8", "variant": "s",
+      "input_size": 640, "classes": 80,
+      "hef": "hef/yolov8s.hef",
+      "onnx": "onnx/yolov8s/yolov8s.onnx",
+      "nms_config": "onnx/yolov8s/yolov8s_nms_config.json",
+      "onnx_layout": "v8_anchors",
+      "hef_postproc": "ondevice_nms",
+      "conf": 0.25, "iou": 0.45
+    },
+    "yolov8m": {
+      "family": "v8", "variant": "m",
+      "input_size": 640, "classes": 80,
+      "hef": "hef/yolov8m.hef",
+      "onnx": "onnx/yolov8m/yolov8m.onnx",
+      "nms_config": "onnx/yolov8m/yolov8m_nms_config.json",
+      "onnx_layout": "v8_anchors",
+      "hef_postproc": "ondevice_nms",
+      "conf": 0.25, "iou": 0.45
+    },
+    "yolov11n": {
+      "family": "v11", "variant": "n",
+      "input_size": 640, "classes": 80,
+      "hef": "hef/yolov11n.hef",
+      "onnx": "onnx/yolo11n/yolo11n.onnx",
+      "nms_config": "onnx/yolo11n/yolo11n_nms_config.json",
+      "onnx_layout": "v8_anchors",
+      "hef_postproc": "ondevice_nms",
+      "conf": 0.25, "iou": 0.45
+    },
+    "yolov11s": {
+      "family": "v11", "variant": "s",
+      "input_size": 640, "classes": 80,
+      "hef": "hef/yolov11s.hef",
+      "onnx": "onnx/yolo11s/yolo11s.onnx",
+      "nms_config": "onnx/yolo11s/yolo11s_nms_config.json",
+      "onnx_layout": "v8_anchors",
+      "hef_postproc": "ondevice_nms",
+      "conf": 0.25, "iou": 0.45
+    },
+    "yolov11m": {
+      "family": "v11", "variant": "m",
+      "input_size": 640, "classes": 80,
+      "hef": "hef/yolov11m.hef",
+      "onnx": "onnx/yolo11m/yolo11m.onnx",
+      "nms_config": "onnx/yolo11m/yolo11m_nms_config.json",
+      "onnx_layout": "v8_anchors",
+      "hef_postproc": "ondevice_nms",
+      "conf": 0.25, "iou": 0.45
+    },
+    "yolo26n": {
+      "family": "yolo26", "variant": "n",
+      "input_size": 640, "classes": 80,
+      "hef": "hef/yolo26n.hef",
+      "onnx": "onnx/yolo26n/yolo26n.onnx",
+      "nms_config": "onnx/yolo26n/yolo26n_nms_config.json",
+      "onnx_layout": "yolo26_e2e",
+      "hef_postproc": "raw_tensor",
+      "conf": 0.25, "iou": 0.45
+    },
+    "yolo26s": {
+      "family": "yolo26", "variant": "s",
+      "input_size": 640, "classes": 80,
+      "hef": "hef/yolo26s.hef",
+      "onnx": "onnx/yolo26s/yolo26s.onnx",
+      "nms_config": "onnx/yolo26s/yolo26s_nms_config.json",
+      "onnx_layout": "yolo26_e2e",
+      "hef_postproc": "raw_tensor",
+      "conf": 0.25, "iou": 0.45
+    },
+    "yolo26m": {
+      "family": "yolo26", "variant": "m",
+      "input_size": 640, "classes": 80,
+      "hef": "hef/yolo26m.hef",
+      "onnx": "onnx/yolo26m/yolo26m.onnx",
+      "nms_config": "onnx/yolo26m/yolo26m_nms_config.json",
+      "onnx_layout": "yolo26_e2e",
+      "hef_postproc": "raw_tensor",
+      "conf": 0.25, "iou": 0.45
+    }
+  },
+  "reference_models": {
+    "_comment": "Production HIL model — not part of the 9-variant sweep matrix.",
+    "yolo26n_10h": {
+      "family": "yolo26", "variant": "n",
+      "input_size": 640, "classes": 80,
+      "hef": "yolo26n_10h.hef",
+      "onnx": null,
+      "onnx_layout": null,
+      "hef_postproc": "raw_tensor",
+      "conf": 0.25, "iou": 0.45
+    }
+  }
+}

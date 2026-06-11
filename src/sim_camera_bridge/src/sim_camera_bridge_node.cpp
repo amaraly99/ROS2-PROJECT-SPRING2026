@@ -24,6 +24,7 @@
 #include <unistd.h>
 #include <cstring>
 #include <ctime>
+#include <fstream>
 #include <stdexcept>
 
 using sensor_msgs::msg::Image;
@@ -37,6 +38,21 @@ public:
         slots_       = declare_parameter("slots",  4);
         shm_name_    = declare_parameter("shm_name", std::string("/ovcam_frames"));
         sem_name_    = declare_parameter("sem_name", std::string("/ovcam_ready"));
+
+        // stamp_log: per-frame CSV for latency stages S1 (MATLAB→Pi delivery,
+        // cross-clock — header.stamp is MATLAB's epoch) and S2 (recv→SHM write,
+        // both CLOCK_MONOTONIC). Empty = off (default; zero overhead).
+        auto stamp_log = declare_parameter("stamp_log", std::string(""));
+        if (!stamp_log.empty()) {
+            stamp_log_.open(stamp_log, std::ios::out | std::ios::trunc);
+            if (stamp_log_.is_open()) {
+                stamp_log_ << "frame,t_sim_stamp_ns,t_recv_mono_ns,t_shm_write_mono_ns\n";
+                RCLCPP_INFO(get_logger(), "stamp log → %s", stamp_log.c_str());
+            } else {
+                RCLCPP_WARN(get_logger(), "cannot open stamp_log '%s' — disabled",
+                            stamp_log.c_str());
+            }
+        }
 
         // Stride padding: producer.cpp uses (W + 31) & ~31u. At 640 / 480 / 1280
         // these values are already 32-aligned, so stride == W and we can write
@@ -113,6 +129,8 @@ private:
     }
 
     void on_image(const Image::ConstSharedPtr msg) {
+        struct timespec ts_recv{};
+        clock_gettime(CLOCK_MONOTONIC, &ts_recv);
         if (static_cast<int>(msg->width)  != width_ ||
             static_cast<int>(msg->height) != height_) {
             RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
@@ -181,6 +199,16 @@ private:
         ws_store(g_, fn);
         sem_post(sem_);
 
+        if (stamp_log_.is_open()) {
+            const uint64_t t_sim = static_cast<uint64_t>(msg->header.stamp.sec)
+                                   * 1000000000ULL + msg->header.stamp.nanosec;
+            const uint64_t t_recv = static_cast<uint64_t>(ts_recv.tv_sec)
+                                    * 1000000000ULL + ts_recv.tv_nsec;
+            stamp_log_ << fn << ',' << t_sim << ',' << t_recv << ','
+                       << slot->t_ns << '\n';
+            if (fn % 100 == 0) stamp_log_.flush();
+        }
+
         RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 1000,
             "sim_camera_bridge: frame %lu  %ux%u %s  stamp=%u.%09u",
             static_cast<unsigned long>(fn),
@@ -199,6 +227,7 @@ private:
     ShmGlobal*  g_{nullptr};
     sem_t*      sem_{SEM_FAILED};
     uint64_t    fn_{0};
+    std::ofstream stamp_log_;
 
     rclcpp::Subscription<Image>::SharedPtr sub_;
 };

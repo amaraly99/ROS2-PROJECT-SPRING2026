@@ -21,29 +21,68 @@
 #   Core 2,3   OV2SLAM
 #
 # Usage:
-#   ./run_stack_hil.sh [--no-slam] [--debug-image]
+#   ./run_stack_hil.sh [--no-slam] [--debug-image] [--model <id>] [--backend npu|cpu]
+#                      [--detector yolo|opencv|vlm] [--conf <f>] [--stamp-log]
 #   ./run_stack_hil.sh stop
 #   ./run_stack_hil.sh hz [topic]      # rate check with HIL DDS profile loaded
 #
 #   --no-slam       skip OV2SLAM (cores 2-3 free, ovcam_bridge also skipped)
 #   --debug-image   publish /visp/debug_image back to MATLAB (921 KB/frame extra)
+#   --model <id>    detector model from models/model_registry.json
+#                   (yolo26n|yolo26s|yolo26m|yolov8n|...|yolov11m; default yolo26n)
+#   --backend <b>   npu (Hailo HEF) | cpu (onnxruntime)        default: npu
+#   --detector <d>  yolo | opencv (MOG2 bg-subtraction) | vlm (OWL-ViT)
+#                   default: yolo. opencv/vlm ignore --model/--backend.
+#   --conf <f>      detection confidence threshold              default: 0.20
+#   --stamp-log     sim_camera_bridge logs per-frame stamps to
+#                   /tmp/sim_cam_stamps.csv (latency stages S1/S2)
 #
 # Env vars (override before invoking):
 #   MATLAB_HOST_IP   — Windows host IP for unicast DDS discovery (REQUIRED)
 #   DDS              — cyclonedds (default) | fastrtps
 #   ROS_DOMAIN_ID    — defaults to 0
+#   TELEMETRY_CSV    — producer 7-stamp telemetry path (default /tmp/yolo_telemetry.csv)
+#   TARGET_CLASS     — override visp target class (default derived from --detector)
 
 cd "$(dirname "$0")"
 WS="$(pwd)"
 OPT="${1:-}"
 
-# Parse flags (scan all args so order doesn't matter)
+# Parse flags (scan all args so order doesn't matter; value flags consume the next arg)
 SLAM_ON=true
 DEBUG_IMAGE_ON=false
-for arg in "$@"; do
-    [[ "$arg" == "--no-slam"     ]] && SLAM_ON=false
-    [[ "$arg" == "--debug-image" ]] && DEBUG_IMAGE_ON=true
+MODEL_ID="yolo26n"
+BACKEND="npu"
+DETECTOR_TYPE="yolo"
+CONF_THRESH="0.20"
+STAMP_LOG_ON=false
+ARGS=("$@")
+for i in "${!ARGS[@]}"; do
+    arg="${ARGS[$i]}"
+    next="${ARGS[$((i+1))]:-}"
+    case "$arg" in
+        --no-slam)     SLAM_ON=false ;;
+        --debug-image) DEBUG_IMAGE_ON=true ;;
+        --stamp-log)   STAMP_LOG_ON=true ;;
+        --model)       MODEL_ID="$next" ;;
+        --backend)     BACKEND="$next" ;;
+        --detector)    DETECTOR_TYPE="$next" ;;
+        --conf)        CONF_THRESH="$next" ;;
+    esac
 done
+case "$BACKEND" in npu|cpu) ;; *) echo "[hil] ERROR: --backend must be npu|cpu (got '$BACKEND')" >&2; exit 1 ;; esac
+case "$DETECTOR_TYPE" in yolo|opencv|vlm) ;; *) echo "[hil] ERROR: --detector must be yolo|opencv|vlm (got '$DETECTOR_TYPE')" >&2; exit 1 ;; esac
+TELEMETRY_CSV="${TELEMETRY_CSV:-/tmp/yolo_telemetry.csv}"
+
+# Detector type decides the class-id→name map in yolo_bridge and the class
+# visp_servo locks onto. Without a matching target_class the control loop is
+# silently open (visp filters detections by class_name — visp_servo_node.cpp).
+case "$DETECTOR_TYPE" in
+    yolo)   DEFAULT_TARGET="stop sign";     CLASS_NAME_MAP="" ;;
+    opencv) DEFAULT_TARGET="object";        CLASS_NAME_MAP="0:object" ;;
+    vlm)    DEFAULT_TARGET="vlm_detection"; CLASS_NAME_MAP="100:vlm_detection" ;;
+esac
+TARGET_CLASS="${TARGET_CLASS:-$DEFAULT_TARGET}"
 
 DDS="${DDS:-fastrtps}"
 ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-0}"
@@ -58,6 +97,8 @@ if [[ "$OPT" == "stop" ]]; then
     sudo docker kill ros2_perception_stack 2>/dev/null || true
     sudo docker rm  ros2_perception_stack 2>/dev/null || true
     sudo pkill -f yolo_producer 2>/dev/null || true
+    sudo pkill -f yolo_shm_producer 2>/dev/null || true
+    sudo pkill -f detector_producer 2>/dev/null || true
     sudo rm -f /dev/shm/ovcam_frames /dev/shm/yolo_shm \
                /dev/shm/sem.ovcam_ready /dev/shm/sem.yolo_ready 2>/dev/null || true
     log "All stopped."
@@ -71,13 +112,23 @@ if [[ "$OPT" == "hz" ]]; then
     [[ -f "$RESOLVED" ]] || die "$RESOLVED not found — start the stack first"
     DOCKER_TTY_FLAGS=""
     [[ -t 0 && -t 1 ]] && DOCKER_TTY_FLAGS="-it"
+    # --window 30: report a ROLLING rate over the last ~30 messages (~2s at 15 Hz)
+    # instead of ros2 topic hz's default cumulative average over ALL messages since
+    # the subscriber started (default window 10000). A late-joining subscriber waits
+    # one DDS discovery/announcement cycle (~20s on this profile) before the first
+    # frame arrives; that single ~20s inter-arrival gap stays in the default window
+    # forever and drags the printed "average rate" far below the true steady-state
+    # rate (e.g. shows ~6.8 Hz while frames actually arrive at ~15 Hz). A short
+    # rolling window flushes that startup gap after a couple seconds so the number
+    # reflects what is really flowing right now.
+    echo "[hil] ros2 topic hz --window 30 (rolling — ignore the first few lines while it warms up)"
     sudo docker exec $DOCKER_TTY_FLAGS ros2_perception_stack bash -lc "
         source /opt/ros/jazzy/setup.bash
         source /workspace/install/setup.bash
         export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
         export FASTRTPS_DEFAULT_PROFILES_FILE=${RESOLVED}
         export ROS_DOMAIN_ID=${ROS_DOMAIN_ID}
-        ros2 topic hz ${TOPIC}
+        ros2 topic hz --window 30 ${TOPIC}
     "
     exit 0
 fi
@@ -85,7 +136,16 @@ fi
 # ── pre-flight ────────────────────────────────────────────────────────────────
 command -v taskset >/dev/null    || die "'taskset' not found — install util-linux"
 command -v envsubst >/dev/null   || die "'envsubst' not found — install gettext-base"
-[[ -e /dev/hailo0 ]]             || die "/dev/hailo0 not found — Hailo HAT must be powered (yolo_producer needs it)"
+if [[ "$DETECTOR_TYPE" == "yolo" && "$BACKEND" == "npu" ]]; then
+    [[ -e /dev/hailo0 ]]         || die "/dev/hailo0 not found — Hailo HAT must be powered (NPU backend needs it)"
+fi
+if [[ "$DETECTOR_TYPE" == "yolo" ]]; then
+    python3 - "$WS" "$MODEL_ID" <<'PYEOF' || die "model '$MODEL_ID' not in models/model_registry.json"
+import json, sys
+reg = json.load(open(f"{sys.argv[1]}/models/model_registry.json"))
+sys.exit(0 if sys.argv[2] in reg["models"] else 1)
+PYEOF
+fi
 MATLAB_HOST_IP="${MATLAB_HOST_IP:-192.168.56.1}"
 if [[ "${MATLAB_HOST_IP}" == "192.168.56.1" ]]; then
     log "WARNING: MATLAB_HOST_IP is the default (192.168.56.1) — set MATLAB_HOST_IP env var if your MATLAB machine uses a different address"
@@ -153,6 +213,8 @@ log "Cleaning up any stale processes / shm..."
 sudo docker kill ros2_perception_stack 2>/dev/null || true
 sudo docker rm  ros2_perception_stack 2>/dev/null || true
 sudo pkill -f yolo_producer 2>/dev/null || true
+sudo pkill -f yolo_shm_producer 2>/dev/null || true
+sudo pkill -f detector_producer 2>/dev/null || true
 sudo rm -f /dev/shm/ovcam_frames /dev/shm/yolo_shm \
            /dev/shm/sem.ovcam_ready /dev/shm/sem.yolo_ready 2>/dev/null || true
 sleep 0.5
@@ -177,6 +239,10 @@ sleep 1
 # which prevents the premature auto-exit that fires when parallax is near-zero at
 # startup (buffered frames make cam_delay tiny → 100×cam_delay threshold fires fast).
 LAUNCH_ARGS=" slam:=false"
+LAUNCH_ARGS+=" target_class:='${TARGET_CLASS}'"
+[[ -n "$CLASS_NAME_MAP" ]] && LAUNCH_ARGS+=" class_name_map:='${CLASS_NAME_MAP}'"
+[[ "$STAMP_LOG_ON" == "true" ]] && LAUNCH_ARGS+=" cam_stamp_log:=/tmp/sim_cam_stamps.csv" \
+    && log "Camera stamp log enabled → /tmp/sim_cam_stamps.csv"
 [[ "$SLAM_ON"        == "false" ]] && log "OV2SLAM will be skipped (--no-slam)"
 [[ "$DEBUG_IMAGE_ON" == "true"  ]] && LAUNCH_ARGS+=" debug_image:=true" && log "Debug image enabled (--debug-image)"
 # ovcam_bridge is needed when SLAM will be started later, or debug is on
@@ -215,17 +281,32 @@ log "SHM created."
 sudo chmod 666 /dev/shm/ovcam_frames /dev/shm/sem.ovcam_ready 2>/dev/null || true
 log "SHM permissions fixed (0666)."
 
-# ── 3. yolo_producer — host, Core 1 ───────────────────────────────────────────
-log "3/4  yolo_producer  →  core 1 (host, native)"
+# ── 3. detector producer — host, Core 1 ──────────────────────────────────────
+log "3/4  detector=${DETECTOR_TYPE} model=${MODEL_ID} backend=${BACKEND} conf=${CONF_THRESH}  →  core 1 (host, native)"
 # Ensure log file is writable (may have been left root-owned by a prior sudo run)
 sudo chmod 666 /tmp/yolo_producer.log 2>/dev/null || true
-# --conf 0.20: publish detections down to 0.20 so visp (min_confidence=0.20) can
-#   act on low-confidence stop signs (default 0.25 silently clipped the 0.20-0.25 band).
+# conf default 0.20: publish detections down to 0.20 so visp (min_confidence=0.20)
+#   can act on low-confidence stop signs (0.25 silently clipped the 0.20-0.25 band).
 # python3 -u: unbuffered stdout so the per-stage timing/fps log is readable live
 #   (block-buffered output otherwise leaves /tmp/yolo_producer.log empty for minutes).
-taskset -c 1 python3 -u "${WS}/src/yolo_producer/yolo_producer.py" \
-    --hef "${WS}/models/yolo26n_10h.hef" --no-image --conf 0.20 \
-    > /tmp/yolo_producer.log 2>&1 &
+case "$DETECTOR_TYPE" in
+    yolo)
+        PRODUCER_CMD=(python3 -u "${WS}/src/yolo_producer/yolo_shm_producer.py"
+                      --model_id "$MODEL_ID" --backend "$BACKEND"
+                      --conf "$CONF_THRESH" --no-image
+                      --telemetry_csv "$TELEMETRY_CSV")
+        ;;
+    opencv)
+        PRODUCER_CMD=(python3 -u "${WS}/src/yolo_producer/opencv_detector_producer.py"
+                      --conf "$CONF_THRESH" --telemetry_csv "$TELEMETRY_CSV")
+        ;;
+    vlm)
+        PRODUCER_CMD=(python3 -u "${WS}/src/yolo_producer/vlm_detector_producer.py"
+                      --prompt "stop sign" --box-threshold "$CONF_THRESH"
+                      --telemetry_csv "$TELEMETRY_CSV")
+        ;;
+esac
+taskset -c 1 "${PRODUCER_CMD[@]}" > /tmp/yolo_producer.log 2>&1 &
 YOLO_PID=$!
 for i in $(seq 1 20); do
     [[ -e /dev/shm/yolo_shm ]] && break

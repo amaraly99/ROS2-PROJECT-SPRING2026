@@ -36,11 +36,22 @@ def generate_launch_description():
     ovcam         = LaunchConfiguration('ovcam')
     debug_image   = LaunchConfiguration('debug_image')
     calib_yaml    = LaunchConfiguration('calib_yaml')
+    slam_cores    = LaunchConfiguration('slam_cores')
+    class_name_map = LaunchConfiguration('class_name_map')
+    cam_stamp_log  = LaunchConfiguration('cam_stamp_log')
 
     return LaunchDescription([
         DeclareLaunchArgument(
             'target_class', default_value='stop sign',
             description='COCO class(es) for ViSP to track — comma-separated list'),
+        DeclareLaunchArgument(
+            'class_name_map', default_value='',
+            description='yolo_bridge custom class-id→name map, "id:name,id:name" '
+                        '(non-YOLO detectors, e.g. "0:object" or "100:vlm_detection")'),
+        DeclareLaunchArgument(
+            'cam_stamp_log', default_value='',
+            description='CSV path for sim_camera_bridge per-frame stamp log '
+                        '(MATLAB stamp, recv, SHM write — latency stages S1/S2). Empty = off'),
         DeclareLaunchArgument(
             'workspace', default_value=EnvironmentVariable('WORKSPACE_DIR',
                 default_value='/workspace'),
@@ -48,6 +59,9 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'slam', default_value='true',
             description='Set to false to skip OV2SLAM (useful for DDS-only testing)'),
+        DeclareLaunchArgument(
+            'slam_cores', default_value='2,3',
+            description='taskset CPU list for OV2SLAM core pinning (sweepable per run)'),
         DeclareLaunchArgument(
             'ovcam', default_value='true',
             description='Set to false to skip ovcam_bridge (safe only when slam:=false and debug_image:=false)'),
@@ -74,6 +88,7 @@ def generate_launch_description():
                 'slots':  4,
                 'shm_name': '/ovcam_frames',
                 'sem_name': '/ovcam_ready',
+                'stamp_log': cam_stamp_log,
             }],
         ),
 
@@ -93,6 +108,7 @@ def generate_launch_description():
             executable='yolo_bridge_node',
             name='yolo_bridge',
             output='screen',
+            parameters=[{'class_name_map': class_name_map}],
         ),
 
         # 4. OV2SLAM — HIL-specific calibration via calib_yaml arg (default: hil_sim_ov2slam.yaml).
@@ -104,7 +120,11 @@ def generate_launch_description():
             executable='ov2slam_node',
             name='ov2slam',
             output='screen',
-            prefix='taskset -c 2,3',
+            # Core pinning via a substitution-list prefix so the mask is taken from
+            # the `slam_cores` launch arg (was hardcoded 'taskset -c 2,3', which the
+            # single-branch sweep could not override). taskset pins this exec and its
+            # children to the given CPU list.
+            prefix=['taskset -c ', slam_cores],
             condition=IfCondition(slam),
             arguments=[calib_yaml],
         ),
