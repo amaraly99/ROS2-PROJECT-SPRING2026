@@ -17,7 +17,7 @@
 #   MATLAB_HOST_IP   Windows host IP for unicast DDS discovery
 #   ROS_DOMAIN_ID    default 0
 # ─────────────────────────────────────────────────────────────────
-set -euo pipefail
+set -u
 cd "$(dirname "$0")/.."
 WS="$(pwd)"
 
@@ -35,15 +35,15 @@ ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-0}"
 
 # ── ROS2 environment (already inside container) ──
 # Disable strict mode while sourcing — ROS2 setup scripts have unbound
-# variables and non-zero returns that would kill the script under set -eu.
-set +eu
+# variables and non-zero returns that would kill the script under set -u.
+set +u
 source /opt/ros/jazzy/setup.bash
 if [[ ! -f "$WS/install/setup.bash" ]]; then
-    set -eu
+    set -u
     die "workspace not built — run: colcon build --packages-select yolo_msgs servo_core hil_servo oracle_detector --symlink-install"
 fi
 source "$WS/install/setup.bash"
-set -eu
+set -u
 
 # ── Verify required executables exist in install tree ──
 [[ -f "$WS/install/hil_servo/lib/hil_servo/hil_servo_node" ]] \
