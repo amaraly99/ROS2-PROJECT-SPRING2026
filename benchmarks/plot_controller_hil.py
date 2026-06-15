@@ -104,11 +104,13 @@ def main():
     err = dist3d - STANDOFF        # regulation error to the stop range
 
     # ── scalar metrics ──
+    _trapz = getattr(np, 'trapezoid', getattr(np, 'trapz', None))
+
     def integral(y):
-        return float(np.trapz(np.abs(y), tt))
+        return float(_trapz(np.abs(y), tt))
     iae = integral(err)
-    ise = float(np.trapz(err ** 2, tt))
-    itae = float(np.trapz(np.abs(err) * tt, tt))
+    ise = float(_trapz(err ** 2, tt))
+    itae = float(_trapz(np.abs(err) * tt, tt))
 
     # settling time: first t where |err|<band and stays for SETTLE_HOLD.
     settle = float('nan')
