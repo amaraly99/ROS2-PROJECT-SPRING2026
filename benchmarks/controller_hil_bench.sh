@@ -110,6 +110,12 @@ log "  DO NOT Ctrl-C!  Wait for the 'recording' line, then Stop+Run"
 log "  the MATLAB Simulink sim to reset to t=0.  The FSM will auto-"
 log "  reset to SEARCHING on heartbeat drop and the clean run begins."
 log "================================================================="
+log "Killing any stale nodes from previous runs..."
+pkill -f oracle_detector_node 2>/dev/null || true
+pkill -f visp_servo_node      2>/dev/null || true
+pkill -f hil_servo_node       2>/dev/null || true
+sleep 0.5
+
 log "Launching oracle + $CONTROLLER (output visible below)..."
 
 # Launch output goes to TERMINAL so errors are visible immediately.
