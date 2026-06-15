@@ -14,67 +14,77 @@
 #   ros2 launch /workspace/benchmarks/controller_bench.launch.py \
 #        controller:=proportional workspace:=/workspace
 #
+# CPU pinning (ctrl_core arg):
+#   ctrl_core:=0        pin to core 0
+#   ctrl_core:=0,1,2    pin to cores 0-2
+#   ctrl_core:=none     no pinning (default)
+#   ctrl_core:=         no pinning
+#
 # Only ONE controller runs per invocation (both publish /cmd_vel).
 # ─────────────────────────────────────────────────────────────────
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
-from launch.conditions import IfCondition
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import (LaunchConfiguration, PathJoinSubstitution,
-                                   PythonExpression, EnvironmentVariable)
+                                   EnvironmentVariable)
 from launch_ros.actions import Node
 
 
+def launch_setup(context, *args, **kwargs):
+    controller   = LaunchConfiguration('controller').perform(context)
+    workspace    = LaunchConfiguration('workspace').perform(context)
+    target_class = LaunchConfiguration('target_class').perform(context)
+    ctrl_core    = LaunchConfiguration('ctrl_core').perform(context).strip()
+
+    cfg = lambda name: f'{workspace}/config/hil/{name}'
+
+    # Build taskset prefix: '' or 'none' → no pinning; else taskset -c <value>
+    if ctrl_core and ctrl_core.lower() != 'none':
+        prefix = ['taskset -c ', ctrl_core]
+    else:
+        prefix = []
+
+    nodes = [
+        Node(
+            package='oracle_detector',
+            executable='oracle_detector_node',
+            name='oracle_detector',
+            output='screen',
+            parameters=[cfg('bench_oracle.yaml'), {'target_class': target_class}],
+        ),
+    ]
+
+    if controller == 'ibvs':
+        nodes.append(Node(
+            package='visp_servo',
+            executable='visp_servo_node',
+            name='visp_servo_node',
+            output='screen',
+            prefix=prefix,
+            parameters=[cfg('bench_fsm.yaml'), cfg('bench_ibvs.yaml'),
+                        {'target_class': target_class}],
+        ))
+    elif controller == 'proportional':
+        nodes.append(Node(
+            package='hil_servo',
+            executable='hil_servo_node',
+            name='hil_servo_node',
+            output='screen',
+            prefix=prefix,
+            parameters=[cfg('bench_fsm.yaml'), cfg('bench_proportional.yaml'),
+                        {'target_class': target_class}],
+        ))
+
+    return nodes
+
+
 def generate_launch_description():
-    controller   = LaunchConfiguration('controller')
-    workspace    = LaunchConfiguration('workspace')
-    target_class = LaunchConfiguration('target_class')
-    ctrl_core    = LaunchConfiguration('ctrl_core')
-
-    cfg = lambda name: PathJoinSubstitution([workspace, 'config', 'hil', name])
-
-    is_ibvs = IfCondition(PythonExpression(["'", controller, "' == 'ibvs'"]))
-    is_prop = IfCondition(PythonExpression(["'", controller, "' == 'proportional'"]))
-
     return LaunchDescription([
         DeclareLaunchArgument('controller', default_value='proportional',
             description="Test subject: 'ibvs' (TS1) or 'proportional' (TS2)"),
         DeclareLaunchArgument('workspace',
             default_value=EnvironmentVariable('WORKSPACE_DIR', default_value='/workspace')),
         DeclareLaunchArgument('target_class', default_value='stop sign'),
-        DeclareLaunchArgument('ctrl_core', default_value='0',
-            description='CPU core to pin the controller to (clean pidstat reading)'),
-
-        # Oracle — perfect bbox from ground-truth pose.
-        Node(
-            package='oracle_detector',
-            executable='oracle_detector_node',
-            name='oracle_detector',
-            output='screen',
-            parameters=[cfg('bench_oracle.yaml'),
-                        {'target_class': target_class}],
-        ),
-
-        # TS1 — IBVS (ViSP vpServo). Shared FSM + IBVS law.
-        Node(
-            package='visp_servo',
-            executable='visp_servo_node',
-            name='visp_servo_node',
-            output='screen',
-            condition=is_ibvs,
-            prefix=['taskset -c ', ctrl_core],
-            parameters=[cfg('bench_fsm.yaml'), cfg('bench_ibvs.yaml'),
-                        {'target_class': target_class}],
-        ),
-
-        # TS2 — proportional. Shared FSM + proportional law.
-        Node(
-            package='hil_servo',
-            executable='hil_servo_node',
-            name='hil_servo_node',
-            output='screen',
-            condition=is_prop,
-            prefix=['taskset -c ', ctrl_core],
-            parameters=[cfg('bench_fsm.yaml'), cfg('bench_proportional.yaml'),
-                        {'target_class': target_class}],
-        ),
+        DeclareLaunchArgument('ctrl_core', default_value='none',
+            description="CPU core(s) to pin the controller to: '0', '0,1,2', or 'none'/'' for no pinning"),
+        OpaqueFunction(function=launch_setup),
     ])
