@@ -34,20 +34,23 @@ command -v envsubst >/dev/null || die "'envsubst' missing — apt install gettex
 ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-0}"
 
 # ── ROS2 environment (already inside container) ──
-set +u
+# Disable strict mode while sourcing — ROS2 setup scripts have unbound
+# variables and non-zero returns that would kill the script under set -eu.
+set +eu
 source /opt/ros/jazzy/setup.bash
 if [[ ! -f "$WS/install/setup.bash" ]]; then
+    set -eu
     die "workspace not built — run: colcon build --packages-select yolo_msgs servo_core hil_servo oracle_detector --symlink-install"
 fi
 source "$WS/install/setup.bash"
-set -u
+set -eu
 
-# ── Verify required packages are installed ──
-for pkg in hil_servo oracle_detector servo_core; do
-    ros2 pkg list | grep -q "^${pkg}$" \
-        || die "ROS2 package '${pkg}' not found — did you source install/setup.bash and build?"
-done
-log "Packages verified: hil_servo oracle_detector servo_core"
+# ── Verify required executables exist in install tree ──
+[[ -f "$WS/install/hil_servo/lib/hil_servo/hil_servo_node" ]] \
+    || die "hil_servo_node not found in install/ — run: colcon build --packages-select servo_core hil_servo --symlink-install"
+[[ -d "$WS/install/oracle_detector" ]] \
+    || die "oracle_detector not found in install/ — run: colcon build --packages-select oracle_detector --symlink-install"
+log "Packages verified: hil_servo oracle_detector"
 
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export ROS_DOMAIN_ID
