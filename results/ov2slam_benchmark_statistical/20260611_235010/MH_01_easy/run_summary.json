@@ -1,0 +1,59 @@
+{
+  "sequence": "MH_01_easy",
+  "n_runs_total": 1,
+  "n_runs_success": 0,
+  "rmse_avg": null,
+  "rmse_std": null,
+  "cpu_total_avg_pct": 22.777793628808862,
+  "runs": [
+    {
+      "sequence": "MH_01_easy",
+      "run_name": "run_01",
+      "mode": "mono",
+      "profile": "accurate",
+      "trajectory_policy": "paper",
+      "success": false,
+      "rmse": null,
+      "traj_used": "",
+      "traj_reason": "",
+      "warnings": "OV2SLAM died during bag playback; killing bag and aborting run attempt.",
+      "error": "OV2SLAM crashed during bag playback. Check ov2slam.log.",
+      "gt_verdict": "MH_01_easy.txt is already valid TUM format (timestamp tx ty tz qx qy qz qw); normalized copy written to gt.tum",
+      "cpu_total_avg_pct": 22.777793628808862,
+      "trajectory_poses": null,
+      "timing_avg_ms": {
+        "0.Full-Front_End": 8.31442,
+        "0.Keyframe-Processing_Mapper": 3.69593,
+        "1.BA_localBA": 42.9255,
+        "1.BA_map-filtering": 3.90124,
+        "1.FE_Track-Mono": 6.26661,
+        "1.FE_createKeyframe": 7.10261,
+        "1.KF_MatchingToLocalMap": 2.48799,
+        "1.KF_TriangulateTemporal": 0.210814,
+        "1.KF_updateFrameCovisilbity": 1.38126,
+        "2.BA_Optimize": 21.235,
+        "2.BA_SetupPb": 7.1915,
+        "2.BA_Update": 1.43174,
+        "2.FE_CF_extractKeypoints": 6.86248,
+        "2.FE_CF_prepareFrame": 0.146404,
+        "2.FE_TM_EpipolarFiltering": 0.724673,
+        "2.FE_TM_KLT-Tracking": 2.2822,
+        "2.FE_TM_checkNewKfReq": 0.102061,
+        "2.FE_TM_computePose": 1.10163,
+        "2.FE_TM_preprocessImage": 2.11415
+      },
+      "artifacts": {
+        "gt_tum": "gt.tum",
+        "trajectory_tum": null,
+        "ape_traj_png": null,
+        "traj_xy_png": null,
+        "timings_csv": "ov2slam_timings.csv",
+        "process_cpu_csv": "ov2slam_process_cpu.csv",
+        "thread_cpu_csv": "ov2slam_thread_cpu.csv",
+        "thread_cpu_summary_csv": "ov2slam_thread_cpu_summary.csv",
+        "named_thread_roles_png": null,
+        "named_thread_roles_csv": null
+      }
+    }
+  ]
+}

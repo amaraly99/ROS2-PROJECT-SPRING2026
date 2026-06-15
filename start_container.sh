@@ -30,6 +30,18 @@ fi
 log_step "Removing any stale ${CONTAINER_NAME} container..."
 sudo docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
 
+# ---------------------------------------------------------------------------
+# DDS socket buffer. cyclonedds streams each camera image (~361 KB for EuRoC)
+# over UDP; the kernel default net.core.rmem_max (~208 KB) is smaller than one
+# image, so frames are dropped, the stereo pair desyncs ("Throw img -- Sync
+# error"), and OV2SLAM exits early. rmem_max resets to the small default on every
+# reboot, so we (re)apply it here. The container shares the host kernel net stack
+# (--net=host), so setting it on the host is what matters.
+# ---------------------------------------------------------------------------
+log_step "Raising net.core.rmem_max for cyclonedds image streams (16 MB)..."
+sudo sysctl -w net.core.rmem_max=16777216 >/dev/null
+sudo sysctl -w net.core.rmem_default=16777216 >/dev/null
+
 log_step "Starting Docker container in detached mode..."
 sudo docker run -d \
   --entrypoint "" \

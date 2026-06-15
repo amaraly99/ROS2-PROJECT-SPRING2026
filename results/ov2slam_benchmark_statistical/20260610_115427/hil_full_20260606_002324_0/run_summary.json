@@ -1,0 +1,39 @@
+{
+  "sequence": "hil_full_20260606_002324_0",
+  "n_runs_total": 1,
+  "n_runs_success": 0,
+  "rmse_avg": null,
+  "rmse_std": null,
+  "cpu_total_avg_pct": 11.13003455646598,
+  "runs": [
+    {
+      "sequence": "hil_full_20260606_002324_0",
+      "run_name": "run_01",
+      "mode": "mono",
+      "profile": "fast",
+      "trajectory_policy": "paper",
+      "success": false,
+      "rmse": null,
+      "traj_used": "",
+      "traj_reason": "",
+      "warnings": "GT unavailable: No ground truth found near /workspace/datasets/euroc/hil_full_20260606_002324_0.mcap || OV2SLAM launcher did not exit after final /clock; forced cleanup.",
+      "error": "No supported OV2SLAM trajectory found in /workspace/results/ov2slam_benchmark_statistical/20260610_115427/hil_full_20260606_002324_0/run_01",
+      "gt_verdict": "GT unavailable: No ground truth found near /workspace/datasets/euroc/hil_full_20260606_002324_0.mcap",
+      "cpu_total_avg_pct": 11.13003455646598,
+      "trajectory_poses": null,
+      "timing_avg_ms": {},
+      "artifacts": {
+        "gt_tum": null,
+        "trajectory_tum": null,
+        "ape_traj_png": null,
+        "traj_xy_png": null,
+        "timings_csv": null,
+        "process_cpu_csv": "ov2slam_process_cpu.csv",
+        "thread_cpu_csv": "ov2slam_thread_cpu.csv",
+        "thread_cpu_summary_csv": "ov2slam_thread_cpu_summary.csv",
+        "named_thread_roles_png": null,
+        "named_thread_roles_csv": null
+      }
+    }
+  ]
+}

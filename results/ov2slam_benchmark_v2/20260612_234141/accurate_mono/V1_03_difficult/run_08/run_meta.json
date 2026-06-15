@@ -1,0 +1,17 @@
+{
+  "sequence": "V1_03_difficult",
+  "run_name": "run_08",
+  "profile": "accurate",
+  "mode": "mono",
+  "success": true,
+  "rmse": 0.684604,
+  "gt_coverage_pct": 98.90114948828966,
+  "traj_used": "ov2slam_kfs_traj.txt",
+  "trajectory_poses": 732,
+  "cpu_total_avg_pct": 63.56442105263158,
+  "trajectory_end_ts": 1403715993.984058,
+  "sequence_end_ts": 1403715993.03406,
+  "warnings": "",
+  "error": "",
+  "gt_verdict": "V1_03_difficult.txt is already valid TUM format (timestamp tx ty tz qx qy qz qw); normalized copy written to gt.tum"
+}

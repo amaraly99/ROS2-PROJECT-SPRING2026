@@ -32,6 +32,7 @@
 
 //#include <ros/ros.h>
 #include <rclcpp/rclcpp.hpp>
+#include <rclcpp/qos.hpp>
 #include <console_bridge/console.h>
 
 #include <image_transport/image_transport.hpp>
@@ -103,7 +104,7 @@ public:
                 if (!img0_buf.empty() && !img1_buf.empty())
                 {
                     double time0 = (double)img0_buf.front()->header.stamp.sec + 1e-9*(double)img0_buf.front()->header.stamp.nanosec;
-                    double time1 = (double)img1_buf.front()->header.stamp.sec + 1e-9*(double)img0_buf.front()->header.stamp.nanosec;
+                    double time1 = (double)img1_buf.front()->header.stamp.sec + 1e-9*(double)img1_buf.front()->header.stamp.nanosec;
 
                     // sync tolerance
                     if(time0 < time1 - 0.015)
@@ -213,12 +214,17 @@ int main(int argc, char** argv)
     SensorsGrabber sb(&slam);
 
     // Create callbacks according to the topics set in the parameters file
+    auto image_qos = rclcpp::SensorDataQoS().keep_last(10);
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr subleft = 
-		nh->create_subscription<sensor_msgs::msg::Image>(pparams->cam_left_topic_, 2, 
+		nh->create_subscription<sensor_msgs::msg::Image>(
+            pparams->cam_left_topic_,
+            image_qos,
 			std::bind(&SensorsGrabber::subLeftImage, &sb, std::placeholders::_1));
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr subright;
     if( pparams->stereo_ && !pparams->cam_right_topic_.empty() ) {
-		subright = nh->create_subscription<sensor_msgs::msg::Image>(pparams->cam_right_topic_, 2, 
+		subright = nh->create_subscription<sensor_msgs::msg::Image>(
+            pparams->cam_right_topic_,
+            image_qos,
 			std::bind(&SensorsGrabber::subRightImage, &sb, std::placeholders::_1));
     }
 
@@ -236,6 +242,13 @@ int main(int argc, char** argv)
     while( slam.bis_on_ ) {
         std::chrono::seconds dura(1);
         std::this_thread::sleep_for(dura);
+    }
+
+    if( sync_thread.joinable() ) {
+        sync_thread.join();
+    }
+    if( slamthread.joinable() ) {
+        slamthread.join();
     }
 
     return 0;

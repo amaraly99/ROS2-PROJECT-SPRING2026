@@ -1,0 +1,2 @@
+sequence,run_name,success,rmse,traj_used,cpu_total_avg_pct,trajectory_poses
+MH_01_easy,run_01,True,2.269373,ov2slam_kfs_traj.txt,131.561746628131,380

@@ -1,0 +1,59 @@
+{
+  "sequence": "MH_01_easy",
+  "n_runs_total": 1,
+  "n_runs_success": 0,
+  "rmse_avg": null,
+  "rmse_std": null,
+  "cpu_total_avg_pct": 29.486037,
+  "runs": [
+    {
+      "sequence": "MH_01_easy",
+      "run_name": "run_01",
+      "mode": "mono",
+      "profile": "accurate",
+      "trajectory_policy": "paper",
+      "success": false,
+      "rmse": null,
+      "traj_used": "",
+      "traj_reason": "",
+      "warnings": "Bag playback timed out after 25.0s and was killed.",
+      "error": "Bag playback timed out after 25.0s.",
+      "gt_verdict": "MH_01_easy.txt is already valid TUM format (timestamp tx ty tz qx qy qz qw); normalized copy written to gt.tum",
+      "cpu_total_avg_pct": 29.486037,
+      "trajectory_poses": null,
+      "timing_avg_ms": {
+        "0.Full-Front_End": 7.90694,
+        "0.Keyframe-Processing_Mapper": 5.33612,
+        "1.BA_localBA": 34.5181,
+        "1.BA_map-filtering": 5.37036,
+        "1.FE_Track-Mono": 6.11881,
+        "1.FE_createKeyframe": 7.04132,
+        "1.KF_MatchingToLocalMap": 3.19252,
+        "1.KF_TriangulateTemporal": 0.169674,
+        "1.KF_updateFrameCovisilbity": 2.10808,
+        "2.BA_Optimize": 15.5831,
+        "2.BA_SetupPb": 5.93679,
+        "2.BA_Update": 1.43961,
+        "2.FE_CF_extractKeypoints": 6.81962,
+        "2.FE_CF_prepareFrame": 0.128652,
+        "2.FE_TM_EpipolarFiltering": 0.71764,
+        "2.FE_TM_KLT-Tracking": 2.24534,
+        "2.FE_TM_checkNewKfReq": 0.103015,
+        "2.FE_TM_computePose": 0.916022,
+        "2.FE_TM_preprocessImage": 2.33646
+      },
+      "artifacts": {
+        "gt_tum": "gt.tum",
+        "trajectory_tum": null,
+        "ape_traj_png": null,
+        "traj_xy_png": null,
+        "timings_csv": "ov2slam_timings.csv",
+        "process_cpu_csv": "ov2slam_process_cpu.csv",
+        "thread_cpu_csv": "ov2slam_thread_cpu.csv",
+        "thread_cpu_summary_csv": "ov2slam_thread_cpu_summary.csv",
+        "named_thread_roles_png": null,
+        "named_thread_roles_csv": null
+      }
+    }
+  ]
+}

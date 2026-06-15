@@ -1,0 +1,17 @@
+{
+  "sequence": "MH_05_difficult",
+  "run_name": "run_03",
+  "profile": "accurate",
+  "mode": "mono",
+  "success": true,
+  "rmse": 0.110376,
+  "gt_coverage_pct": 100.0,
+  "traj_used": "ov2slam_kfs_traj.txt",
+  "trajectory_poses": 355,
+  "cpu_total_avg_pct": 59.257799999999996,
+  "trajectory_end_ts": 1403638631.6778295,
+  "sequence_end_ts": 1403638630.54783,
+  "warnings": "",
+  "error": "",
+  "gt_verdict": "gt.tum is already valid TUM format (timestamp tx ty tz qx qy qz qw); normalized copy written to gt.tum"
+}

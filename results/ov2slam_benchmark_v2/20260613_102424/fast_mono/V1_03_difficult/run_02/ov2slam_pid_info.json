@@ -1,0 +1,7 @@
+{
+  "launcher_pid": 697856,
+  "ov2slam_pid": 697926,
+  "ov2slam_comm": "ov2slam_node",
+  "ov2slam_exe": "ov2slam_node",
+  "ov2slam_cmdline": "/workspace/install/ov2slam/lib/ov2slam/ov2slam_node /workspace/src/ov2slam_ros/parameters_files/fast/euroc/euroc_mono.yaml"
+}

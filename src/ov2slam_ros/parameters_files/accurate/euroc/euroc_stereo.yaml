@@ -68,7 +68,7 @@ stereo: 1
 
 # CRITICAL: Disable realtime skipping. We want ACCURACY.
 # We will play the bag slowly (-r 0.2), so this ensures no drops.
-force_realtime: 1
+force_realtime: 0
 
 # Estimator Mode
 slam_mode: 1

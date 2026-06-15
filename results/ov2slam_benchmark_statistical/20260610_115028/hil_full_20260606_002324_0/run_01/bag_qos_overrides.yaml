@@ -1,0 +1,8 @@
+"/ovcam/image_raw":
+  reliability: reliable
+  history: keep_last
+  depth: 10
+"/sim/camera/image_raw":
+  reliability: reliable
+  history: keep_last
+  depth: 10

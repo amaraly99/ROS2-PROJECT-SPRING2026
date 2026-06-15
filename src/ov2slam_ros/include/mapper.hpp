@@ -27,6 +27,7 @@
 
 
 #include <queue>
+#include <thread>
 #include <vector>
 #include <unordered_set>
 
@@ -91,6 +92,7 @@ public:
 
     Mapper() {}
     Mapper(std::shared_ptr<SlamParams> pslamstate, std::shared_ptr<MapManager> pmap, std::shared_ptr<Frame> pframe);
+    ~Mapper();
 
     void run();
 
@@ -129,6 +131,7 @@ public:
     bool bexit_required_ = false; 
 
     std::queue<Keyframe> qkfs_;
+    std::thread mapper_thread_;
 
     std::mutex qkf_mutex_;
 };

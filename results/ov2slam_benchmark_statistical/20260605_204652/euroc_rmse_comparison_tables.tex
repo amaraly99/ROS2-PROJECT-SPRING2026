@@ -1,0 +1,36 @@
+% EuRoC ATE RMSE comparison — generated from ov2slam_benchmark_statistical/20260605_204652
+% OV2-SLAM values are measured (10 runs/sequence); other algorithms use placeholder values.
+
+\begin{table*}[t]
+\centering
+\caption{EuRoC absolute trajectory error (ATE RMSE, m): mean $\pm$ standard deviation over repeated runs. OV2-SLAM results from batch \texttt{20260605\_204652} (10 runs per sequence). Other algorithms use representative placeholder values.}
+\label{tab:euroc_rmse_mean_std}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{l|cccccccccc|c}
+\hline
+Algorithm & MH\_01 & MH\_02 & MH\_03 & MH\_04 & MH\_05 & V1\_01 & V1\_02 & V1\_03 & V2\_01 & V2\_02 & Avg. \\
+\hline
+ORB-SLAM2 & $0.035 \pm 0.002$ & $0.036 \pm 0.002$ & $0.045 \pm 0.005$ & $0.075 \pm 0.015$ & $0.065 \pm 0.008$ & $0.052 \pm 0.003$ & $0.068 \pm 0.005$ & $0.110 \pm 0.012$ & $0.080 \pm 0.010$ & $0.070 \pm 0.008$ & $0.064$ \\
+ORB-SLAM3 & $0.047 \pm 0.005$ & $0.042 \pm 0.004$ & $0.055 \pm 0.008$ & $0.082 \pm 0.018$ & $0.066 \pm 0.009$ & $0.058 \pm 0.004$ & $0.074 \pm 0.006$ & $0.118 \pm 0.014$ & $0.095 \pm 0.012$ & $0.072 \pm 0.009$ & $0.071$ \\
+OV2-SLAM & $0.040 \pm 0.002$ & $0.039 \pm 0.002$ & $0.053 \pm 0.009$ & $0.081 \pm 0.020$ & $0.070 \pm 0.009$ & $0.056 \pm 0.003$ & $0.073 \pm 0.005$ & $0.116 \pm 0.012$ & $0.105 \pm 0.067$ & $0.923 \pm 1.727$ & $0.155$ \\
+\hline
+Avg. sequence & $0.041$ & $0.039$ & $0.051$ & $0.079$ & $0.067$ & $0.055$ & $0.072$ & $0.115$ & $0.093$ & $0.355$ & $0.097$ \\
+\hline
+\end{tabular}}
+\end{table*}
+
+\begin{table*}[t]
+\centering
+\caption{EuRoC ATE RMSE (m): median over repeated runs. OV2-SLAM from batch \texttt{20260605\_204652}; other algorithms use placeholder values.}
+\label{tab:euroc_rmse_median}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{l|cccccccccc}
+\hline
+Algorithm & MH\_01 & MH\_02 & MH\_03 & MH\_04 & MH\_05 & V1\_01 & V1\_02 & V1\_03 & V2\_01 & V2\_02 \\
+\hline
+ORB-SLAM2 & $0.034$ & $0.035$ & $0.044$ & $0.072$ & $0.063$ & $0.051$ & $0.067$ & $0.108$ & $0.078$ & $0.069$ \\
+ORB-SLAM3 & $0.045$ & $0.041$ & $0.053$ & $0.079$ & $0.065$ & $0.057$ & $0.072$ & $0.116$ & $0.093$ & $0.071$ \\
+OV2-SLAM & $0.039$ & $0.038$ & $0.050$ & $0.073$ & $0.066$ & $0.056$ & $0.071$ & $0.122$ & $0.085$ & $0.068$ \\
+\hline
+\end{tabular}}
+\end{table*}

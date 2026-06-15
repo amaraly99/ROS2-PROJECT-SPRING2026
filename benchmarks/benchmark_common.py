@@ -19,11 +19,12 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 from zoneinfo import ZoneInfo
 
 
 RESULTS_TIMEZONE = "Asia/Dubai"
+SUPPORTED_BAG_SUFFIXES = (".db3", ".mcap")
 EUROC_SEQUENCES = [
     "MH_01_easy",
     "MH_02_easy",
@@ -107,6 +108,19 @@ class Console:
             f"  Run {run_idx}/{total}\n"
             f"  {bar}{C_RESET}\n"
         )
+
+    def launch_line(self, line: str) -> None:
+        """Print one line of SLAM node output with the purple │ overlay style."""
+        s = line.rstrip()
+        if not s:
+            return
+        if "ERROR" in s or "FATAL" in s or "error" in s:
+            colour = C_RED
+        elif "WARN" in s or "warn" in s:
+            colour = C_YELLOW
+        else:
+            colour = C_DIM + C_WHITE
+        self.write(f"  {C_MAGENTA}│{C_RESET}  {colour}{s}{C_RESET}\n")
 
 
 def datetime_compact() -> str:
@@ -267,6 +281,45 @@ def detect_ros_setup_files(workspace_root: Path) -> list[Path]:
     return files
 
 
+def sequence_key(path: Path) -> str:
+    if path.is_file() and path.suffix.lower() in SUPPORTED_BAG_SUFFIXES:
+        return path.stem
+    return path.name
+
+
+def _sequence_payload_bytes(path: Path) -> int:
+    if path.is_file():
+        try:
+            return path.stat().st_size
+        except OSError:
+            return 0
+    total = 0
+    try:
+        for candidate in path.iterdir():
+            if candidate.is_file() and candidate.suffix.lower() in SUPPORTED_BAG_SUFFIXES:
+                try:
+                    total += candidate.stat().st_size
+                except OSError:
+                    continue
+    except OSError:
+        return 0
+    return total
+
+
+def _prefer_sequence_candidate(candidate: Path, current: Path) -> bool:
+    candidate_score = (
+        _sequence_payload_bytes(candidate) > 0,
+        candidate.is_dir(),
+        _sequence_payload_bytes(candidate),
+    )
+    current_score = (
+        _sequence_payload_bytes(current) > 0,
+        current.is_dir(),
+        _sequence_payload_bytes(current),
+    )
+    return candidate_score > current_score
+
+
 @dataclass
 class ShellContext:
     workspace_root: Path
@@ -317,7 +370,13 @@ def launch_background_mirrored(
     command: str,
     cwd: Path,
     log_path: Path,
+    line_fn: Callable[[str], None] | None = None,
 ) -> subprocess.Popen[str]:
+    """Launch a command via PTY so the child sees a real TTY (forces line flushing).
+
+    If *line_fn* is provided each decoded output line is forwarded to it (styled
+    terminal overlay).  Raw bytes are always written to *log_path* for debugging.
+    """
     master_fd, slave_fd = pty.openpty()
     process = subprocess.Popen(
         ["bash", "-lc", shell_ctx.wrap(f"exec {command}")],
@@ -331,7 +390,10 @@ def launch_background_mirrored(
     )
     os.close(slave_fd)
 
+    _ANSI_ESCAPE = re.compile(rb"\x1b\[[0-9;]*[A-Za-z]|\x1b\][^\x07]*\x07|\r")
+
     def pump() -> None:
+        line_buf = b""
         with log_path.open("wb") as handle:
             while True:
                 try:
@@ -340,10 +402,20 @@ def launch_background_mirrored(
                     break
                 if not chunk:
                     break
-                sys.stdout.buffer.write(chunk)
-                sys.stdout.buffer.flush()
                 handle.write(chunk)
                 handle.flush()
+                if line_fn is None:
+                    sys.stdout.buffer.write(chunk)
+                    sys.stdout.buffer.flush()
+                else:
+                    line_buf += chunk
+                    while b"\n" in line_buf:
+                        raw_line, line_buf = line_buf.split(b"\n", 1)
+                        clean = _ANSI_ESCAPE.sub(b"", raw_line).decode("utf-8", errors="replace")
+                        line_fn(clean)
+            if line_fn is not None and line_buf:
+                clean = _ANSI_ESCAPE.sub(b"", line_buf).decode("utf-8", errors="replace")
+                line_fn(clean)
         try:
             os.close(master_fd)
         except OSError:
@@ -407,11 +479,32 @@ def publish_final_clock(shell_ctx: ShellContext, sec: int, nanosec: int) -> None
 def discover_sequences(dataset_root: Path) -> list[Path]:
     found: list[Path] = []
     for entry in sorted(dataset_root.iterdir()):
+        if entry.is_file() and entry.suffix.lower() in SUPPORTED_BAG_SUFFIXES:
+            found.append(entry)
+            continue
         if not entry.is_dir():
             continue
-        if any(entry.glob("*.db3")):
+        if any(
+            candidate.is_file() and candidate.suffix.lower() in SUPPORTED_BAG_SUFFIXES
+            for candidate in entry.iterdir()
+        ):
             found.append(entry)
-    return found
+    preferred: dict[str, Path] = {}
+    for path in found:
+        key = sequence_key(path)
+        chosen = preferred.get(key)
+        if chosen is None or _prefer_sequence_candidate(path, chosen):
+            preferred[key] = path
+
+    deduped: list[Path] = []
+    seen: set[str] = set()
+    for path in found:
+        key = sequence_key(path)
+        if key in seen:
+            continue
+        deduped.append(preferred[key])
+        seen.add(key)
+    return deduped
 
 
 def select_sequences(
@@ -420,8 +513,8 @@ def select_sequences(
     seq_range_start: str,
     seq_range_end: str,
 ) -> list[Path]:
-    by_name = {path.name: path for path in discovered}
-    ordered = [path.name for path in discovered]
+    by_name = {sequence_key(path): path for path in discovered}
+    ordered = [sequence_key(path) for path in discovered]
     if requested_sequences:
         missing = [name for name in requested_sequences if name not in by_name]
         if missing:
@@ -447,18 +540,31 @@ class BagInfo:
 
 
 def resolve_bag_target(seq_dir: Path) -> BagInfo:
-    db3_files = sorted(seq_dir.glob("*.db3"))
-    if not db3_files:
-        raise FileNotFoundError(f"No .db3 file found in {seq_dir}")
-    if len(db3_files) == 1:
-        desc = f"{db3_files[0].name}  (single .db3)"
-        if (seq_dir / "metadata.yaml").is_file():
-            desc = f"{db3_files[0].name}  (single .db3; metadata also present)"
-        return BagInfo(db3_files[0], desc)
+    def _nonempty_file(path: Path) -> bool:
+        try:
+            return path.is_file() and path.stat().st_size > 0
+        except OSError:
+            return False
+
+    if seq_dir.is_file() and seq_dir.suffix.lower() in SUPPORTED_BAG_SUFFIXES:
+        if not _nonempty_file(seq_dir):
+            raise FileNotFoundError(f"Bag file is empty or unreadable: {seq_dir}")
+        return BagInfo(seq_dir, f"{seq_dir.name}  (single {seq_dir.suffix.lower()} file)")
+
+    bag_files = sorted(
+        path for path in seq_dir.iterdir() if _nonempty_file(path) and path.suffix.lower() in SUPPORTED_BAG_SUFFIXES
+    )
+    if not bag_files:
+        suffixes = ", ".join(SUPPORTED_BAG_SUFFIXES)
+        raise FileNotFoundError(f"No supported bag file ({suffixes}) found in {seq_dir}")
+    if len(bag_files) == 1 and not (seq_dir / "metadata.yaml").is_file():
+        suffix = bag_files[0].suffix.lower()
+        return BagInfo(bag_files[0], f"{bag_files[0].name}  (single {suffix} file)")
     if (seq_dir / "metadata.yaml").is_file():
-        return BagInfo(seq_dir, f"{seq_dir.name}/  ({len(db3_files)} segments via metadata.yaml)")
+        return BagInfo(seq_dir, f"{seq_dir.name}/  ({len(bag_files)} segment(s) via metadata.yaml)")
     raise FileNotFoundError(
-        f"Split bag detected in {seq_dir} but metadata.yaml is missing. Fix with: ros2 bag reindex {seq_dir}"
+        f"Multiple bag segments detected in {seq_dir} but metadata.yaml is missing. "
+        f"Fix with: ros2 bag reindex {seq_dir}"
     )
 
 
@@ -480,20 +586,21 @@ def normalize_tum_file(src: Path, dst: Path) -> None:
 
 
 def prepare_ground_truth(seq_dir: Path, out_dir: Path) -> tuple[Path, str, str]:
-    seq_name = seq_dir.name
+    search_dir = seq_dir if seq_dir.is_dir() else seq_dir.parent
+    seq_name = sequence_key(seq_dir)
     candidate: Path | None = None
-    if (seq_dir / "gt.tum").is_file():
-        candidate = seq_dir / "gt.tum"
-    elif (seq_dir / f"{seq_name}.txt").is_file():
-        candidate = seq_dir / f"{seq_name}.txt"
+    if (search_dir / "gt.tum").is_file():
+        candidate = search_dir / "gt.tum"
+    elif (search_dir / f"{seq_name}.txt").is_file():
+        candidate = search_dir / f"{seq_name}.txt"
     else:
-        txt_candidates = [path for path in sorted(seq_dir.glob("*.txt")) if path.name != "metadata.txt"]
+        txt_candidates = [path for path in sorted(search_dir.glob("*.txt")) if path.name != "metadata.txt"]
         if len(txt_candidates) == 1:
             candidate = txt_candidates[0]
         elif not txt_candidates:
-            raise FileNotFoundError(f"No ground truth found in {seq_dir}")
+            raise FileNotFoundError(f"No ground truth found near {seq_dir}")
         else:
-            raise ValueError(f"Multiple candidate ground-truth files found in {seq_dir}")
+            raise ValueError(f"Multiple candidate ground-truth files found near {seq_dir}")
     gt_file = out_dir / "gt.tum"
     normalize_tum_file(candidate, gt_file)
     verdict = (

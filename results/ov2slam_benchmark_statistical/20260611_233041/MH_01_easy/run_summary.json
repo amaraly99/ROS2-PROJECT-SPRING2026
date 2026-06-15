@@ -1,0 +1,39 @@
+{
+  "sequence": "MH_01_easy",
+  "n_runs_total": 1,
+  "n_runs_success": 0,
+  "rmse_avg": null,
+  "rmse_std": null,
+  "cpu_total_avg_pct": 5.623393538913363,
+  "runs": [
+    {
+      "sequence": "MH_01_easy",
+      "run_name": "run_01",
+      "mode": "mono",
+      "profile": "accurate",
+      "trajectory_policy": "paper",
+      "success": false,
+      "rmse": null,
+      "traj_used": "",
+      "traj_reason": "",
+      "warnings": "GT unavailable: No ground truth found near /workspace/datasets/euroc/MH_01_easy.db3",
+      "error": "ros2 bag play did not publish /clock within 10.0s.",
+      "gt_verdict": "GT unavailable: No ground truth found near /workspace/datasets/euroc/MH_01_easy.db3",
+      "cpu_total_avg_pct": 5.623393538913363,
+      "trajectory_poses": null,
+      "timing_avg_ms": {},
+      "artifacts": {
+        "gt_tum": null,
+        "trajectory_tum": null,
+        "ape_traj_png": null,
+        "traj_xy_png": null,
+        "timings_csv": null,
+        "process_cpu_csv": "ov2slam_process_cpu.csv",
+        "thread_cpu_csv": "ov2slam_thread_cpu.csv",
+        "thread_cpu_summary_csv": null,
+        "named_thread_roles_png": null,
+        "named_thread_roles_csv": null
+      }
+    }
+  ]
+}

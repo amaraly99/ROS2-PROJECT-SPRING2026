@@ -1,0 +1,26 @@
+{
+  "sequence": "MH_01_easy",
+  "n_runs_total": 1,
+  "n_runs_success": 1,
+  "rmse_avg": 0.066469,
+  "rmse_std": 0.0,
+  "cpu_total_avg_pct": 35.19585416666667,
+  "runs": [
+    {
+      "sequence": "MH_01_easy",
+      "run_name": "run_01",
+      "profile": "fast",
+      "mode": "mono",
+      "success": true,
+      "rmse": 0.066469,
+      "traj_used": "ov2slam_kfs_traj.txt",
+      "trajectory_poses": 407,
+      "cpu_total_avg_pct": 35.19585416666667,
+      "trajectory_end_ts": 1403636763.8135555,
+      "sequence_end_ts": 1403636762.74356,
+      "warnings": "OV2SLAM still running after 600s; SIGINT to flush.",
+      "error": "",
+      "gt_verdict": "MH_01_easy.txt is already valid TUM format (timestamp tx ty tz qx qy qz qw); normalized copy written to gt.tum"
+    }
+  ]
+}

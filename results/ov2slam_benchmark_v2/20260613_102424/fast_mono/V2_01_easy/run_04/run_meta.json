@@ -1,0 +1,17 @@
+{
+  "sequence": "V2_01_easy",
+  "run_name": "run_04",
+  "profile": "fast",
+  "mode": "mono",
+  "success": true,
+  "rmse": 0.06637,
+  "gt_coverage_pct": 92.50000055347171,
+  "traj_used": "ov2slam_kfs_traj.txt",
+  "trajectory_poses": 286,
+  "cpu_total_avg_pct": 36.5989,
+  "trajectory_end_ts": 1413393326.2057605,
+  "sequence_end_ts": 1413393325.48076,
+  "warnings": "",
+  "error": "",
+  "gt_verdict": "V2_01_easy.txt is already valid TUM format (timestamp tx ty tz qx qy qz qw); normalized copy written to gt.tum"
+}

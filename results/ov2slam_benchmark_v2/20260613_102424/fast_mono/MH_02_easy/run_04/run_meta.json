@@ -1,0 +1,17 @@
+{
+  "sequence": "MH_02_easy",
+  "run_name": "run_04",
+  "profile": "fast",
+  "mode": "mono",
+  "success": true,
+  "rmse": 0.027524,
+  "gt_coverage_pct": 100.0,
+  "traj_used": "ov2slam_kfs_traj.txt",
+  "trajectory_poses": 404,
+  "cpu_total_avg_pct": 37.9935375,
+  "trajectory_end_ts": 1403637010.6016665,
+  "sequence_end_ts": 1403637009.49667,
+  "warnings": "",
+  "error": "",
+  "gt_verdict": "MH_02_easy.txt is already valid TUM format (timestamp tx ty tz qx qy qz qw); normalized copy written to gt.tum"
+}

@@ -1,0 +1,58 @@
+{
+  "sequence": "MH_01_easy",
+  "n_runs_total": 1,
+  "n_runs_success": 0,
+  "rmse_avg": null,
+  "rmse_std": null,
+  "cpu_total_avg_pct": 11.008058161350844,
+  "runs": [
+    {
+      "sequence": "MH_01_easy",
+      "run_name": "run_01",
+      "mode": "mono",
+      "profile": "accurate",
+      "trajectory_policy": "paper",
+      "success": false,
+      "rmse": null,
+      "traj_used": "",
+      "traj_reason": "",
+      "warnings": "OV2SLAM died during bag playback; killing bag and aborting run attempt.",
+      "error": "OV2SLAM crashed during bag playback. Check ov2slam.log.",
+      "gt_verdict": "MH_01_easy.txt is already valid TUM format (timestamp tx ty tz qx qy qz qw); normalized copy written to gt.tum",
+      "cpu_total_avg_pct": 11.008058161350844,
+      "trajectory_poses": null,
+      "timing_avg_ms": {
+        "0.Full-Front_End": 8.00922,
+        "0.Keyframe-Processing_Mapper": 2.45021,
+        "1.BA_localBA": 23.0284,
+        "1.FE_Track-Mono": 5.53996,
+        "1.FE_createKeyframe": 9.38319,
+        "1.KF_MatchingToLocalMap": 1.59391,
+        "1.KF_TriangulateTemporal": 0.210152,
+        "1.KF_updateFrameCovisilbity": 0.907371,
+        "2.BA_Optimize": 11.1423,
+        "2.BA_SetupPb": 4.0078,
+        "2.BA_Update": 1.33813,
+        "2.FE_CF_extractKeypoints": 9.1886,
+        "2.FE_CF_prepareFrame": 0.105456,
+        "2.FE_TM_EpipolarFiltering": 0.852553,
+        "2.FE_TM_KLT-Tracking": 2.01563,
+        "2.FE_TM_checkNewKfReq": 0.0806881,
+        "2.FE_TM_computePose": 0.903503,
+        "2.FE_TM_preprocessImage": 2.09988
+      },
+      "artifacts": {
+        "gt_tum": "gt.tum",
+        "trajectory_tum": null,
+        "ape_traj_png": null,
+        "traj_xy_png": null,
+        "timings_csv": "ov2slam_timings.csv",
+        "process_cpu_csv": "ov2slam_process_cpu.csv",
+        "thread_cpu_csv": "ov2slam_thread_cpu.csv",
+        "thread_cpu_summary_csv": "ov2slam_thread_cpu_summary.csv",
+        "named_thread_roles_png": null,
+        "named_thread_roles_csv": null
+      }
+    }
+  ]
+}

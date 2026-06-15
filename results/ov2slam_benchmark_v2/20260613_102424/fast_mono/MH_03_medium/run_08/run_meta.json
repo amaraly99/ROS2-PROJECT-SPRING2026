@@ -1,0 +1,17 @@
+{
+  "sequence": "MH_03_medium",
+  "run_name": "run_08",
+  "profile": "fast",
+  "mode": "mono",
+  "success": true,
+  "rmse": 0.153413,
+  "gt_coverage_pct": 98.70347050354344,
+  "traj_used": "ov2slam_kfs_traj.txt",
+  "trajectory_poses": 456,
+  "cpu_total_avg_pct": 40.046098591549296,
+  "trajectory_end_ts": 1403637265.488319,
+  "sequence_end_ts": 1403637264.39332,
+  "warnings": "",
+  "error": "",
+  "gt_verdict": "MH_03_medium.txt is already valid TUM format (timestamp tx ty tz qx qy qz qw); normalized copy written to gt.tum"
+}

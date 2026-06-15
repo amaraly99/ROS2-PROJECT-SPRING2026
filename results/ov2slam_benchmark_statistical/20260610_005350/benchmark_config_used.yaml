@@ -1,0 +1,77 @@
+# OV2SLAM experiment configuration
+# =================================
+# Used by: benchmarks/OV2SLAM_benchmarking.py
+#
+# This file controls the benchmark experiment only. It is NOT passed to
+# ov2slam_node. Runtime SLAM parameters come from ov2slam.params_file
+# (or auto-resolved from mode + profile).
+#
+# Legacy flat keys from benchmarks/BENCH.yaml are also accepted by the
+# loader as aliases: camera→mode, speed→profile, ov2slam_cores→cores,
+# output_root→evaluation.results_dir.
+# ─────────────────────────────────────────────────────────────────────
+
+experiment:
+  mode: stereo                    # stereo | mono
+  profile: fast               # accurate | average | fast
+  trajectory_policy: paper        # paper | best
+  # paper → prefers ov2slam_kfs_traj.txt (online, no full-BA)
+  # best  → prefers ov2slam_fullba_kfs_traj.txt (final offline-refined)
+
+  # ── Mono example (uncomment to switch) ──────────────────────────────
+  # mode: mono
+  # profile: accurate
+  # trajectory_policy: paper
+
+dataset:
+  # Leave empty to auto-detect from workspace:
+  #   workspace_root → /workspace when available, else repo root
+  #   dataset_root   → <workspace_root>/datasets/euroc
+  workspace_root: ""
+  dataset_root: ""
+
+  sequences:
+    - MH_01_easy
+    - MH_02_easy
+    - MH_03_medium
+    - MH_04_difficult
+    - MH_05_difficult
+    - V1_01_easy
+    - V1_02_medium
+    - V1_03_difficult
+    - V2_01_easy
+    - V2_02_medium
+  
+  seq_range_start: ""
+  seq_range_end: ""
+
+ov2slam:
+  # Absolute path to params YAML; leave empty to auto-select:
+  #   src/ov2slam_ros/parameters_files/<profile>/euroc/euroc_<mode>.yaml
+  params_file: ""
+  node_name: /ov2slam_node
+  cores: ""                    # CPU pinning e.g. "0,1" (empty = no taskset)
+
+playback:
+  bag_rate: 1.0
+  bag_timeout: 1200
+  startup_settle_sec: 15
+  auto_exit_timeout: 90
+  final_clock_sec: 1450000000
+  final_clock_nanosec: 0
+  clock_start_timeout: 10
+  sigint_timeout: 30
+  # After ov2slam_node dies: max seconds before this attempt is force-failed → engine retry.
+  extreme_crash_deadline_sec: 1800
+  # Short launcher cleanup wait when OV2SLAM already crashed (skip full auto_exit_timeout).
+  post_crash_launcher_timeout_sec: 15
+
+evaluation:
+  n_runs: 10                      # independent repetitions per sequence → run_01, run_02, …
+  retries: 5                      # WHEN an error happens, this is the tolerance runs before giving up on the sequence.
+  results_dir: ""                 # default: <workspace>/results/ov2slam_benchmark
+  results_name: ""                # default: Asia/Dubai timestamp
+  log_dir: ""                     # default: <workspace>/run_logs
+  t_max_diff: 0.1
+  monitor_sample_sec: 0.05
+  inter_run_delay_sec: 10

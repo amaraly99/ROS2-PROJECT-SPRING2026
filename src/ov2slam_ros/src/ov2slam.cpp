@@ -236,6 +236,16 @@ void SlamManager::run()
         }
     }
 
+    if( pmapper_ ) {
+        pmapper_->bexit_required_ = true;
+    }
+
+    // On externally requested shutdowns, flush the current trajectory if we
+    // have progressed far enough to have a valid frame timeline.
+    if( pcurframe_ && pcurframe_->id_ >= 0 ) {
+        writeResults();
+    }
+
     std::cout << "\nOV²SLAM is stopping!\n";
 
     bis_on_ = false;

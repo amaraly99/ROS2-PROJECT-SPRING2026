@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+# =============================================================================
+# host_benchmarker_ov2slam
+# =============================================================================
+# Run the OV2SLAM EuRoC benchmark from the HOST without entering Docker.
+# All benchmarking logic executes inside the ros2_perception_stack container;
+# stdout/stderr are streamed live to this terminal so you can monitor progress,
+# pipe to tee, or redirect to a log file for cron jobs.
+#
+# Usage (from the ROS2-PROJECT-SPRING2026 directory or anywhere):
+#   ./host_benchmarker_ov2slam [OPTIONS]
+#
+# Options:
+#   --container NAME      Docker container to use  (default: ros2_perception_stack)
+#   --config PATH         Host-side path to experiment_configuration.yaml
+#                         (default: <script_dir>/benchmarks/experiment_configuration.yaml)
+#   --sequence NAME       Add a sequence to run (repeatable)
+#   --mode mono|stereo    Override experiment mode
+#   --profile fast|average|accurate  Override algorithm profile
+#   --runs N              Override number of runs per sequence
+#   --retries N           Override engine-retry count
+#   --trajectory-policy paper|best  Override trajectory selection policy
+#   --help                Show this help and exit
+#
+# Cron example (runs every Sunday at 03:00, logs to dated file):
+#   0 3 * * 0 /home/amaraly/ROS2-PROJECT-SPRING2026/host_benchmarker_ov2slam \
+#       >> /home/amaraly/ROS2-PROJECT-SPRING2026/run_logs/cron_$(date +\%Y\%m\%d).log 2>&1
+# =============================================================================
+
+set -euo pipefail
+
+# ── Script location ────────────────────────────────────────────────────────────
+SCRIPT_PATH="$(realpath "${BASH_SOURCE[0]}")"
+HOST_WS="$(dirname "$SCRIPT_PATH")"
+
+# ── Defaults ───────────────────────────────────────────────────────────────────
+CONTAINER_NAME="ros2_perception_stack"
+CONTAINER_WS="/workspace"
+BENCHMARK_SCRIPT="${CONTAINER_WS}/benchmarks/OV2SLAM_benchmarking.py"
+DEFAULT_CONFIG="${HOST_WS}/benchmarks/experiment_configuration.yaml"
+
+# ── Colour helpers ─────────────────────────────────────────────────────────────
+RED='\033[91m'; GREEN='\033[92m'; YELLOW='\033[93m'
+CYAN='\033[96m'; BOLD='\033[1m'; DIM='\033[2m'; RESET='\033[0m'
+
+log()  { printf "${BOLD}${CYAN}[host_benchmarker_ov2slam]${RESET} %s\n" "$*"; }
+warn() { printf "${YELLOW}[host_benchmarker_ov2slam] WARN:${RESET} %s\n" "$*" >&2; }
+die()  { printf "${RED}[host_benchmarker_ov2slam] ERROR:${RESET} %s\n" "$*" >&2; exit 1; }
+ok()   { printf "${GREEN}[host_benchmarker_ov2slam]${RESET} ✓ %s\n" "$*"; }
+
+# ── Argument parsing ───────────────────────────────────────────────────────────
+CONFIG_HOST=""
+SEQUENCES=()
+MODE_OVERRIDE=""
+PROFILE_OVERRIDE=""
+RUNS_OVERRIDE=""
+RETRIES_OVERRIDE=""
+TRAJ_POLICY_OVERRIDE=""
+EXTRA_ARGS=()
+
+usage() {
+    grep '^#' "$SCRIPT_PATH" | grep -v '^#!/' | sed 's/^# \?//'
+    exit 0
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --help|-h)              usage ;;
+        --container)            CONTAINER_NAME="$2"; shift 2 ;;
+        --container=*)          CONTAINER_NAME="${1#*=}"; shift ;;
+        --config)               CONFIG_HOST="$2"; shift 2 ;;
+        --config=*)             CONFIG_HOST="${1#*=}"; shift ;;
+        --sequence)             SEQUENCES+=("$2"); shift 2 ;;
+        --sequence=*)           SEQUENCES+=("${1#*=}"); shift ;;
+        --mode)                 MODE_OVERRIDE="$2"; shift 2 ;;
+        --mode=*)               MODE_OVERRIDE="${1#*=}"; shift ;;
+        --profile)              PROFILE_OVERRIDE="$2"; shift 2 ;;
+        --profile=*)            PROFILE_OVERRIDE="${1#*=}"; shift ;;
+        --runs)                 RUNS_OVERRIDE="$2"; shift 2 ;;
+        --runs=*)               RUNS_OVERRIDE="${1#*=}"; shift ;;
+        --retries)              RETRIES_OVERRIDE="$2"; shift 2 ;;
+        --retries=*)            RETRIES_OVERRIDE="${1#*=}"; shift ;;
+        --trajectory-policy)    TRAJ_POLICY_OVERRIDE="$2"; shift 2 ;;
+        --trajectory-policy=*)  TRAJ_POLICY_OVERRIDE="${1#*=}"; shift ;;
+        *)                      EXTRA_ARGS+=("$1"); shift ;;
+    esac
+done
+
+# ── Resolve host config → container path ──────────────────────────────────────
+if [[ -z "$CONFIG_HOST" ]]; then
+    CONFIG_HOST="$DEFAULT_CONFIG"
+fi
+
+if [[ ! -f "$CONFIG_HOST" ]]; then
+    die "Config file not found on host: ${CONFIG_HOST}"
+fi
+
+config_realpath="$(realpath "$CONFIG_HOST")"
+if [[ "$config_realpath" == "${HOST_WS}"/* ]]; then
+    CONFIG_CONTAINER="${CONTAINER_WS}/${config_realpath#${HOST_WS}/}"
+else
+    tmpname="host_bench_ov2_config_$(date +%s).yaml"
+    sudo docker cp "$config_realpath" "${CONTAINER_NAME}:${CONTAINER_WS}/${tmpname}"
+    CONFIG_CONTAINER="${CONTAINER_WS}/${tmpname}"
+    trap 'sudo docker exec "$CONTAINER_NAME" rm -f "${CONTAINER_WS}/${tmpname}" 2>/dev/null || true' EXIT
+fi
+
+# ── Pre-flight: container must be running ──────────────────────────────────────
+log "Checking container '${CONTAINER_NAME}' ..."
+if ! sudo docker inspect --format='{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null | grep -q 'true'; then
+    die "Container '${CONTAINER_NAME}' is not running.\n       Start it first:  ${HOST_WS}/start_container.sh"
+fi
+ok "Container is running."
+
+if ! sudo docker exec "$CONTAINER_NAME" test -f "$BENCHMARK_SCRIPT"; then
+    die "Benchmark script not found in container: ${BENCHMARK_SCRIPT}"
+fi
+
+# ── Build the in-container command ────────────────────────────────────────────
+CMD=(python3 "$BENCHMARK_SCRIPT" --config "$CONFIG_CONTAINER")
+
+for seq in "${SEQUENCES[@]}"; do
+    CMD+=(--sequence "$seq")
+done
+
+[[ -n "$MODE_OVERRIDE" ]]       && CMD+=(--mode "$MODE_OVERRIDE")
+[[ -n "$PROFILE_OVERRIDE" ]]    && CMD+=(--profile "$PROFILE_OVERRIDE")
+[[ -n "$RUNS_OVERRIDE" ]]       && CMD+=(--runs "$RUNS_OVERRIDE")
+[[ -n "$RETRIES_OVERRIDE" ]]    && CMD+=(--retries "$RETRIES_OVERRIDE")
+[[ -n "$TRAJ_POLICY_OVERRIDE" ]] && CMD+=(--trajectory-policy "$TRAJ_POLICY_OVERRIDE")
+[[ ${#EXTRA_ARGS[@]} -gt 0 ]]   && CMD+=("${EXTRA_ARGS[@]}")
+
+# ── Run ────────────────────────────────────────────────────────────────────────
+log "Launching OV2SLAM benchmark inside '${CONTAINER_NAME}' ..."
+log "Command: ${CMD[*]}"
+printf "%s\n" "$(printf '─%.0s' {1..70})"
+
+if [ -t 1 ]; then
+    sudo docker exec -it "$CONTAINER_NAME" "${CMD[@]}"
+else
+    sudo docker exec -i "$CONTAINER_NAME" "${CMD[@]}"
+fi
+
+EXIT_CODE=$?
+printf "%s\n" "$(printf '─%.0s' {1..70})"
+
+if [[ $EXIT_CODE -eq 0 ]]; then
+    ok "OV2SLAM benchmark finished successfully."
+else
+    warn "OV2SLAM benchmark exited with code ${EXIT_CODE}."
+fi
+
+exit $EXIT_CODE

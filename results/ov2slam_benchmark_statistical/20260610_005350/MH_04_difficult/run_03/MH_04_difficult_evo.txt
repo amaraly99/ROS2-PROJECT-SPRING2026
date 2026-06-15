@@ -1,0 +1,35 @@
+--------------------------------------------------------------------------------
+Loaded 19753 stamps and poses from: /workspace/results/ov2slam_benchmark_statistical/20260610_005350/MH_04_difficult/run_03/gt.tum
+Loaded 407 stamps and poses from: /workspace/results/ov2slam_benchmark_statistical/20260610_005350/MH_04_difficult/run_03/trajectory.tum
+--------------------------------------------------------------------------------
+Synchronizing trajectories...
+Found 404 of max. 407 possible matching timestamps between...
+	/workspace/results/ov2slam_benchmark_statistical/20260610_005350/MH_04_difficult/run_03/gt.tum
+and:	/workspace/results/ov2slam_benchmark_statistical/20260610_005350/MH_04_difficult/run_03/trajectory.tum
+..with max. time diff.: 0.1 (s) and time offset: 0.0 (s).
+--------------------------------------------------------------------------------
+Aligning using Umeyama's method...
+Rotation of alignment:
+[[ 0.77402536 -0.24620576  0.58332449]
+ [-0.6330349  -0.31884048  0.70541304]
+ [ 0.01231071 -0.91527235 -0.40264745]]
+Translation of alignment:
+[ 4.72017484 -1.76275765  0.39570776]
+Scale correction: 1.0
+--------------------------------------------------------------------------------
+Compared 404 absolute pose pairs.
+Calculating APE for translation part pose relation...
+--------------------------------------------------------------------------------
+APE w.r.t. translation part (m)
+(with SE(3) Umeyama alignment)
+
+       max	0.443962
+      mean	0.225937
+    median	0.207334
+       min	0.021636
+      rmse	0.246257
+       sse	24.499502
+       std	0.097954
+
+--------------------------------------------------------------------------------
+Saving results to /workspace/results/ov2slam_benchmark_statistical/20260610_005350/MH_04_difficult/run_03/MH_04_difficult_evo.zip...

@@ -35,12 +35,18 @@ Mapper::Mapper(std::shared_ptr<SlamParams> pslamstate, std::shared_ptr<MapManage
     , pestimator_( new Estimator(pslamstate_, pmap_) )
     , ploopcloser_( new LoopCloser(pslamstate_, pmap_) )
 {
-    std::thread mapper_thread(&Mapper::run, this);
-    pthread_setname_np(mapper_thread.native_handle(), "ov2_map");
-
-    mapper_thread.detach();
+    mapper_thread_ = std::thread(&Mapper::run, this);
+    pthread_setname_np(mapper_thread_.native_handle(), "ov2_map");
 
     std::cout << "\nMapper Object is created!\n";
+}
+
+Mapper::~Mapper()
+{
+    bexit_required_ = true;
+    if( mapper_thread_.joinable() ) {
+        mapper_thread_.join();
+    }
 }
 
 void Mapper::run()

@@ -1,0 +1,26 @@
+{
+  "sequence": "MH_01_easy",
+  "n_runs_total": 1,
+  "n_runs_success": 0,
+  "rmse_avg": null,
+  "rmse_std": null,
+  "cpu_total_avg_pct": 77.1737371349096,
+  "runs": [
+    {
+      "sequence": "MH_01_easy",
+      "run_name": "run_01",
+      "profile": "accurate",
+      "mode": "stereo",
+      "success": false,
+      "rmse": null,
+      "traj_used": "ov2slam_kfs_traj.txt",
+      "trajectory_poses": 283,
+      "cpu_total_avg_pct": 77.1737371349096,
+      "trajectory_end_ts": 1403636686.4135554,
+      "sequence_end_ts": 1403636762.74356,
+      "warnings": "OV2SLAM exited during playback (likely dropped frames / crash).",
+      "error": "Trajectory ends 76.3s before the sequence end (frames were dropped); treating run as failed.",
+      "gt_verdict": "MH_01_easy.txt is already valid TUM format (timestamp tx ty tz qx qy qz qw); normalized copy written to gt.tum"
+    }
+  ]
+}

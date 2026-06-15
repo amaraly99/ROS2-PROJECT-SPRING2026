@@ -1,0 +1,16 @@
+{
+  "sequence": "MH_01_easy",
+  "run_name": "run_01",
+  "profile": "accurate",
+  "mode": "stereo",
+  "success": true,
+  "rmse": 0.041995,
+  "traj_used": "ov2slam_kfs_traj.txt",
+  "trajectory_poses": 423,
+  "cpu_total_avg_pct": 159.46302459016394,
+  "trajectory_end_ts": 1403636763.8135555,
+  "sequence_end_ts": 1403636762.74356,
+  "warnings": "OV2SLAM still running after 600s; SIGINT to flush.",
+  "error": "",
+  "gt_verdict": "MH_01_easy.txt is already valid TUM format (timestamp tx ty tz qx qy qz qw); normalized copy written to gt.tum"
+}

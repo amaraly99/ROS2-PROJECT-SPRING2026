@@ -1,0 +1,26 @@
+{
+  "config_file": "/workspace/benchmarks/experiment_configuration_hil.yaml",
+  "workspace_root": "/workspace",
+  "dataset_root": "/workspace/datasets/euroc",
+  "results_root": "/workspace/results/ov2slam_benchmark_statistical/hil_dup_test_20260610_082044",
+  "results_timezone": "Asia/Dubai",
+  "params_file": "/workspace/results/ov2slam_benchmark_statistical/hil_dup_test_20260610_082044/params_runtime.yaml",
+  "mode": "mono",
+  "profile": "fast",
+  "topic_left": "/ovcam/image_raw_monotonic",
+  "topic_right": "",
+  "relay_input_topic": "/ovcam/image_raw",
+  "relay_output_topic": "/ovcam/image_raw_monotonic",
+  "trajectory_policy": "paper",
+  "cores": "",
+  "n_runs": 1,
+  "retries": 0,
+  "selected_sequences": [
+    "hil_full_20260606_002324_0"
+  ],
+  "bag_play_rate": 1.0,
+  "evo_t_max_diff": 0.1,
+  "monitor_sample_sec": 0.05,
+  "extreme_crash_deadline_sec": 1800.0,
+  "post_crash_launcher_timeout_sec": 15.0
+}

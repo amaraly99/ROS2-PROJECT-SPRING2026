@@ -1,0 +1,17 @@
+{
+  "sequence": "V1_02_medium",
+  "run_name": "run_10",
+  "profile": "fast",
+  "mode": "mono",
+  "success": true,
+  "rmse": 1.113002,
+  "gt_coverage_pct": 99.52099036402639,
+  "traj_used": "ov2slam_kfs_traj.txt",
+  "trajectory_poses": 536,
+  "cpu_total_avg_pct": 39.70438775510204,
+  "trajectory_end_ts": 1403715609.362143,
+  "sequence_end_ts": 1403715608.41214,
+  "warnings": "",
+  "error": "",
+  "gt_verdict": "V1_02_medium.txt is already valid TUM format (timestamp tx ty tz qx qy qz qw); normalized copy written to gt.tum"
+}

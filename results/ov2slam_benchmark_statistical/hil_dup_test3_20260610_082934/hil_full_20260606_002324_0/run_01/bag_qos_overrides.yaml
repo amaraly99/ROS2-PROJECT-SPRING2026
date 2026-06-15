@@ -1,0 +1,4 @@
+"/ovcam/image_raw_monotonic":
+  reliability: reliable
+  history: keep_last
+  depth: 10
