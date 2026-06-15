@@ -111,10 +111,10 @@ LAUNCH_PID=$!
 log "Waiting 6s for nodes to start..."
 sleep 6
 
-# Hard check — both expected nodes must be alive
+# Hard check — both expected node processes must be alive (pgrep avoids DDS discovery timing)
 MISSING=()
-ros2 node list 2>/dev/null | grep -q oracle_detector || MISSING+=(oracle_detector)
-ros2 node list 2>/dev/null | grep -q "$NODE_EXEC"   || MISSING+=("$NODE_EXEC")
+pgrep -f oracle_detector_node >/dev/null 2>&1 || MISSING+=(oracle_detector)
+pgrep -f "$NODE_EXEC"         >/dev/null 2>&1 || MISSING+=("$NODE_EXEC")
 
 if [[ ${#MISSING[@]} -gt 0 ]]; then
     log "ERROR: these nodes did not start: ${MISSING[*]}"

@@ -25,6 +25,8 @@
       <Peers>
         <!-- run_stack_hil.sh substitutes ${MATLAB_HOST_IP} via envsubst before launch -->
         <Peer Address="${MATLAB_HOST_IP}"/>
+        <!-- localhost so ros2 node list / ros2 topic list can discover nodes on this same host -->
+        <Peer Address="localhost"/>
       </Peers>
       <ParticipantIndex>auto</ParticipantIndex>
     </Discovery>
