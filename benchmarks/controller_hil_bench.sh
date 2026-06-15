@@ -36,15 +36,23 @@ ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-0}"
 # ── ROS2 environment (already inside container) ──
 set +u
 source /opt/ros/jazzy/setup.bash
-source "$WS/install/setup.bash" || die "workspace not built — run colcon build first"
+source "$WS/install/setup.bash" 2>/dev/null \
+    || die "workspace not built — run: colcon build --packages-select yolo_msgs servo_core hil_servo oracle_detector --symlink-install"
 set -u
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export ROS_DOMAIN_ID
 export LD_LIBRARY_PATH="${WS}/opencv/build/lib:${LD_LIBRARY_PATH:-}"
 
-# ── Render CycloneDDS profile ──
-PI_INTERFACE=$(ip route get "$MATLAB_HOST_IP" 2>/dev/null | grep -oP 'dev \K\S+' | head -1)
-[[ -z "$PI_INTERFACE" ]] && die "cannot find interface toward $MATLAB_HOST_IP — is the link up?"
+# ── Resolve network interface (allow env override: export PI_INTERFACE=wlan0) ──
+if [[ -z "${PI_INTERFACE:-}" ]]; then
+    # Try specific route first, then fall back to default route interface
+    PI_INTERFACE=$(ip route get "$MATLAB_HOST_IP" 2>/dev/null | grep -oP 'dev \K\S+' | head -1)
+    if [[ -z "$PI_INTERFACE" ]]; then
+        PI_INTERFACE=$(ip route show default 2>/dev/null | grep -oP 'dev \K\S+' | head -1)
+    fi
+fi
+[[ -z "${PI_INTERFACE:-}" ]] && die "cannot detect network interface — set it manually: export PI_INTERFACE=wlan0"
+log "Network interface: $PI_INTERFACE (override with: export PI_INTERFACE=<iface>)"
 DDS_RESOLVED=/tmp/cyclonedds_hil.resolved.xml
 MATLAB_HOST_IP="$MATLAB_HOST_IP" PI_INTERFACE="$PI_INTERFACE" \
     envsubst < "$WS/config/hil/cyclonedds_hil.xml" > "$DDS_RESOLVED" \
