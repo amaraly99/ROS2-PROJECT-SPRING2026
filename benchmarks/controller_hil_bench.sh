@@ -17,7 +17,7 @@
 #   MATLAB_HOST_IP   Windows host IP for unicast DDS discovery
 #   ROS_DOMAIN_ID    default 0
 # ─────────────────────────────────────────────────────────────────
-set -u
+set -euo pipefail
 cd "$(dirname "$0")/.."
 WS="$(pwd)"
 
@@ -36,29 +36,39 @@ ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-0}"
 # ── ROS2 environment (already inside container) ──
 set +u
 source /opt/ros/jazzy/setup.bash
-source "$WS/install/setup.bash" 2>/dev/null \
-    || die "workspace not built — run: colcon build --packages-select yolo_msgs servo_core hil_servo oracle_detector --symlink-install"
+if [[ ! -f "$WS/install/setup.bash" ]]; then
+    die "workspace not built — run: colcon build --packages-select yolo_msgs servo_core hil_servo oracle_detector --symlink-install"
+fi
+source "$WS/install/setup.bash"
 set -u
+
+# ── Verify required packages are installed ──
+for pkg in hil_servo oracle_detector servo_core; do
+    ros2 pkg list | grep -q "^${pkg}$" \
+        || die "ROS2 package '${pkg}' not found — did you source install/setup.bash and build?"
+done
+log "Packages verified: hil_servo oracle_detector servo_core"
+
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export ROS_DOMAIN_ID
 export LD_LIBRARY_PATH="${WS}/opencv/build/lib:${LD_LIBRARY_PATH:-}"
 
 # ── Resolve network interface (allow env override: export PI_INTERFACE=wlan0) ──
 if [[ -z "${PI_INTERFACE:-}" ]]; then
-    # Try specific route first, then fall back to default route interface
     PI_INTERFACE=$(ip route get "$MATLAB_HOST_IP" 2>/dev/null | grep -oP 'dev \K\S+' | head -1)
-    if [[ -z "$PI_INTERFACE" ]]; then
+    if [[ -z "${PI_INTERFACE:-}" ]]; then
         PI_INTERFACE=$(ip route show default 2>/dev/null | grep -oP 'dev \K\S+' | head -1)
     fi
 fi
-[[ -z "${PI_INTERFACE:-}" ]] && die "cannot detect network interface — set it manually: export PI_INTERFACE=wlan0"
-log "Network interface: $PI_INTERFACE (override with: export PI_INTERFACE=<iface>)"
+[[ -z "${PI_INTERFACE:-}" ]] && die "cannot detect network interface — set manually: export PI_INTERFACE=wlan0"
+log "Network interface: $PI_INTERFACE"
+
 DDS_RESOLVED=/tmp/cyclonedds_hil.resolved.xml
 MATLAB_HOST_IP="$MATLAB_HOST_IP" PI_INTERFACE="$PI_INTERFACE" \
     envsubst < "$WS/config/hil/cyclonedds_hil.xml" > "$DDS_RESOLVED" \
     || die "envsubst of cyclone profile failed"
 export CYCLONEDDS_URI="file://$DDS_RESOLVED"
-log "CycloneDDS profile → $DDS_RESOLVED (peer=$MATLAB_HOST_IP iface=$PI_INTERFACE)"
+log "CycloneDDS: peer=$MATLAB_HOST_IP iface=$PI_INTERFACE"
 
 # ── Output dir ──
 STAMP=$(date +%Y%m%d_%H%M%S)
@@ -76,35 +86,43 @@ log "Run dir: $RUNREL  (git $GIT_SHA)"
 
 NODE_EXEC=$([[ "$CONTROLLER" == ibvs ]] && echo visp_servo_node || echo hil_servo_node)
 
+BAG_PID=; CPU_PID=; LAUNCH_PID=
 cleanup() {
     log "Stopping..."
-    kill "$BAG_PID" "$CPU_PID" "$LAUNCH_PID" 2>/dev/null
+    [[ -n "$LAUNCH_PID" ]] && kill "$LAUNCH_PID" 2>/dev/null
+    [[ -n "$BAG_PID"    ]] && kill "$BAG_PID"    2>/dev/null
+    [[ -n "$CPU_PID"    ]] && kill "$CPU_PID"    2>/dev/null
     sleep 1
     exit 0
 }
 trap cleanup INT TERM
 
-log "Launching oracle + $CONTROLLER ... recording to $RUNREL/bag"
-log ">>> When you see 'recording', STOP+START the Simulink sim for a clean t=0 <<<"
+log "Launching oracle + $CONTROLLER (output visible below)..."
 
+# Launch output goes to TERMINAL so errors are visible immediately.
 ros2 launch /workspace/benchmarks/controller_bench.launch.py \
     controller:="$CONTROLLER" workspace:=/workspace \
-    > "$WS/$RUNREL/launch.log" 2>&1 &
+    2>&1 | tee "$WS/$RUNREL/launch.log" &
 LAUNCH_PID=$!
 
-sleep 4
+log "Waiting 6s for nodes to start..."
+sleep 6
 
-# Check the launch didn't immediately die
-if ! kill -0 "$LAUNCH_PID" 2>/dev/null; then
-    log "Launch failed — printing launch.log:"
-    cat "$WS/$RUNREL/launch.log"
-    die "ros2 launch exited immediately (see above)"
+# Hard check — both expected nodes must be alive
+MISSING=()
+ros2 node list 2>/dev/null | grep -q oracle_detector || MISSING+=(oracle_detector)
+ros2 node list 2>/dev/null | grep -q "$NODE_EXEC"   || MISSING+=("$NODE_EXEC")
+
+if [[ ${#MISSING[@]} -gt 0 ]]; then
+    log "ERROR: these nodes did not start: ${MISSING[*]}"
+    log "Check the launch output above for the actual error."
+    kill "$LAUNCH_PID" 2>/dev/null
+    exit 1
 fi
+log "Nodes confirmed running: oracle_detector + $NODE_EXEC"
 
-CTRL_PID=$(pgrep -f "$NODE_EXEC" | head -1)
-echo "controller_pid=${CTRL_PID:-none} exec=$NODE_EXEC" >> "$WS/$RUNREL/meta.txt"
-
-# CPU sampler — 1 Hz: epoch,%cpu,%mem
+# CPU sampler — 1 Hz
+CTRL_PID=$(pgrep -f "$NODE_EXEC" | head -1 || true)
 if [[ -n "${CTRL_PID:-}" ]]; then
     (
         echo 'epoch,pcpu,pmem'
@@ -117,7 +135,6 @@ if [[ -n "${CTRL_PID:-}" ]]; then
     CPU_PID=$!
 else
     log "WARN: controller PID not found — CPU not sampled"
-    CPU_PID=
 fi
 
 ros2 bag record -o "$WS/$RUNREL/bag" \
@@ -135,8 +152,6 @@ if [[ "$DURATION" -gt 0 ]]; then
 else
     log "running until Ctrl-C ..."
     wait "$LAUNCH_PID"
-    # If we get here the launch died on its own — print why
-    log "Launch process exited unexpectedly:"
-    cat "$WS/$RUNREL/launch.log"
+    log "Launch process exited on its own — see launch.log above"
     cleanup
 fi
