@@ -133,3 +133,23 @@ compile_commands.json
 # Internal reports (contain private IPs / lab details)
 ############################################################
 HIL_SYSTEM_STATUS_REPORT.md
+
+#####
+#OLD REPO TOPICS
+#####
+.codex
+My Movie.mp4
+My Movie_bag/
+OV2SLAM.pdf
+OV2SLAM_HARDCODED_PARAMS.md
+SLAM-Former/
+clean_stereo/
+iso_full/
+manual_a/
+mh04_named_thread_roles_aggregated.png
+mp4_to_bag.py
+new_retrial_benchmark_metrics_report.md
+results/
+src/ORB_SLAM3_ROS2/
+stream_my_movie_frames.py
+streamed_images/
