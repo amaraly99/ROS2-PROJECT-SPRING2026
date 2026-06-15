@@ -16,7 +16,7 @@
 
 disp('=== HIL ROS init (LT) starting ===')
 
-setenv('RMW_IMPLEMENTATION', 'rmw_fastrtps_cpp');
+setenv('RMW_IMPLEMENTATION', getenv('RMW_IMPLEMENTATION'));
 setenv('ROS_DOMAIN_ID', '0');
 
 if exist('node','var') && isvalid(node)

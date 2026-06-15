@@ -1,0 +1,18 @@
+# QoS overrides for the controller benchmark rosbag recorder.
+# Pass: ros2 bag record --qos-profile-overrides-path config/hil/bench_bag_qos.yaml
+#
+# /yolo/detections is BEST_EFFORT (oracle publisher) — a default RELIABLE
+# recorder would silently never receive it.
+# /sim/target_pose is TRANSIENT_LOCAL (latched) — match it so the recorder
+# captures the latched target even if recording starts mid-run.
+/yolo/detections:
+  reliability: best_effort
+  durability: volatile
+  history: keep_last
+  depth: 10
+
+/sim/target_pose:
+  reliability: reliable
+  durability: transient_local
+  history: keep_last
+  depth: 1

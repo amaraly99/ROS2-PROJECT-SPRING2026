@@ -109,19 +109,21 @@ def generate_launch_description():
             arguments=[calib_yaml],
         ),
 
-        # 5. visp_servo — HIL params; target_class defaults to "stop sign"
-        #    debug_image_enabled overrides the YAML default so the launch arg
-        #    takes precedence without requiring a YAML edit.
+        # 5. hil_servo (TS2) — the proportional controller, the real HIL
+        #    default. Shared FSM (servo_core) + proportional servoing law.
+        #    For the IBVS variant (TS1) or A/B benchmarking, use
+        #    benchmarks/controller_bench.launch.py instead of this stack.
         Node(
-            package='visp_servo',
-            executable='visp_servo_node',
-            name='visp_servo_node',
+            package='hil_servo',
+            executable='hil_servo_node',
+            name='hil_servo_node',
             output='screen',
             parameters=[
                 PathJoinSubstitution(
-                    [workspace, 'config', 'hil', 'hil_servo_params.yaml']),
-                {'target_class': target_class,
-                 'debug_image_enabled': debug_image},
+                    [workspace, 'config', 'hil', 'bench_fsm.yaml']),
+                PathJoinSubstitution(
+                    [workspace, 'config', 'hil', 'bench_proportional.yaml']),
+                {'target_class': target_class},
             ],
         ),
     ])

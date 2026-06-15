@@ -1,0 +1,8 @@
+# bench_proportional.yaml — TS2 controller gains (hil_servo proportional).
+# Pass AFTER bench_fsm.yaml. Only the servoing-law parameters live here.
+/**:
+  ros__parameters:
+    k_fwd:         3.0    # vx = k_fwd * (target_bbox_ratio - bbox_ratio)
+    k_lat:         1.5    # vy = -k_lat * ex_norm
+    k_vz:          1.5    # vz = -k_vz  * ey_norm
+    vert_deadband: 0.08

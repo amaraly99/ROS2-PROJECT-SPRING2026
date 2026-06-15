@@ -1,9 +1,10 @@
 <?xml version="1.0"?>
 <package format="3">
-  <name>visp_servo</name>
-  <version>2.0.0</version>
-  <description>TS1 — Image-Based Visual Servoing (ViSP vpServo, interaction matrix +
-  pseudo-inverse) as a ROS2 node. Shared FSM (servo_core) + IBVS control law.</description>
+  <name>servo_core</name>
+  <version>1.0.0</version>
+  <description>Shared FSM + safety filters + /bench/state instrumentation for the
+  controller benchmark. Provides ServoFsmNode (an rclcpp::Node) and the pluggable
+  IServoController interface. Test subjects link this and inject their servoing law.</description>
   <maintainer email="amaraly304@gmail.com">team</maintainer>
   <license>MIT</license>
 
@@ -11,11 +12,8 @@
 
   <depend>rclcpp</depend>
   <depend>geometry_msgs</depend>
-  <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
   <depend>yolo_msgs</depend>
-  <depend>servo_core</depend>
-  <depend>eigen</depend>
 
   <export><build_type>ament_cmake</build_type></export>
 </package>

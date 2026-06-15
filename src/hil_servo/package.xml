@@ -1,9 +1,9 @@
 <?xml version="1.0"?>
 <package format="3">
-  <name>visp_servo</name>
-  <version>2.0.0</version>
-  <description>TS1 — Image-Based Visual Servoing (ViSP vpServo, interaction matrix +
-  pseudo-inverse) as a ROS2 node. Shared FSM (servo_core) + IBVS control law.</description>
+  <name>hil_servo</name>
+  <version>1.0.0</version>
+  <description>TS2 — the MATLAB sim-HIL proportional servoing controller as a
+  ROS2 node. Shared FSM (servo_core) + decoupled proportional control law.</description>
   <maintainer email="amaraly304@gmail.com">team</maintainer>
   <license>MIT</license>
 
@@ -11,11 +11,9 @@
 
   <depend>rclcpp</depend>
   <depend>geometry_msgs</depend>
-  <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
   <depend>yolo_msgs</depend>
   <depend>servo_core</depend>
-  <depend>eigen</depend>
 
   <export><build_type>ament_cmake</build_type></export>
 </package>

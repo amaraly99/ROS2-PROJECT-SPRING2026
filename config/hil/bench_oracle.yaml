@@ -1,0 +1,23 @@
+# bench_oracle.yaml — oracle_detector parameters.
+# Camera intrinsics MUST match bench_fsm.yaml (sim camera 554/320/240).
+# target_aspect sets the synthetic box shape; IBVS adapts to the observed
+# aspect automatically, so this only needs to be a sane value (~1.0 square
+# for a stop sign, ~2.0 for a wide car).
+oracle_detector:
+  ros__parameters:
+    cam_fx: 554.0
+    cam_fy: 554.0
+    cam_cx: 320.0
+    cam_cy: 240.0
+    image_width:  640
+    image_height: 480
+    known_target_height: 1.5      # must match bench_fsm known_target_height
+    target_aspect: 1.0
+    target_class: "stop sign"     # overridden by launch arg
+    confidence: 0.99
+    publish_rate: 20.0            # Hz — matches MATLAB state publisher
+    pitch_sign: 1.0               # flip to -1.0 if box lands inverted vs live view
+    edge_margin_px: 0.0
+    # Phase-2 detector-stress (keep 0 for the YOLO-agnostic comparison):
+    pixel_noise_std: 0.0
+    dropout_prob: 0.0
