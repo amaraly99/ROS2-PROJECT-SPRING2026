@@ -81,7 +81,7 @@ log ">>> When you see 'recording', STOP+START the Simulink sim for a clean t=0 <
 DOCKER_TTY=""; [[ -t 0 && -t 1 ]] && DOCKER_TTY="-it"
 
 sudo docker exec $DOCKER_TTY "$CONTAINER" bash -lc "
-set -u
+set +u   # ROS2 setup.bash references AMENT_TRACE_SETUP_FILES without initialising it
 source /opt/ros/jazzy/setup.bash
 source /workspace/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
