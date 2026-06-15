@@ -116,6 +116,7 @@ void ServoFsmNode::declare_parameters() {
     declare_parameter("sim_paused_rate",            0.01);
     declare_parameter("sim_recovery_debounce_sec",  0.5);
     declare_parameter("sim_unhealthy_entry_sec",    1.0);
+    declare_parameter("fresh_sim_threshold_sec",    2.0);
 
     declare_parameter("safety_min_altitude",  0.5);
     declare_parameter("safety_pose_max_age",  2.0);
@@ -180,6 +181,7 @@ void ServoFsmNode::load_parameters() {
     sim_paused_rate_           = get_parameter("sim_paused_rate").as_double();
     sim_recovery_debounce_sec_ = get_parameter("sim_recovery_debounce_sec").as_double();
     sim_unhealthy_entry_sec_   = get_parameter("sim_unhealthy_entry_sec").as_double();
+    fresh_sim_threshold_sec_   = get_parameter("fresh_sim_threshold_sec").as_double();
 
     safety_min_altitude_ = get_parameter("safety_min_altitude").as_double();
     safety_pose_max_age_ = get_parameter("safety_pose_max_age").as_double();
@@ -275,6 +277,12 @@ void ServoFsmNode::on_heartbeat(const Float64::SharedPtr msg) {
             last_hb_sim_, msg->data);
         handle_sim_restart();
     }
+    if (!have_fresh_sim_ && msg->data < fresh_sim_threshold_sec_) {
+        have_fresh_sim_ = true;
+        RCLCPP_INFO(get_logger(),
+            "Fresh sim confirmed (sim_t=%.2f < %.1fs threshold) — FSM enabled",
+            msg->data, fresh_sim_threshold_sec_);
+    }
     if (have_hb_) {
         double wall_gap = (t_now - last_hb_wall_time_).seconds();
         if (wall_gap > heartbeat_gap_sec_) hb_buffer_.clear();
@@ -301,6 +309,7 @@ void ServoFsmNode::handle_sim_restart() {
     prev_obs_healthy_       = true;
     healthy_streak_start_   = now();
     unhealthy_streak_start_ = now();
+    have_fresh_sim_         = true;
     reset_search();
     publish_bench_state(true);
 }
@@ -464,6 +473,7 @@ void ServoFsmNode::on_detections(const DetectionArray::SharedPtr msg) {
 
 void ServoFsmNode::update_state_on_detection(double bbox_ratio, double ex_norm,
                                              double ey_norm, double /*conf*/) {
+    if (!have_fresh_sim_) return;  // hold in SEARCHING until sim resets to t≈0
     State prev = state_;
     bool centered = std::abs(ex_norm) < hold_center_tol_ &&
                     std::abs(ey_norm) < hold_center_tol_;

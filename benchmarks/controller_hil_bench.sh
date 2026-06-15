@@ -25,9 +25,11 @@ die() { echo "[bench] ERROR: $*" >&2; exit 1; }
 log() { echo "[bench] $*"; }
 
 CONTROLLER="${1:-}"
-DURATION="${2:-0}"
+RUN_NUM="${2:-1}"
+DURATION="${3:-0}"
 [[ "$CONTROLLER" == "ibvs" || "$CONTROLLER" == "proportional" ]] \
-    || die "usage: $0 <ibvs|proportional> [duration_sec]"
+    || die "usage: $0 <ibvs|proportional> [run_num] [duration_sec]"
+[[ "$RUN_NUM" =~ ^[0-9]+$ ]] || die "run_num must be a positive integer (got '$RUN_NUM')"
 
 command -v envsubst >/dev/null || die "'envsubst' missing — apt install gettext-base"
 : "${MATLAB_HOST_IP:?set MATLAB_HOST_IP to your Windows host IP}"
@@ -75,11 +77,12 @@ log "CycloneDDS: peer=$MATLAB_HOST_IP iface=$PI_INTERFACE"
 
 # ── Output dir ──
 STAMP=$(date +%Y%m%d_%H%M%S)
-RUNREL="bags/ctrl_${CONTROLLER}_N1_${STAMP}"
+RUNREL="bags/ctrl_${CONTROLLER}_N${RUN_NUM}_${STAMP}"
 mkdir -p "$WS/$RUNREL"
 GIT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo nogit)
 {
   echo "controller=$CONTROLLER"
+  echo "run_num=$RUN_NUM"
   echo "git_sha=$GIT_SHA"
   echo "stamp=$STAMP"
   echo "matlab_host_ip=$MATLAB_HOST_IP"
@@ -100,6 +103,13 @@ cleanup() {
 }
 trap cleanup INT TERM
 
+log "================================================================="
+log "  IMPORTANT: If you see REACHED state right away — that is NORMAL."
+log "  The sim still has the drone at the previous run's end position."
+log "  DO NOT Ctrl-C!  Wait for the 'recording' line, then Stop+Run"
+log "  the MATLAB Simulink sim to reset to t=0.  The FSM will auto-"
+log "  reset to SEARCHING on heartbeat drop and the clean run begins."
+log "================================================================="
 log "Launching oracle + $CONTROLLER (output visible below)..."
 
 # Launch output goes to TERMINAL so errors are visible immediately.
@@ -108,8 +118,14 @@ ros2 launch /workspace/benchmarks/controller_bench.launch.py \
     2>&1 | tee "$WS/$RUNREL/launch.log" &
 LAUNCH_PID=$!
 
-log "Waiting 6s for nodes to start..."
+log "Waiting 6s for nodes to start (DO NOT abort — REACHED at startup is expected)..."
 sleep 6
+
+# Diagnostics: log what pgrep sees (goes to stderr so it's visible but not in the log)
+log "Node health check (pgrep output):"
+pgrep -fa oracle_detector_node 2>&1 | sed 's/^/  [pgrep] /' || log "  [pgrep] oracle_detector_node — NOT FOUND"
+pgrep -fa "$NODE_EXEC"         2>&1 | sed 's/^/  [pgrep] /' || log "  [pgrep] $NODE_EXEC — NOT FOUND"
+log "  [launch pid $LAUNCH_PID alive? $(kill -0 "$LAUNCH_PID" 2>/dev/null && echo YES || echo NO)]"
 
 # Hard check — both expected node processes must be alive (pgrep avoids DDS discovery timing)
 MISSING=()
