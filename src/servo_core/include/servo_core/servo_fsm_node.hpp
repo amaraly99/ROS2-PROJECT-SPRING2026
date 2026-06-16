@@ -51,7 +51,7 @@ private:
     enum class State { SEARCHING, APPROACHING, REACQUIRE, REACHED };
     static const char* state_name(State s);
 
-    enum class SearchStep { YAW_RIGHT_60, YAW_LEFT_60, YAW_CENTER, STRAFE_RIGHT };
+    enum class SearchStep { FULL_ROTATE, YAW_RIGHT_60, YAW_LEFT_60, YAW_CENTER, STRAFE_RIGHT };
     static const char* search_step_name(SearchStep s);
 
     // ── setup ──
@@ -143,6 +143,8 @@ private:
     double search_settle_sec_;
     double search_strafe_speed_;
     double search_strafe_dur_sec_;
+    double search_spin_speed_;
+    double search_full_rotate_sec_;
 
     double base_reacquire_sec_;
     double k_persist_;
@@ -165,12 +167,13 @@ private:
     // ── runtime state ──
     State state_ = State::SEARCHING;
 
-    SearchStep   search_step_     = SearchStep::YAW_RIGHT_60;
+    SearchStep   search_step_     = SearchStep::FULL_ROTATE;
     double       yaw_target_rad_  = 0.0;
     bool         yaw_target_init_ = false;
     rclcpp::Time search_arrive_time_;
     bool         search_arrived_  = false;
     rclcpp::Time strafe_start_time_;
+    rclcpp::Time spin_start_time_;
     double       drone_yaw_at_search_start_ = 0.0;
 
     int          consecutive_dets_ = 0;

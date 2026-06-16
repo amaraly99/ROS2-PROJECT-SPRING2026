@@ -29,6 +29,7 @@ const char* ServoFsmNode::state_name(State s) {
 
 const char* ServoFsmNode::search_step_name(SearchStep s) {
     switch (s) {
+        case SearchStep::FULL_ROTATE:   return "FULL_ROTATE";
         case SearchStep::YAW_RIGHT_60:  return "YAW_RIGHT_60";
         case SearchStep::YAW_LEFT_60:   return "YAW_LEFT_60";
         case SearchStep::YAW_CENTER:    return "YAW_CENTER";
@@ -105,6 +106,8 @@ void ServoFsmNode::declare_parameters() {
     declare_parameter("search_settle_sec",         0.5);
     declare_parameter("search_strafe_speed",       0.6);
     declare_parameter("search_strafe_dur_sec",     3.0);
+    declare_parameter("search_spin_speed",         0.5);   // rad/s for FULL_ROTATE
+    declare_parameter("search_full_rotate_sec",   13.0);   // 2π/0.5 + margin ≈ 13s
 
     declare_parameter("base_reacquire_sec",  1.0);
     declare_parameter("k_persist",           0.3);
@@ -170,6 +173,8 @@ void ServoFsmNode::load_parameters() {
     search_settle_sec_         = get_parameter("search_settle_sec").as_double();
     search_strafe_speed_       = get_parameter("search_strafe_speed").as_double();
     search_strafe_dur_sec_     = get_parameter("search_strafe_dur_sec").as_double();
+    search_spin_speed_         = get_parameter("search_spin_speed").as_double();
+    search_full_rotate_sec_    = get_parameter("search_full_rotate_sec").as_double();
 
     base_reacquire_sec_ = get_parameter("base_reacquire_sec").as_double();
     k_persist_          = get_parameter("k_persist").as_double();
@@ -616,6 +621,15 @@ ServoFsmNode::Twist ServoFsmNode::build_search_command() {
         return cmd;
     }
     switch (search_step_) {
+    case SearchStep::FULL_ROTATE: {
+        double elapsed = (now() - spin_start_time_).seconds();
+        if (elapsed >= search_full_rotate_sec_) {
+            advance_search_step();
+            break;
+        }
+        cmd.angular.z = clamp_vel(search_spin_speed_, max_angular_);
+        break;
+    }
     case SearchStep::YAW_RIGHT_60:
     case SearchStep::YAW_LEFT_60:
     case SearchStep::YAW_CENTER: {
@@ -644,6 +658,12 @@ ServoFsmNode::Twist ServoFsmNode::build_search_command() {
 
 void ServoFsmNode::advance_search_step() {
     switch (search_step_) {
+    case SearchStep::FULL_ROTATE:
+        drone_yaw_at_search_start_ = drone_yaw_rad_;
+        search_step_    = SearchStep::YAW_RIGHT_60;
+        yaw_target_rad_ = wrap_to_pi(drone_yaw_at_search_start_ + deg2rad(-search_yaw_target_deg_));
+        search_arrived_ = false;
+        break;
     case SearchStep::YAW_RIGHT_60:
         search_step_    = SearchStep::YAW_LEFT_60;
         yaw_target_rad_ = wrap_to_pi(drone_yaw_at_search_start_ + deg2rad(+search_yaw_target_deg_));
@@ -671,8 +691,8 @@ void ServoFsmNode::advance_search_step() {
 
 void ServoFsmNode::reset_search() {
     drone_yaw_at_search_start_ = drone_yaw_rad_;
-    search_step_    = SearchStep::YAW_RIGHT_60;
-    yaw_target_rad_ = wrap_to_pi(drone_yaw_at_search_start_ + deg2rad(-search_yaw_target_deg_));
+    search_step_     = SearchStep::FULL_ROTATE;
+    spin_start_time_ = now();
     search_arrived_  = false;
     yaw_target_init_ = true;
 }

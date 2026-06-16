@@ -53,6 +53,8 @@
     search_settle_sec:          0.5
     search_strafe_speed:        0.6
     search_strafe_dur_sec:      3.0
+    search_spin_speed:          0.5    # rad/s for initial FULL_ROTATE sweep
+    search_full_rotate_sec:    13.0    # 2π/0.5 + margin → guaranteed full circle
 
     # ── REACQUIRE adaptive timeout ──
     base_reacquire_sec: 1.0

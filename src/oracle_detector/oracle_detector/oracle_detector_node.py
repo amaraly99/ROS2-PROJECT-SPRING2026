@@ -54,6 +54,12 @@ class OracleDetector(Node):
         # Phase-2 detector-stress knobs (default 0 = perfect oracle):
         self.declare_parameter('pixel_noise_std', 0.0)       # px gaussian on centre
         self.declare_parameter('dropout_prob', 0.0)          # per-frame miss prob
+        # Detection gates:
+        # max_detection_range_m: 0 = unlimited; >0 = suppress if Zc > this (QoL)
+        self.declare_parameter('max_detection_range_m', 0.0)
+        # pose_stale_sec: suppress if /sim/drone_pose hasn't arrived within this
+        # window — prevents publishing stale-pose detections after sim restart.
+        self.declare_parameter('pose_stale_sec', 0.3)
 
         self.fx = self.get_parameter('cam_fx').value
         self.fy = self.get_parameter('cam_fy').value
@@ -70,10 +76,13 @@ class OracleDetector(Node):
         self.edge_margin = self.get_parameter('edge_margin_px').value
         self.noise_std = self.get_parameter('pixel_noise_std').value
         self.dropout = self.get_parameter('dropout_prob').value
+        self.max_range = self.get_parameter('max_detection_range_m').value
+        self.pose_stale_sec = self.get_parameter('pose_stale_sec').value
 
         # ── State ──
         self.drone = None     # (x,y,z,pitch,yaw)
         self.target = None    # (x,y,z,yaw)
+        self._last_drone_pose_time = None  # wall time of last /sim/drone_pose
 
         # ── QoS (match the rest of the graph) ──
         pose_qos = QoSProfile(depth=10,
@@ -106,6 +115,7 @@ class OracleDetector(Node):
     def on_drone(self, msg):
         if len(msg.data) >= 5:
             self.drone = tuple(msg.data[:5])   # x,y,z,pitch,yaw
+            self._last_drone_pose_time = self.get_clock().now()
 
     def on_target(self, msg):
         if len(msg.data) >= 4:
@@ -115,6 +125,15 @@ class OracleDetector(Node):
         """Return (u, v, bw, bh) in pixels, or None if target not visible."""
         if self.drone is None or self.target is None:
             return None
+
+        # Pose-staleness gate: if /sim/drone_pose hasn't arrived recently the sim
+        # just restarted and self.drone still holds the previous run's position.
+        # Publishing from stale pose causes instant REACHED on the new run.
+        if self._last_drone_pose_time is not None:
+            age_s = (self.get_clock().now() - self._last_drone_pose_time).nanoseconds * 1e-9
+            if age_s > self.pose_stale_sec:
+                return None
+
         x, y, z, pitch, yaw = self.drone
         tx, ty, tz, _ = self.target
 
@@ -139,6 +158,11 @@ class OracleDetector(Node):
         Yc = -up_p      # down is -up
         if Zc <= 0.1:
             return None                   # behind the camera
+
+        # Distance gate: suppress detections beyond max_detection_range_m so the
+        # drone must physically approach before the target becomes "detectable".
+        if self.max_range > 0.0 and Zc > self.max_range:
+            return None
 
         u = self.fx * (Xc / Zc) + self.cx0
         v = self.fy * (Yc / Zc) + self.cy0
@@ -184,7 +208,13 @@ class OracleDetector(Node):
                     f"[oracle] box centre=({u:.0f},{v:.0f}) size={bw:.0f}x{bh:.0f}px "
                     f"(grows as it nears)")
             else:
-                self.get_logger().info("[oracle] target NOT visible → empty (drives SEARCH)")
+                # Distinguish why we suppressed so logs are actionable.
+                reason = 'behind/off-screen'
+                if self._last_drone_pose_time is not None:
+                    age_s = (self.get_clock().now() - self._last_drone_pose_time).nanoseconds * 1e-9
+                    if age_s > self.pose_stale_sec:
+                        reason = f'pose stale ({age_s:.2f}s > {self.pose_stale_sec}s)'
+                self.get_logger().info(f"[oracle] NOT visible ({reason}) → empty (drives SEARCH)")
 
 
 def main():
