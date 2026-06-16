@@ -587,11 +587,14 @@ ServoFsmNode::Twist ServoFsmNode::build_command(double ex_norm, double ey_norm,
         cmd.angular.y = pitch_return_cmd();
         break;
     case State::SEARCHING:
-        if (consecutive_dets_ >= 1) {
-            // Freeze while accumulating lock: keep yawing and we sweep the
-            // target back out of FOV before the second detection arrives.
+        if (consecutive_dets_ >= 1 && std::abs(ex_norm) < lockon_ex_tol_) {
+            // Sign is centered — freeze so the next oracle tick sees the same
+            // ex_norm and lock_ok fires. Continuing to yaw here sweeps the sign
+            // back out of the lock window before the 2nd detection arrives.
             cmd.angular.y = pitch_return_cmd();
         } else {
+            // Not yet centered: let lockon_bias (set in update_state_on_detection)
+            // drive yaw_target toward the sign, then search runs toward it.
             cmd = build_search_command();
         }
         break;
