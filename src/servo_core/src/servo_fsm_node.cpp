@@ -587,7 +587,13 @@ ServoFsmNode::Twist ServoFsmNode::build_command(double ex_norm, double ey_norm,
         cmd.angular.y = pitch_return_cmd();
         break;
     case State::SEARCHING:
-        cmd = build_search_command();
+        if (consecutive_dets_ >= 1) {
+            // Freeze while accumulating lock: keep yawing and we sweep the
+            // target back out of FOV before the second detection arrives.
+            cmd.angular.y = pitch_return_cmd();
+        } else {
+            cmd = build_search_command();
+        }
         break;
     }
     return cmd;
