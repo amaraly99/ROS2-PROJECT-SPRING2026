@@ -34,8 +34,13 @@ def launch_setup(context, *args, **kwargs):
     workspace    = LaunchConfiguration('workspace').perform(context)
     target_class = LaunchConfiguration('target_class').perform(context)
     ctrl_core    = LaunchConfiguration('ctrl_core').perform(context).strip()
+    bench_mode   = LaunchConfiguration('benchmark_mode').perform(context).strip().lower()
 
     cfg = lambda name: f'{workspace}/config/hil/{name}'
+
+    # benchmark_mode: 'true' waits for a fresh sim reset (clean t=0); 'false'
+    # scouts immediately on boot (no Stop→Run). Accept true/1/yes as true.
+    benchmark_mode = bench_mode in ('true', '1', 'yes')
 
     # Build taskset prefix: '' or 'none' → no pinning; else taskset -c <value>
     if ctrl_core and ctrl_core.lower() != 'none':
@@ -61,7 +66,8 @@ def launch_setup(context, *args, **kwargs):
             output='screen',
             prefix=prefix,
             parameters=[cfg('bench_fsm.yaml'), cfg('bench_ibvs.yaml'),
-                        {'target_class': target_class}],
+                        {'target_class': target_class,
+                         'benchmark_mode': benchmark_mode}],
         ))
     elif controller == 'proportional':
         nodes.append(Node(
@@ -71,7 +77,8 @@ def launch_setup(context, *args, **kwargs):
             output='screen',
             prefix=prefix,
             parameters=[cfg('bench_fsm.yaml'), cfg('bench_proportional.yaml'),
-                        {'target_class': target_class}],
+                        {'target_class': target_class,
+                         'benchmark_mode': benchmark_mode}],
         ))
 
     return nodes
@@ -86,5 +93,8 @@ def generate_launch_description():
         DeclareLaunchArgument('target_class', default_value='stop sign'),
         DeclareLaunchArgument('ctrl_core', default_value='none',
             description="CPU core(s) to pin the controller to: '0', '0,1,2', or 'none'/'' for no pinning"),
+        DeclareLaunchArgument('benchmark_mode', default_value='true',
+            description="'true' = benchmarking (wait for sim reset, clean t=0); "
+                        "'false' = scouting (engage immediately on boot, no Stop→Run)"),
         OpaqueFunction(function=launch_setup),
     ])

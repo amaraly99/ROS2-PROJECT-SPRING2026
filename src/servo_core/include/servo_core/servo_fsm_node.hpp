@@ -209,7 +209,11 @@ private:
     bool                 sim_healthy_ = true;
     double               last_hb_sim_ = 0.0;
     bool                 prev_obs_healthy_ = true;
-    bool                 have_fresh_sim_ = false;  // must see sim_t<threshold before FSM runs
+    // benchmark_mode=true: block FSM until a fresh sim (sim_t<threshold) is seen,
+    // so the single recorded approach starts from a clean plant reset (t=0).
+    // benchmark_mode=false (scouting): drone scouts immediately on boot — no block.
+    bool                 benchmark_mode_ = true;
+    bool                 have_fresh_sim_ = false;  // (benchmark mode) seen sim_t<threshold?
     double               fresh_sim_threshold_sec_ = 2.0;
     rclcpp::Time         healthy_streak_start_;
     rclcpp::Time         unhealthy_streak_start_;

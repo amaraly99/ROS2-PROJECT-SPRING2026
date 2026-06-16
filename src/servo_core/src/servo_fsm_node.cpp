@@ -120,6 +120,9 @@ void ServoFsmNode::declare_parameters() {
     declare_parameter("sim_recovery_debounce_sec",  0.5);
     declare_parameter("sim_unhealthy_entry_sec",    1.0);
     declare_parameter("fresh_sim_threshold_sec",    2.0);
+    // true = benchmarking (wait for fresh sim reset before engaging);
+    // false = scouting (engage immediately on boot, no Stop→Run needed).
+    declare_parameter("benchmark_mode",             true);
 
     declare_parameter("safety_min_altitude",  0.5);
     declare_parameter("safety_pose_max_age",  2.0);
@@ -187,6 +190,14 @@ void ServoFsmNode::load_parameters() {
     sim_recovery_debounce_sec_ = get_parameter("sim_recovery_debounce_sec").as_double();
     sim_unhealthy_entry_sec_   = get_parameter("sim_unhealthy_entry_sec").as_double();
     fresh_sim_threshold_sec_   = get_parameter("fresh_sim_threshold_sec").as_double();
+
+    benchmark_mode_ = get_parameter("benchmark_mode").as_bool();
+    // Scouting: the FSM is armed from boot — no fresh-sim block, no Stop→Run.
+    // Benchmarking: stay blocked until on_heartbeat() confirms a fresh sim reset.
+    have_fresh_sim_ = !benchmark_mode_;
+    RCLCPP_INFO(get_logger(), "Mode: %s (have_fresh_sim_=%s at boot)",
+        benchmark_mode_ ? "BENCHMARK (waits for sim reset)" : "SCOUT (engages on boot)",
+        have_fresh_sim_ ? "true" : "false");
 
     safety_min_altitude_ = get_parameter("safety_min_altitude").as_double();
     safety_pose_max_age_ = get_parameter("safety_pose_max_age").as_double();
@@ -282,7 +293,7 @@ void ServoFsmNode::on_heartbeat(const Float64::SharedPtr msg) {
             last_hb_sim_, msg->data);
         handle_sim_restart();
     }
-    if (!have_fresh_sim_ && msg->data < fresh_sim_threshold_sec_) {
+    if (benchmark_mode_ && !have_fresh_sim_ && msg->data < fresh_sim_threshold_sec_) {
         have_fresh_sim_ = true;
         RCLCPP_INFO(get_logger(),
             "Fresh sim confirmed (sim_t=%.2f < %.1fs threshold) — FSM enabled",

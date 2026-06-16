@@ -1,17 +1,29 @@
 #!/bin/bash
 # ─────────────────────────────────────────────────────────────────
-# controller_hil_bench.sh — ONE benchmark run (N=1) of ONE controller.
+# controller_hil_bench.sh — ONE run of ONE controller.
 #
-#   ./benchmarks/controller_hil_bench.sh <ibvs|proportional> [duration_sec]
+#   ./benchmarks/controller_hil_bench.sh <ibvs|proportional> \
+#       [run_num] [duration_sec] [benchmark_mode]
 #
 # Run this FROM INSIDE the container (enter_container.sh first).
 # CycloneDDS ONLY. YOLO-AGNOSTIC: oracle detector replaces all perception.
 #
-# Flow:
+# benchmark_mode (4th arg, default 'true'):
+#   true  → BENCHMARKING. FSM waits for a fresh sim reset before engaging, so
+#           the recorded approach starts from a clean plant reset (t=0). You
+#           MUST Stop+Run the Simulink sim once after 'recording' appears.
+#   false → SCOUTING. FSM engages immediately on boot — the drone searches and
+#           approaches with NO Stop→Run needed. Use for demos / live flights.
+#
+# Flow (benchmark_mode=true):
 #   1. MATLAB already up (init + Simulink running, CycloneDDS, domain 0).
 #   2. Run this script — it starts recording immediately.
 #   3. STOP + START the Simulink sim → controller resets to SEARCHING (clean t=0).
 #   4. Let it approach + hold REACHED, then Ctrl-C.
+#
+# Flow (benchmark_mode=false):
+#   1. MATLAB already up.
+#   2. Run this script — drone scouts and approaches on its own. No Stop+Run.
 #
 # Required env:
 #   MATLAB_HOST_IP   Windows host IP for unicast DDS discovery
@@ -27,9 +39,14 @@ log() { echo "[bench] $*"; }
 CONTROLLER="${1:-}"
 RUN_NUM="${2:-1}"
 DURATION="${3:-0}"
+BENCHMARK_MODE="${4:-true}"
 [[ "$CONTROLLER" == "ibvs" || "$CONTROLLER" == "proportional" ]] \
-    || die "usage: $0 <ibvs|proportional> [run_num] [duration_sec]"
+    || die "usage: $0 <ibvs|proportional> [run_num] [duration_sec] [benchmark_mode]"
 [[ "$RUN_NUM" =~ ^[0-9]+$ ]] || die "run_num must be a positive integer (got '$RUN_NUM')"
+case "$BENCHMARK_MODE" in
+    true|false) ;;
+    *) die "benchmark_mode must be 'true' or 'false' (got '$BENCHMARK_MODE')" ;;
+esac
 
 command -v envsubst >/dev/null || die "'envsubst' missing — apt install gettext-base"
 : "${MATLAB_HOST_IP:?set MATLAB_HOST_IP to your Windows host IP}"
@@ -83,6 +100,7 @@ GIT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo nogit)
 {
   echo "controller=$CONTROLLER"
   echo "run_num=$RUN_NUM"
+  echo "benchmark_mode=$BENCHMARK_MODE"
   echo "git_sha=$GIT_SHA"
   echo "stamp=$STAMP"
   echo "matlab_host_ip=$MATLAB_HOST_IP"
@@ -103,13 +121,20 @@ cleanup() {
 }
 trap cleanup INT TERM
 
+if [[ "$BENCHMARK_MODE" == "true" ]]; then
 log "================================================================="
-log "  IMPORTANT: If you see REACHED state right away — that is NORMAL."
-log "  The sim still has the drone at the previous run's end position."
+log "  MODE: BENCHMARK — FSM waits for a fresh sim reset (clean t=0)."
+log "  If you see REACHED state right away — that is NORMAL (stale pose)."
 log "  DO NOT Ctrl-C!  Wait for the 'recording' line, then Stop+Run"
 log "  the MATLAB Simulink sim to reset to t=0.  The FSM will auto-"
 log "  reset to SEARCHING on heartbeat drop and the clean run begins."
 log "================================================================="
+else
+log "================================================================="
+log "  MODE: SCOUT — FSM engages immediately on boot. NO Stop+Run."
+log "  The drone will search and approach on its own once nodes are up."
+log "================================================================="
+fi
 log "Killing any stale nodes from previous runs..."
 pkill -f oracle_detector_node 2>/dev/null || true
 pkill -f visp_servo_node      2>/dev/null || true
@@ -121,6 +146,7 @@ log "Launching oracle + $CONTROLLER (output visible below)..."
 # Launch output goes to TERMINAL so errors are visible immediately.
 ros2 launch /workspace/benchmarks/controller_bench.launch.py \
     controller:="$CONTROLLER" workspace:=/workspace \
+    benchmark_mode:="$BENCHMARK_MODE" \
     2>&1 | tee "$WS/$RUNREL/launch.log" &
 LAUNCH_PID=$!
 
@@ -157,7 +183,11 @@ ros2 bag record -o "$WS/$RUNREL/bag" \
     > "$WS/$RUNREL/bag_record.log" 2>&1 &
 BAG_PID=$!
 
-log "recording — restart the Simulink sim NOW for clean t=0"
+if [[ "$BENCHMARK_MODE" == "true" ]]; then
+    log "recording — restart the Simulink sim NOW for clean t=0"
+else
+    log "recording — SCOUT mode: drone is searching/approaching on its own"
+fi
 
 if [[ "$DURATION" -gt 0 ]]; then
     sleep "$DURATION"
