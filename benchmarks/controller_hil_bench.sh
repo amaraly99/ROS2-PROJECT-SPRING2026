@@ -146,21 +146,9 @@ if [[ ${#MISSING[@]} -gt 0 ]]; then
 fi
 log "Nodes confirmed running: oracle_detector + $NODE_EXEC"
 
-# CPU sampler — 1 Hz
-CTRL_PID=$(pgrep -f "$NODE_EXEC" | head -1 || true)
-if [[ -n "${CTRL_PID:-}" ]]; then
-    (
-        echo 'epoch,pcpu,pmem'
-        while kill -0 "$CTRL_PID" 2>/dev/null; do
-            read -r C M < <(ps -o %cpu=,%mem= -p "$CTRL_PID")
-            echo "$(date +%s.%N),$C,$M"
-            sleep 1
-        done
-    ) > "$WS/$RUNREL/cpu.csv" &
-    CPU_PID=$!
-else
-    log "WARN: controller PID not found — CPU not sampled"
-fi
+# CPU sampler — 1 Hz, robust PID resolution + /proc instantaneous %CPU.
+"$WS/benchmarks/cpu_sampler.sh" "$NODE_EXEC" "$WS/$RUNREL/cpu.csv" 1 &
+CPU_PID=$!
 
 ros2 bag record -o "$WS/$RUNREL/bag" \
     --qos-profile-overrides-path "$WS/config/hil/bench_bag_qos.yaml" \

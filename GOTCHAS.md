@@ -138,7 +138,46 @@ If you add more `source` calls, wrap them the same way or the script will die si
 
 ---
 
-## 13. SSH is passwordless; container entry is via `./enter_container.sh`
+## 13. CPU sampler logged 0.0 for %cpu AND %mem — wrong PID  [FIXED 2026-06-16]
+
+**Old bug:** the inline sampler did `CTRL_PID=$(pgrep -f "$NODE_EXEC" | head -1)`
+then `ps -o %cpu=,%mem= -p $CTRL_PID`. Two faults: `head -1` grabbed a
+launch-wrapper / zombie PID (the `%mem=0.0` was the tell — a live node always has
+nonzero RSS), and `ps %cpu` is a LIFETIME-AVERAGE, not instantaneous.
+
+**Fix:** replaced with `benchmarks/cpu_sampler.sh`, which:
+- resolves the PID by matching `/proc/<pid>/comm` (the real executable name), NOT
+  the full cmdline — this excludes shells/wrappers whose argv merely *contains* the
+  node name (the sampler itself, `ros2 run`, an ssh command). `pgrep -f` alone will
+  match those; the `ros2` launcher has `comm=ros2`, so it's filtered out.
+- skips zombies (state Z) and zero-RSS processes.
+- computes INSTANTANEOUS %cpu from `/proc/<pid>/stat` utime+stime deltas over the
+  sample interval, normalised to one core (top convention).
+
+Validated: `yes` → ~100%, idle binary → 0%, real `visp_servo_node` → picks the node
+(comm=visp_servo_node) not the `ros2` wrapper, RSS 27 MB, cpu 0–1% while idle-spinning.
+NOTE: comm is truncated to 15 chars by the kernel — `visp_servo_node` is exactly 15,
+fine; longer exec names would need the truncation-prefix match (already handled).
+
+## 14. Analyze on the Pi with the pyenv Python, NOT `sudo python3`
+
+`sudo python3` is system Python and has none of the deps (`rosbags`, `matplotlib`).
+The packages live in the pyenv install. Over non-interactive SSH the shims aren't on
+PATH, so call it by full path:
+```bash
+~/.pyenv/versions/3.11.15/bin/python3 benchmarks/plot_controller_hil.py <rundir>
+```
+Also: run dirs are created root-owned inside the container — `sudo chmod -R 777 <dir>`
+before the script tries to write metrics.csv/PNGs into them.
+
+## 15. `np.trapz` removed in NumPy 2.0 → use `np.trapezoid`
+
+The Pi has NumPy 2.4. `plot_controller_hil.py` now falls back via
+`getattr(np, 'trapezoid', getattr(np, 'trapz', None))` so it works on both 1.x and 2.x.
+
+---
+
+## 16. SSH is passwordless; container entry is via `./enter_container.sh`
 
 ```bash
 ssh amaraly@192.168.1.60     # passwordless — key deployed
