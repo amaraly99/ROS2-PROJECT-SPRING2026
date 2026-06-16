@@ -186,3 +186,82 @@ ssh amaraly@192.168.1.60     # passwordless — key deployed
 ```
 Do not try to `docker exec` nodes manually — use the bench script which handles
 DDS env setup correctly.
+
+---
+
+## 17. `docker exec` over non-interactive SSH needs `sudo`
+
+For one-off inspection from a remote (non-interactive) SSH session, `docker exec`
+hits `permission denied ... /var/run/docker.sock`. Use sudo:
+```bash
+ssh amaraly@192.168.1.60 "sudo docker exec ros2_perception_stack bash -c \
+  'source /opt/ros/jazzy/setup.bash && source /workspace/install/setup.bash && \
+   timeout 5 ros2 topic echo /bench/state --field data | head'"
+```
+Interactive `./enter_container.sh` does NOT need sudo (user is in the right group
+for an interactive login shell; the non-interactive socket access differs).
+
+---
+
+## 18. `have_fresh_sim_` / `benchmark_mode` — the FSM "armed" flag (CRITICAL)
+
+`have_fresh_sim_` answers "am I cleared to engage?". Mapping is easy to invert:
+- `true`  = GO. FSM searches/locks/approaches. (fresh sim confirmed, OR scout mode)
+- `false` = WAIT. FSM frozen in SEARCHING. **This is the stuck state.**
+
+The drone freezing in SEARCHING for minutes WITH the target in clear view = the
+guard is `false` and never got cleared. Symptom in /rosout:
+`[SEARCHING/...] ... vx=+0.000 vy=+0.000 vz=+0.000 wz=+0.000` with valid detections.
+
+`benchmark_mode` (ROS param, default true) sets the boot value:
+- `benchmark_mode=true`  → `have_fresh_sim_=false` at boot → needs Stop→Run (or
+  sim_t<2.0) to flip true. Permanently stuck if nodes start mid-sim (sim_t high).
+- `benchmark_mode=false` (SCOUT) → `have_fresh_sim_=true` at boot → engages
+  immediately, NO Stop→Run.
+
+4th arg of the bench script: `./controller_hil_bench.sh <ctrl> [run] [dur] [mode]`.
+Stop→Run is ONLY a benchmarking need (plant reset to identical ICs + flip guard).
+Real scouting must NOT require it — use `benchmark_mode=false`.
+
+A previous "3s fallback timer" that force-cleared the guard was REMOVED — it was a
+band-aid. benchmark_mode is the single, clean mechanism. Don't reintroduce the hack.
+
+---
+
+## 19. Drone starts at yaw=π (facing AWAY from target) — search must full-rotate
+
+The Simulink ICs now start the drone at yaw=π (intentional, so search is visible).
+The old search only swept ±60° around the start yaw → with yaw=π and target at
+world-bearing ~14°, it NEVER pointed at the target → infinite spin, no acquisition.
+
+Fix in place: `SearchStep::FULL_ROTATE` is the FIRST search step (spins a full 360°
+at search_spin_speed=0.5 rad/s for search_full_rotate_sec=13s) before the ±60°
+refinement. If you change the start yaw or target position, the full-rotate makes
+acquisition independent of starting heading — keep it.
+
+---
+
+## 20. Freeze-on-detect: don't keep yawing once the sign is seen
+
+In SEARCHING, if the FSM keeps issuing the search yaw command while detections are
+arriving, it sweeps the sign back out of FOV before detection #2 (lockon_consec=2)
+→ consecutive_dets_ resets forever → never locks. `build_command()` SEARCHING case
+freezes (pitch-return only, no yaw) once `consecutive_dets_ >= 1 && |ex_norm| <
+lockon_ex_tol_`. Don't remove the freeze — it's what lets the 2nd detection land.
+
+---
+
+## 21. Oracle is omniscient by default — pose-staleness gate has a hole
+
+`oracle_detector_node.py` projects the target from `/sim/drone_pose` +
+`/sim/target_pose` — pure math, sees through walls and at any range. Two gates added:
+- `pose_stale_sec=0.3` — suppress if drone-pose age > 0.3s.
+  ⚠️ HOLE: MATLAB's publish timer runs on wall-clock and republishes the SAME stale
+  pose at 20Hz during a sim pause, so age may never exceed 0.3s. This gate only
+  catches true publish GAPS, NOT paused-but-republishing. The real instant-REACHED
+  protection is `benchmark_mode` + sim_t<2.0 guard, not this gate.
+- `max_detection_range_m=0.0` (OFF by default) — set >0 to require the drone to
+  physically approach before the target is "detectable" (realism / demo QoL).
+
+FOV gating (`Zc<=0.1` behind-camera, off-screen u/v bounds) always worked. Zc =
+target depth along camera forward axis (>0 ahead, <0 behind, ~0 = 90° to side).

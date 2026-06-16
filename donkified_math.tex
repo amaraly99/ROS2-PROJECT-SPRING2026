@@ -1,0 +1,242 @@
+% ─────────────────────────────────────────────────────────────────
+% donkified_math.tex
+% The math behind the oracle detector, explained to a donkey.
+% Compile: pdflatex donkified_math.tex
+% ─────────────────────────────────────────────────────────────────
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath, amssymb}
+\usepackage{xcolor}
+\usepackage{mdframed}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true, linkcolor=brown, urlcolor=brown}
+
+\newcommand{\donkey}[1]{%
+  \begin{mdframed}[backgroundcolor=brown!8, linecolor=brown!50, linewidth=1pt,
+                   roundcorner=6pt, skipabove=8pt, skipbelow=8pt]
+  \textbf{\textcolor{brown}{\large Donkey says:}}\quad #1
+  \end{mdframed}}
+
+\title{\textbf{Donkified Math}\\[4pt]
+       \large The Oracle Detector, Explained to a Donkey}
+\author{HIL Controller Benchmark --- \texttt{oracle\_detector\_node.py}}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+There is a donkey. The donkey is a drone. Somewhere in town there is a
+\textbf{carrot} (the target). A normal detector (YOLO) would squint at a
+camera photo and \emph{guess} where the carrot is. Our detector --- the
+\textbf{oracle} --- does not squint at anything. It \emph{reads the answer key}:
+it already knows, as plain numbers, where the donkey stands and where the carrot
+sits. Then it does a little bit of arithmetic to work out exactly where the
+carrot \emph{would} appear in the donkey's eye, and draws a perfect box around
+it. This document is that little bit of arithmetic, donkey-sized.
+\end{abstract}
+
+% ─────────────────────────────────────────────────────────────────
+\section{The Big Idea (read this even if you read nothing else)}
+
+\donkey{I am not \emph{looking} for the carrot. The town\,(simulator) whispers
+the carrot's exact address in my ear. My only job is: ``if the carrot is
+\emph{there}, and my head is pointed \emph{this way}, where does it land in my
+eyeball, and how big does it look?''}
+
+A real eye (YOLO) goes \textbf{photo $\to$ guess}. The oracle goes
+\textbf{known numbers $\to$ exact answer}. No guessing. Same answer every single
+time. That is the whole trick, and it is why the oracle is ``cheating'': it
+reads coordinates instead of pixels.
+
+The inputs the town hands us for free:
+\begin{itemize}[nosep]
+  \item \texttt{/sim/drone\_pose} $=(x,y,z,\text{pitch},\text{yaw})$ --- where the donkey is and where its nose points.
+  \item \texttt{/sim/target\_pose} $=(t_x,t_y,t_z,\text{yaw})$ --- where the carrot is.
+\end{itemize}
+The output we must produce: a box on the eyeball, $(u,v,b_w,b_h)$ ---
+centre pixel $(u,v)$ and box size width$\times$height.
+
+% ─────────────────────────────────────────────────────────────────
+\section{The Cast of Symbols}
+
+\begin{center}
+\begin{tabular}{cl}
+\hline
+Symbol & What it is (in donkey) \\
+\hline
+$(x,y,z)$ & where the donkey stands, in town coordinates \\
+$(t_x,t_y,t_z)$ & where the carrot sits, in town coordinates \\
+$\text{yaw}$ & which way the donkey's nose points (spin on the spot) \\
+$\text{pitch}$ & how much the donkey nods its head up/down \\
+$f_x, f_y$ & ``eyeball zoom'' (focal length), $=554$ \\
+$(c_{x0}, c_{y0})$ & the middle of the eyeball, $=(320,240)$ \\
+$H$ & the carrot's real height in metres, $=1.5$ (we just \emph{know} it) \\
+$Z_c$ & how far ahead the carrot is, straight out the nose \\
+$(u,v)$ & where the carrot lands on the eyeball, in pixels \\
+$(b_w,b_h)$ & how wide/tall the carrot's box looks \\
+\hline
+\end{tabular}
+\end{center}
+
+% ─────────────────────────────────────────────────────────────────
+\section{Step 1 --- ``How far is the carrot from my nose?''}
+
+First, point an arrow from the donkey to the carrot, in plain town coordinates.
+That is just subtraction:
+\begin{align}
+d_x &= t_x - x, & d_y &= t_y - y, & d_z &= t_z - z.
+\end{align}
+
+\donkey{Carrot minus me. If the carrot is at town-corner 35 and I am at
+corner 10, the carrot is ``25 east of my hooves.'' Easy.}
+
+But this arrow is written in \emph{town} directions (north, east, up). The donkey
+does not think in north/east. The donkey thinks in \emph{my-front, my-left,
+my-up}. So we must re-write the arrow from the donkey's point of view.
+
+% ─────────────────────────────────────────────────────────────────
+\section{Step 2 --- ``Turn the map to face my nose'' (yaw)}
+
+The donkey is spun around by an angle $\text{yaw}$. To turn the town-arrow into a
+me-arrow, we rotate it. This is the famous ``spin the map until it lines up with
+where I'm walking'' move:
+\begin{align}
+\text{fwd}  &= d_x\cos(\text{yaw}) + d_y\sin(\text{yaw}), \\
+\text{left} &= -d_x\sin(\text{yaw}) + d_y\cos(\text{yaw}), \\
+\text{up}   &= d_z .
+\end{align}
+
+\donkey{If I am facing backwards (yaw $=\pi$), then a carrot that is ``ahead in
+town'' is actually \emph{behind me}. The sines and cosines do exactly this
+bookkeeping so I don't fool myself. \texttt{fwd} now means truly in front of
+\emph{my} face.}
+
+Now the arrow is in donkey-body talk: how far \emph{forward}, how far to my
+\emph{left}, how far \emph{up}.
+
+% ─────────────────────────────────────────────────────────────────
+\section{Step 3 --- ``Account for my nodding head'' (pitch)}
+
+The donkey can also nod its head down (to see the ground) or up. That is
+\emph{pitch}. Nodding tilts ``forward'' and ``up'' into each other. With
+$\theta = (\text{pitch\_sign})\cdot\text{pitch}$:
+\begin{align}
+\text{fwd}_p &= \text{fwd}\cos\theta + \text{up}\sin\theta, \\
+\text{up}_p  &= -\text{fwd}\sin\theta + \text{up}\cos\theta .
+\end{align}
+
+\donkey{When I nod down to look at the floor, something that was ``straight
+ahead'' is now ``up and ahead'' from my tilted eyeball's view. This step does my
+neck for me.}
+
+% ─────────────────────────────────────────────────────────────────
+\section{Step 4 --- ``Rename things the way the eyeball likes''}
+
+The donkey's body says \emph{forward / left / up}. But a camera eyeball is
+stubborn and insists on its own naming: \emph{$Z_c$ forward, $X_c$ to the
+right, $Y_c$ downward}. So we just relabel (note left becomes $-$right, up
+becomes $-$down):
+\begin{align}
+Z_c &= \text{fwd}_p, & X_c &= -\,\text{left}, & Y_c &= -\,\text{up}_p .
+\end{align}
+
+\donkey{Same arrow, new sticky-labels. The eyeball is left-handed and grumpy. I
+humour it. $Z_c$ is the only one that really matters emotionally: it is ``how far
+out my nose the carrot is.''}
+
+% ─────────────────────────────────────────────────────────────────
+\section{Step 5 --- ``Far things look small'' (the pinhole)}
+
+This is the heart of seeing. To put a 3D carrot onto a flat eyeball, you
+\textbf{divide by how far away it is}. That single division is why distant carrots
+look tiny and near carrots look huge:
+\begin{align}
+u &= f_x\,\frac{X_c}{Z_c} + c_{x0}, \\
+v &= f_y\,\frac{Y_c}{Z_c} + c_{y0}.
+\end{align}
+
+\donkey{Hold a carrot at arm's length: small. Bring it to my nose: fills my whole
+eye. Nothing changed about the carrot --- only $Z_c$ (the distance I divide by)
+got smaller. Dividing by distance \emph{is} perspective. The $+c_{x0}$ just slides
+the origin to the middle of the eyeball, because pixel $(0,0)$ is the corner, not
+the centre.}
+
+% ─────────────────────────────────────────────────────────────────
+\section{Step 6 --- ``How big is the box?''}
+
+We \emph{know} the carrot is $H = 1.5$\,m tall in real life. A thing of known
+height, seen from distance $Z_c$, casts a box of pixel-height:
+\begin{align}
+b_h &= \frac{f_y\,H}{Z_c}, & b_w &= b_h \cdot \text{aspect}.
+\end{align}
+
+\donkey{Same division-by-distance rule. Carrot far ($Z_c$ big) $\Rightarrow$ box
+small. Carrot near ($Z_c$ small) $\Rightarrow$ box big. The box \emph{breathes}:
+it grows as I approach, shrinks as I back off --- exactly like a real eye, except
+mine is never wrong.}
+
+This breathing box is the donkey's only sense of distance: the controller watches
+$b_h$ grow and knows ``I'm getting closer.''
+
+% ─────────────────────────────────────────────────────────────────
+\section{Step 7 --- ``When do I see nothing?'' (the gates)}
+
+Even an oracle is allowed to say ``no carrot visible.'' It returns nothing when:
+\begin{enumerate}[nosep]
+  \item \textbf{Behind me:} $Z_c \le 0.1$. You cannot see what is behind your own
+        head. (This is why a donkey starting at yaw$=\pi$ must spin around first.)
+  \item \textbf{Too far (optional):} $Z_c > \text{max\_range}$. A ``you must walk
+        closer before it counts'' rule, off by default.
+  \item \textbf{Off the edge of my eye:} $u,v$ fall outside the
+        $640\times480$ eyeball.
+  \item \textbf{Stale whisper:} the town hasn't updated my own position in
+        $0.3$\,s --- I might be remembering an old run, so I shut up rather than
+        lie.
+\end{enumerate}
+
+\donkey{Saying ``I see nothing'' is itself information: it makes me \emph{search}.
+A wrong ``I see it!'' would make me charge a carrot that isn't there.}
+
+% ─────────────────────────────────────────────────────────────────
+\section{The Whole Donkey, in One Breath}
+
+Stack all the steps and the carrot's box is one clean recipe:
+\[
+\underbrace{(t_x,t_y,t_z)}_{\text{carrot address}}
+\;\xrightarrow{\;-\,(x,y,z)\;}\;
+\underbrace{(d_x,d_y,d_z)}_{\text{arrow in town}}
+\;\xrightarrow{\text{yaw}}\;
+\xrightarrow{\text{pitch}}\;
+\underbrace{(X_c,Y_c,Z_c)}_{\text{arrow in eyeball}}
+\;\xrightarrow{\;\div Z_c\;}\;
+\underbrace{(u,v,b_w,b_h)}_{\text{perfect box}}.
+\]
+
+Three ideas carry the entire thing:
+\begin{enumerate}[nosep]
+  \item \textbf{Subtract} to get the arrow (carrot minus me).
+  \item \textbf{Rotate} the arrow into my own point of view (yaw, then pitch, then eyeball labels).
+  \item \textbf{Divide by distance} to flatten 3D into the eye --- and that same
+        division makes the box breathe.
+\end{enumerate}
+
+% ─────────────────────────────────────────────────────────────────
+\section{The Moral (why this matters)}
+
+\donkey{Because I read the answer key, every donkey-run is identical and perfect.
+So if the IBVS donkey and the Proportional donkey behave differently, it is
+\emph{their steering brains} that differ --- not their eyes. The oracle removes
+the eyes from the argument. That is the entire point: a fair race needs every
+runner to see the exact same thing.}
+
+And the punchline from our earlier chat: since the oracle already \emph{knows} the
+carrot's position \emph{and} which way it faces (it read both off the answer key),
+adding SLAM gives the donkey nothing new. SLAM only matters the day we hide the
+answer key and force the donkey to figure out its own heading from the scenery ---
+like a real animal with real eyes.
+
+\end{document}
