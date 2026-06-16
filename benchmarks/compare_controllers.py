@@ -149,9 +149,11 @@ def main():
         ('rms_cmd_speed', 'RMS cmd speed (m/s)'),
         ('total_variation', 'Control jerk (total var.)'),
         ('IAE', 'IAE'),
+        ('cpu_mean_pct', 'CPU (% of one core)'),
+        ('mem_rss_mb', 'Memory RSS (MB)'),
     ]
     ctrls = list(grouped.keys())
-    fig, axes = plt.subplots(2, 3, figsize=(13, 7))
+    fig, axes = plt.subplots(2, 4, figsize=(16, 7))
     for ax, (key, title) in zip(axes.flat, metric_keys):
         means, errs, cols = [], [], []
         for ctrl in ctrls:
@@ -168,7 +170,7 @@ def main():
     fig.tight_layout(); fig.savefig(out / 'cmp_metrics.png', dpi=140); plt.close(fig)
 
     # ── summary.csv ──
-    all_keys = [k for k, _ in metric_keys] + ['overshoot_m', 'path_length_m', 'engage_to_end_s']
+    all_keys = [k for k, _ in metric_keys] + ['overshoot_m', 'path_length_m']
     with open(out / 'summary.csv', 'w', newline='') as fh:
         w = csv.writer(fh)
         w.writerow(['run', 'controller'] + all_keys)

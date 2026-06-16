@@ -151,19 +151,26 @@ def main():
     else:
         rms_v = total_var = float('nan')
 
-    # CPU from harness sampler.
+    # CPU + memory from harness sampler.
     cpu_mean = float('nan')
+    mem_rss_mb = float('nan')
     cpu_file = rundir / 'cpu.csv'
     if cpu_file.exists():
-        vals = []
+        cpu_vals, rss_vals = [], []
         with open(cpu_file) as f:
             for row in csv.DictReader(f):
                 try:
-                    vals.append(float(row['pcpu']))
+                    cpu_vals.append(float(row['pcpu']))
                 except (KeyError, ValueError):
                     pass
-        if vals:
-            cpu_mean = float(np.mean(vals))
+                try:
+                    rss_vals.append(float(row['rss_kb']) / 1024.0)
+                except (KeyError, ValueError):
+                    pass
+        if cpu_vals:
+            cpu_mean = float(np.mean(cpu_vals))
+        if rss_vals:
+            mem_rss_mb = float(np.mean(rss_vals))
 
     metrics = {
         'engage_to_end_s': float(tt[-1]),
@@ -173,7 +180,7 @@ def main():
         'IAE': iae, 'ITAE': itae, 'ISE': ise,
         'path_length_m': path_len, 'path_efficiency': path_eff,
         'rms_cmd_speed': rms_v, 'total_variation': total_var,
-        'cpu_mean_pct': cpu_mean,
+        'cpu_mean_pct': cpu_mean, 'mem_rss_mb': mem_rss_mb,
         'standoff_m': STANDOFF,
     }
 
