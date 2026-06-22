@@ -28,6 +28,7 @@
 #   ./run_stack_hil.sh hz [topic]             # rate check with HIL DDS profile loaded
 #
 #   --config <name>   read config/hil/stack/<name>.yaml (sets all vars below)
+#   --build           colcon build entire workspace first, then launch
 #   --no-slam         override: skip OV2SLAM even if config says slam: true
 #   --debug-image     override: publish /visp/debug_image (921 KB/frame extra)
 #
@@ -104,11 +105,14 @@ CONFIG_NAME=""
 _NO_SLAM_FLAG=false
 _DEBUG_FLAG=false
 
+_BUILD_FIRST=false
+
 _i=1
 while [[ $_i -le $# ]]; do
     case "${!_i}" in
         --no-slam)     _NO_SLAM_FLAG=true ;;
         --debug-image) _DEBUG_FLAG=true ;;
+        --build)       _BUILD_FIRST=true ;;
         --config)
             _i=$((_i + 1))
             [[ $_i -le $# ]] || die "--config requires a name argument"
@@ -266,6 +270,22 @@ MATLAB_HOST_IP="$MATLAB_HOST_IP" PI_LOCAL_IP="$PI_LOCAL_IP" PI_ADDR="$PI_LOCAL_I
 log "DDS=${DDS}  RMW=${RMW_IMPLEMENTATION}  profile=${DDS_RESOLVED}"
 log "MATLAB_HOST_IP=${MATLAB_HOST_IP}  PI_LOCAL_IP=${PI_LOCAL_IP}  PI_INTERFACE=${PI_INTERFACE}  ROS_DOMAIN_ID=${ROS_DOMAIN_ID}"
 log "CONTROLLER=${CONTROLLER}  DETECTOR=${DETECTOR}  SLAM=${SLAM_ON}"
+
+# ── optional build step ───────────────────────────────────────────────────────
+if [[ "$_BUILD_FIRST" == "true" ]]; then
+    sep
+    log "Building entire workspace in Docker before launch..."
+    sudo docker run --rm \
+        --entrypoint "" \
+        -v "${WS}:/workspace" \
+        ros2_perception_stack bash -lc "
+            source /opt/ros/jazzy/setup.bash
+            cd /workspace
+            colcon build --symlink-install 2>&1
+        " || die "colcon build failed — fix errors above before launching"
+    log "Build complete."
+    sep
+fi
 
 # ── clean stale state ─────────────────────────────────────────────────────────
 log "Cleaning up any stale processes / shm..."
