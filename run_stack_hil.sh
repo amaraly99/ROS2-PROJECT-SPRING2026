@@ -21,36 +21,111 @@
 #   Core 2,3   OV2SLAM
 #
 # Usage:
-#   ./run_stack_hil.sh [--no-slam] [--debug-image]
+#   ./run_stack_hil.sh --config <name>   # load config/hil/stack/<name>.yaml
+#   ./run_stack_hil.sh [--no-slam] [--debug-image]    # raw flags (no config)
 #   ./run_stack_hil.sh stop
-#   ./run_stack_hil.sh hz [topic]      # rate check with HIL DDS profile loaded
+#   ./run_stack_hil.sh hz [topic]        # rate check with HIL DDS profile loaded
 #
-#   --no-slam       skip OV2SLAM (cores 2-3 free, ovcam_bridge also skipped)
-#   --debug-image   publish /visp/debug_image back to MATLAB (921 KB/frame extra)
+#   --config <name>   read config/hil/stack/<name>.yaml (sets all vars below)
+#   --no-slam         override: skip OV2SLAM even if config says slam: true
+#   --debug-image     override: publish /visp/debug_image (921 KB/frame extra)
 #
-# Env vars (override before invoking):
-#   MATLAB_HOST_IP   — Windows host IP for unicast DDS discovery (REQUIRED)
-#   DDS              — cyclonedds (default) | fastrtps
+# Config files (config/hil/stack/<name>.yaml) set:
+#   matlab_host_ip, dds, ros_domain_id, controller, detector, slam, debug_image
+#
+# Available configs:
+#   default     YOLO + proportional, no SLAM   (safe general-purpose default)
+#   ibvs        YOLO + IBVS,         no SLAM   (fastest settle ~20 s)
+#   h_vs        YOLO + h_vs,         no SLAM   (smoothest commands)
+#   oracle      oracle detector + IBVS, no SLAM (no Hailo HAT needed)
+#   full        YOLO + proportional, SLAM on    (closest to real flight)
+#
+# Env vars (used as fallback when no --config; can still override after config):
+#   MATLAB_HOST_IP   — Windows host IP for unicast DDS discovery
+#   DDS              — cyclonedds | fastrtps  (default: fastrtps)
 #   ROS_DOMAIN_ID    — defaults to 0
+#   CONTROLLER       — ibvs | proportional | h_vs  (default: proportional)
+#   DETECTOR         — yolo | oracle               (default: yolo)
+#
+# Examples:
+#   ./run_stack_hil.sh --config default
+#   ./run_stack_hil.sh --config oracle
+#   ./run_stack_hil.sh --config full --no-slam      # full config but skip SLAM today
+#   MATLAB_HOST_IP=192.168.1.50 ./run_stack_hil.sh --config ibvs   # override one field
 
 cd "$(dirname "$0")"
 WS="$(pwd)"
 OPT="${1:-}"
 
-# Parse flags (scan all args so order doesn't matter)
-SLAM_ON=true
-DEBUG_IMAGE_ON=false
-for arg in "$@"; do
-    [[ "$arg" == "--no-slam"     ]] && SLAM_ON=false
-    [[ "$arg" == "--debug-image" ]] && DEBUG_IMAGE_ON=true
-done
-
-DDS="${DDS:-fastrtps}"
-ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-0}"
-
 log()  { echo "[hil] $*"; }
 die()  { echo "[hil] ERROR: $*" >&2; exit 1; }
 sep()  { echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; }
+
+# ── load_config: parse config/hil/stack/<name>.yaml (flat key: value only) ───
+load_config() {
+    local name="$1"
+    local cfg="${WS}/config/hil/stack/${name}.yaml"
+    if [[ ! -f "$cfg" ]]; then
+        local available
+        available=$(ls "${WS}/config/hil/stack/"*.yaml 2>/dev/null \
+                    | xargs -n1 basename | sed 's/\.yaml$//' | tr '\n' ' ')
+        die "Config '${name}' not found at ${cfg}\n  Available: ${available}"
+    fi
+    log "Config: ${cfg}"
+    local key val
+    while IFS= read -r line; do
+        [[ "$line" =~ ^[[:space:]]*# ]] && continue      # comment
+        [[ -z "${line//[[:space:]]/}" ]] && continue      # blank
+        key="${line%%:*}"
+        val="${line#*:}"
+        # trim surrounding whitespace
+        key="${key#"${key%%[![:space:]]*}"}"; key="${key%"${key##*[![:space:]]}"}"
+        val="${val#"${val%%[![:space:]]*}"}"; val="${val%"${val##*[![:space:]]}"}"
+        case "$key" in
+            matlab_host_ip) MATLAB_HOST_IP="$val" ;;
+            dds)            DDS="$val" ;;
+            ros_domain_id)  ROS_DOMAIN_ID="$val" ;;
+            controller)     CONTROLLER="$val" ;;
+            detector)       DETECTOR="$val" ;;
+            slam)           [[ "$val" == "true" ]] && SLAM_ON=true  || SLAM_ON=false ;;
+            debug_image)    [[ "$val" == "true" ]] && DEBUG_IMAGE_ON=true || DEBUG_IMAGE_ON=false ;;
+            *) log "WARNING: unknown config key '${key}' in ${name}.yaml" ;;
+        esac
+    done < "$cfg"
+}
+
+# ── Parse flags (all args; order doesn't matter) ──────────────────────────────
+SLAM_ON=true
+DEBUG_IMAGE_ON=false
+CONFIG_NAME=""
+_NO_SLAM_FLAG=false
+_DEBUG_FLAG=false
+
+_i=1
+while [[ $_i -le $# ]]; do
+    case "${!_i}" in
+        --no-slam)     _NO_SLAM_FLAG=true ;;
+        --debug-image) _DEBUG_FLAG=true ;;
+        --config)
+            _i=$((_i + 1))
+            [[ $_i -le $# ]] || die "--config requires a name argument"
+            CONFIG_NAME="${!_i}" ;;
+    esac
+    _i=$((_i + 1))
+done
+
+# Load config file (sets MATLAB_HOST_IP, DDS, CONTROLLER, DETECTOR, SLAM_ON, etc.)
+[[ -n "$CONFIG_NAME" ]] && load_config "$CONFIG_NAME"
+
+# CLI flags override config values
+[[ "$_NO_SLAM_FLAG" == "true" ]] && SLAM_ON=false
+[[ "$_DEBUG_FLAG"   == "true" ]] && DEBUG_IMAGE_ON=true
+
+# Env-var defaults for anything not set by config or caller
+DDS="${DDS:-fastrtps}"
+ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-0}"
+CONTROLLER="${CONTROLLER:-proportional}"   # ibvs | proportional | h_vs
+DETECTOR="${DETECTOR:-yolo}"               # yolo | oracle
 
 # ── stop ──────────────────────────────────────────────────────────────────────
 if [[ "$OPT" == "stop" ]]; then
@@ -82,10 +157,20 @@ if [[ "$OPT" == "hz" ]]; then
     exit 0
 fi
 
+# ── validate env vars ─────────────────────────────────────────────────────────
+case "$CONTROLLER" in
+    ibvs|proportional|h_vs) ;;
+    *) die "Unknown CONTROLLER='${CONTROLLER}'. Valid: ibvs | proportional | h_vs" ;;
+esac
+case "$DETECTOR" in
+    yolo|oracle) ;;
+    *) die "Unknown DETECTOR='${DETECTOR}'. Valid: yolo | oracle" ;;
+esac
+
 # ── pre-flight ────────────────────────────────────────────────────────────────
 command -v taskset >/dev/null    || die "'taskset' not found — install util-linux"
 command -v envsubst >/dev/null   || die "'envsubst' not found — install gettext-base"
-[[ -e /dev/hailo0 ]]             || die "/dev/hailo0 not found — Hailo HAT must be powered (yolo_producer needs it)"
+[[ "$DETECTOR" == "yolo" ]] && { [[ -e /dev/hailo0 ]] || die "/dev/hailo0 not found — Hailo HAT must be powered (yolo detector needs it)"; }
 MATLAB_HOST_IP="${MATLAB_HOST_IP:-192.168.56.1}"
 if [[ "${MATLAB_HOST_IP}" == "192.168.56.1" ]]; then
     log "WARNING: MATLAB_HOST_IP is the default (192.168.56.1) — set MATLAB_HOST_IP env var if your MATLAB machine uses a different address"
@@ -147,6 +232,7 @@ MATLAB_HOST_IP="$MATLAB_HOST_IP" PI_LOCAL_IP="$PI_LOCAL_IP" PI_ADDR="$PI_LOCAL_I
        envsubst < "$DDS_TEMPLATE" | sudo tee "$DDS_RESOLVED" > /dev/null
 log "DDS=${DDS}  RMW=${RMW_IMPLEMENTATION}  profile=${DDS_RESOLVED}"
 log "MATLAB_HOST_IP=${MATLAB_HOST_IP}  PI_LOCAL_IP=${PI_LOCAL_IP}  PI_INTERFACE=${PI_INTERFACE}  ROS_DOMAIN_ID=${ROS_DOMAIN_ID}"
+log "CONTROLLER=${CONTROLLER}  DETECTOR=${DETECTOR}  SLAM=${SLAM_ON}"
 
 # ── clean stale state ─────────────────────────────────────────────────────────
 log "Cleaning up any stale processes / shm..."
@@ -184,6 +270,13 @@ if [[ "$SLAM_ON" == "false" && "$DEBUG_IMAGE_ON" == "false" ]]; then
     LAUNCH_ARGS+=" ovcam:=false"
     log "ovcam_bridge will be skipped (slam off + debug off)"
 fi
+# Controller and detector selection
+LAUNCH_ARGS+=" controller:=${CONTROLLER} detector:=${DETECTOR} benchmark_mode:=false"
+if [[ "$DETECTOR" == "oracle" ]]; then
+    log "Detector: oracle (yolo_bridge skipped, oracle_detector_node starts in Docker)"
+else
+    log "Detector: yolo (Hailo NPU via yolo_producer + yolo_bridge)"
+fi
 
 # ── 2. ROS2 launch (sim_camera_bridge + bridges + visp — NO slam yet) ─────────
 log "2/4  ros2 launch hil_simulation (cores 0,2,3 — slam deferred)"
@@ -215,24 +308,28 @@ log "SHM created."
 sudo chmod 666 /dev/shm/ovcam_frames /dev/shm/sem.ovcam_ready 2>/dev/null || true
 log "SHM permissions fixed (0666)."
 
-# ── 3. yolo_producer — host, Core 1 ───────────────────────────────────────────
-log "3/4  yolo_producer  →  core 1 (host, native)"
-# Ensure log file is writable (may have been left root-owned by a prior sudo run)
-sudo chmod 666 /tmp/yolo_producer.log 2>/dev/null || true
-# --conf 0.20: publish detections down to 0.20 so visp (min_confidence=0.20) can
-#   act on low-confidence stop signs (default 0.25 silently clipped the 0.20-0.25 band).
-# python3 -u: unbuffered stdout so the per-stage timing/fps log is readable live
-#   (block-buffered output otherwise leaves /tmp/yolo_producer.log empty for minutes).
-taskset -c 1 python3 -u "${WS}/src/yolo_producer/yolo_producer.py" \
-    --hef "${WS}/models/yolo26n_10h.hef" --no-image --conf 0.20 \
-    > /tmp/yolo_producer.log 2>&1 &
-YOLO_PID=$!
-for i in $(seq 1 20); do
-    [[ -e /dev/shm/yolo_shm ]] && break
-    sleep 0.5
-done
-[[ -e /dev/shm/yolo_shm ]] \
-    || die "yolo_producer failed — check /tmp/yolo_producer.log"
+# ── 3. Detector — yolo_producer (host) OR oracle (Docker) ─────────────────────
+YOLO_PID=""
+if [[ "$DETECTOR" == "yolo" ]]; then
+    log "3/4  yolo_producer  →  core 1 (host, native)"
+    # Ensure log file is writable (may have been left root-owned by a prior sudo run)
+    sudo chmod 666 /tmp/yolo_producer.log 2>/dev/null || true
+    # --conf 0.20: publish detections down to 0.20 so the controller (min_confidence=0.20)
+    #   can act on low-confidence stop signs.
+    # python3 -u: unbuffered stdout so per-stage timing/fps log is readable live.
+    taskset -c 1 python3 -u "${WS}/src/yolo_producer/yolo_producer.py" \
+        --hef "${WS}/models/yolo26n_10h.hef" --no-image --conf 0.20 \
+        > /tmp/yolo_producer.log 2>&1 &
+    YOLO_PID=$!
+    for i in $(seq 1 20); do
+        [[ -e /dev/shm/yolo_shm ]] && break
+        sleep 0.5
+    done
+    [[ -e /dev/shm/yolo_shm ]] \
+        || die "yolo_producer failed — check /tmp/yolo_producer.log"
+else
+    log "3/4  Detector=oracle — yolo_producer skipped (oracle_detector_node starts via launch)"
+fi
 
 # ── 4. OV2SLAM — deferred start + watchdog, cores 2,3 ────────────────────────
 if [[ "$SLAM_ON" == "true" ]]; then
@@ -281,15 +378,21 @@ sep
 echo ""
 echo "  HIL stack is running."
 echo ""
+echo "  Controller : ${CONTROLLER}   Detector : ${DETECTOR}   SLAM : ${SLAM_ON}"
+echo ""
 echo "  MATLAB side must publish:"
-echo "    /sim/camera/image_raw  sensor_msgs/Image  rgb8  640x480  ~20 Hz"
+echo "    /sim/camera/image_raw       sensor_msgs/Image  rgb8  640x480  ~20 Hz"
+echo "    /sim/drone_pose             std_msgs/Float64MultiArray  [x,y,z,pitch,yaw]"
+echo "    /sim/target_pose            std_msgs/Float64MultiArray  [x,y,z,yaw]"
 echo "    DDS=${DDS}  ROS_DOMAIN_ID=${ROS_DOMAIN_ID}"
 echo ""
 echo "  Logs:"
-echo "    /tmp/hil_launch.log     (ros2 launch — sim_camera_bridge, bridges, visp)"
-echo "    /tmp/yolo_producer.log  (host, PID $YOLO_PID)"
+echo "    /tmp/hil_launch.log     (ros2 launch — camera bridge, detector, controller)"
+if [[ "$DETECTOR" == "yolo" ]]; then
+echo "    /tmp/yolo_producer.log  (host Hailo NPU, PID ${YOLO_PID})"
+fi
 if [[ "$SLAM_ON" == "true" ]]; then
-echo "    /tmp/ov2slam_hil.log    (OV2SLAM watchdog PID $WATCHDOG_PID — auto-restarts on exit)"
+echo "    /tmp/ov2slam_hil.log    (OV2SLAM watchdog PID ${WATCHDOG_PID} — auto-restarts on exit)"
 fi
 echo ""
 echo "  Stop:  ./run_stack_hil.sh stop"

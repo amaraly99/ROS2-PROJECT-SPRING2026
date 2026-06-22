@@ -28,8 +28,8 @@ from rosbags.highlevel import AnyReader
 FY, KNOWN_H, IMG_H, RATIO = 554.0, 1.5, 480, 0.55
 STANDOFF = FY * KNOWN_H / (RATIO * IMG_H)
 
-COLORS = {'ibvs': '#d62728', 'proportional': '#1f77b4'}
-LABELS = {'ibvs': 'IBVS (TS1)', 'proportional': 'Proportional (TS2)'}
+COLORS = {'ibvs': '#d62728', 'proportional': '#1f77b4', 'h_vs': '#2ca02c'}
+LABELS = {'ibvs': 'IBVS (TS1)', 'proportional': 'Proportional (TS2)', 'h_vs': 'h_vs (TS3)'}
 
 
 def meta_controller(rundir: Path) -> str:
@@ -116,6 +116,11 @@ def main():
     ax.axhline(STANDOFF, color='green', ls='--', lw=1, label=f'standoff {STANDOFF:.2f} m')
     ax.set_xlabel('time since engage (s)'); ax.set_ylabel('distance to target (m)')
     ax.set_title('Approach: distance to target vs time (3 runs each)')
+    # Clip x-axis to the approach window — drop the long REACHED tail
+    max_settle = max(
+        (mx.get('settling_time_s', 0) for items in grouped.values() for _, _, mx in items),
+        default=60.0)
+    ax.set_xlim(0, max_settle + 12)
     ax.legend(); ax.grid(True, alpha=0.3)
     fig.tight_layout(); fig.savefig(out / 'cmp_distance.png', dpi=140); plt.close(fig)
 
@@ -160,7 +165,7 @@ def main():
             vals = [m.get(key, np.nan) for _, _, m in grouped[ctrl]]
             vals = [v for v in vals if not np.isnan(v)]
             means.append(np.mean(vals) if vals else 0)
-            errs.append(np.std(vals) if len(vals) > 1 else 0)
+            errs.append(np.std(vals, ddof=1) if len(vals) > 1 else 0)
             cols.append(COLORS.get(ctrl, 'gray'))
         x = np.arange(len(ctrls))
         ax.bar(x, means, yerr=errs, color=cols, alpha=0.85, capsize=5)

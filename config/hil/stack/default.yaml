@@ -1,0 +1,9 @@
+# Default HIL scouting stack — YOLO + IBVS, no SLAM.
+# Requires Hailo HAT and MATLAB at 192.168.1.201.
+matlab_host_ip: 192.168.1.201
+dds: cyclonedds
+ros_domain_id: 0
+controller: ibvs
+detector: yolo
+slam: false
+debug_image: false

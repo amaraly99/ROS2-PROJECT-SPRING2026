@@ -1,129 +1,150 @@
-# hil_simulation.launch.py — HIL mode for sim-hil branch
+# hil_simulation.launch.py — HIL perception + controller stack
 #
-# Starts the ROS2 portion of the perception stack against a synthetic
-# camera stream from MATLAB/Simulink/Unreal NYC scene. The native host
-# binary `yolo_producer` is started separately by run_stack_hil.sh — it
-# attaches to the /ovcam_frames POSIX SHM that sim_camera_bridge fills.
+# All configuration is driven by env vars in run_stack_hil.sh (which sets the
+# launch args below). Can also be invoked directly:
 #
-# What MATLAB must publish (cross-host on the same LAN, ROS_DOMAIN_ID=0):
-#   topic     /sim/camera/image_raw
-#   type      sensor_msgs/Image
-#   encoding  rgb8
-#   size      640x480
-#   rate      ~20 Hz
-#   QoS       RELIABILE + VOLATILE + KEEP_LAST(10)
-#   DDS       matches RMW_IMPLEMENTATION on RPi5 (cyclonedds default,
-#             fastrtps via run_stack_hil.sh DDS=fastrtps option)
+#   ros2 launch sim_camera_bridge hil_simulation.launch.py \
+#       controller:=ibvs detector:=oracle slam:=false
 #
-# Argument:
-#   target_class:=<coco_label>   default: stop sign (parking-lot scene)
-#
-# This launch file does not start sensors — sim_camera_bridge writes
-# directly into the SHM that ovcam_producer would fill on main.
+# Args:
+#   controller      ibvs | proportional | h_vs   (default: proportional)
+#   detector        yolo | oracle                 (default: yolo)
+#                     yolo   → starts yolo_bridge (reads /yolo_shm from host yolo_producer)
+#                     oracle → starts oracle_detector_node (projects target from drone pose)
+#   slam            true | false  (default: false — OV2SLAM started separately by run_stack_hil.sh)
+#   ovcam           true | false  (default: true — ovcam_bridge for SLAM/debug)
+#   debug_image     true | false  (default: false)
+#   benchmark_mode  true | false  (default: false = scout, engage immediately on boot)
+#   target_class    COCO label string  (default: stop sign)
+#   calib_yaml      OV2SLAM calibration file path
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
-from launch.conditions import IfCondition
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
-from launch.substitutions import EnvironmentVariable
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, EnvironmentVariable
 from launch_ros.actions import Node
 
 
-def generate_launch_description():
-    target_class  = LaunchConfiguration('target_class')
-    workspace     = LaunchConfiguration('workspace')
-    slam          = LaunchConfiguration('slam')
-    ovcam         = LaunchConfiguration('ovcam')
-    debug_image   = LaunchConfiguration('debug_image')
-    calib_yaml    = LaunchConfiguration('calib_yaml')
+CTRL_MAP = {
+    # controller_name: (package, executable, gains_yaml)
+    'proportional': ('hil_servo',  'hil_servo_node',   'bench_proportional.yaml'),
+    'ibvs':         ('visp_servo', 'visp_servo_node',  'bench_ibvs.yaml'),
+    'h_vs':         ('h_vs_servo', 'h_vs_servo_node',  'bench_h_vs.yaml'),
+}
 
-    return LaunchDescription([
-        DeclareLaunchArgument(
-            'target_class', default_value='stop sign',
-            description='COCO class(es) for ViSP to track — comma-separated list'),
-        DeclareLaunchArgument(
-            'workspace', default_value=EnvironmentVariable('WORKSPACE_DIR',
-                default_value='/workspace'),
-            description='Repo root inside the container (default: /workspace)'),
-        DeclareLaunchArgument(
-            'slam', default_value='true',
-            description='Set to false to skip OV2SLAM (useful for DDS-only testing)'),
-        DeclareLaunchArgument(
-            'ovcam', default_value='true',
-            description='Set to false to skip ovcam_bridge (safe only when slam:=false and debug_image:=false)'),
-        DeclareLaunchArgument(
-            'debug_image', default_value='false',
-            description='Publish /visp/debug_image back to MATLAB (expensive — 921 KB/frame)'),
-        DeclareLaunchArgument(
-            'calib_yaml',
-            default_value=PathJoinSubstitution(
-                [EnvironmentVariable('WORKSPACE_DIR', default_value='/workspace'),
-                 'camera_calib', 'hil_sim_ov2slam.yaml']),
-            description='OV2SLAM calibration YAML path — override to swap configs without editing this file'),
 
-        # 1. SHM filler — replaces ovcam_producer in HIL
-        Node(
-            package='sim_camera_bridge',
-            executable='sim_camera_bridge_node',
-            name='sim_camera_bridge',
-            output='screen',
-            parameters=[{
-                'input_topic': '/sim/camera/image_raw',
-                'width':  640,
-                'height': 480,
-                'slots':  4,
-                'shm_name': '/ovcam_frames',
-                'sem_name': '/ovcam_ready',
-            }],
-        ),
+def launch_setup(context, *args, **kwargs):
+    def s(name): return LaunchConfiguration(name).perform(context)
 
-        # 2. ovcam_bridge — reads SHM, publishes /ovcam/image_raw mono8
-        #    Only needed when slam:=true or debug_image:=true; skip otherwise.
-        Node(
+    workspace      = s('workspace')
+    target_class   = s('target_class')
+    controller     = s('controller')
+    detector       = s('detector')
+    slam           = s('slam').lower() == 'true'
+    ovcam          = s('ovcam').lower() == 'true'
+    debug_image    = s('debug_image').lower() == 'true'
+    benchmark_mode = s('benchmark_mode').lower() in ('true', '1', 'yes')
+    calib_yaml     = s('calib_yaml')
+
+    cfg = lambda name: f'{workspace}/config/hil/{name}'
+
+    nodes = []
+
+    # ── 1. SHM filler — converts /sim/camera/image_raw → /dev/shm/ovcam_frames ──
+    nodes.append(Node(
+        package='sim_camera_bridge',
+        executable='sim_camera_bridge_node',
+        name='sim_camera_bridge',
+        output='screen',
+        parameters=[{
+            'input_topic': '/sim/camera/image_raw',
+            'width': 640, 'height': 480, 'slots': 4,
+            'shm_name': '/ovcam_frames',
+            'sem_name': '/ovcam_ready',
+        }],
+    ))
+
+    # ── 2. ovcam_bridge — SHM → /ovcam/image_raw (needed by OV2SLAM / debug) ───
+    if ovcam:
+        nodes.append(Node(
             package='ovcam_bridge',
             executable='ovcam_bridge_node',
             name='ovcam_bridge',
             output='screen',
-            condition=IfCondition(ovcam),
-        ),
+        ))
 
-        # 3. yolo_bridge — unchanged from main; reads /yolo_shm, publishes /yolo/detections
-        Node(
+    # ── 3. Detector: yolo_bridge OR oracle_detector (never both) ─────────────────
+    if detector == 'oracle':
+        # Oracle: projects known target world point through drone pose.
+        # Publishes on /yolo/detections (identical format to yolo_bridge).
+        # /sim/drone_pose + /sim/target_pose must be arriving from MATLAB.
+        nodes.append(Node(
+            package='oracle_detector',
+            executable='oracle_detector_node',
+            name='oracle_detector',
+            output='screen',
+            parameters=[cfg('bench_oracle.yaml'), {'target_class': target_class}],
+        ))
+    else:
+        # yolo: reads /yolo_shm written by host yolo_producer, publishes /yolo/detections
+        nodes.append(Node(
             package='yolo_bridge',
             executable='yolo_bridge_node',
             name='yolo_bridge',
             output='screen',
-        ),
+        ))
 
-        # 4. OV2SLAM — HIL-specific calibration via calib_yaml arg (default: hil_sim_ov2slam.yaml).
-        #    Pinned to cores 2,3. Normally started by run_stack_hil.sh via ros2 run (slam:=false
-        #    is passed to this launch file) so this node block is only used for direct ros2 launch
-        #    invocations. The calib_yaml arg allows swapping configs without editing this file.
-        Node(
+    # ── 4. OV2SLAM — normally deferred by run_stack_hil.sh (slam:=false passed). ─
+    #    Only active when this launch file is invoked directly with slam:=true.
+    if slam:
+        nodes.append(Node(
             package='ov2slam',
             executable='ov2slam_node',
             name='ov2slam',
             output='screen',
             prefix='taskset -c 2,3',
-            condition=IfCondition(slam),
             arguments=[calib_yaml],
-        ),
+        ))
 
-        # 5. hil_servo (TS2) — the proportional controller, the real HIL
-        #    default. Shared FSM (servo_core) + proportional servoing law.
-        #    For the IBVS variant (TS1) or A/B benchmarking, use
-        #    benchmarks/controller_bench.launch.py instead of this stack.
-        Node(
-            package='hil_servo',
-            executable='hil_servo_node',
-            name='hil_servo_node',
-            output='screen',
-            parameters=[
-                PathJoinSubstitution(
-                    [workspace, 'config', 'hil', 'bench_fsm.yaml']),
-                PathJoinSubstitution(
-                    [workspace, 'config', 'hil', 'bench_proportional.yaml']),
-                {'target_class': target_class},
-            ],
-        ),
+    # ── 5. Controller ─────────────────────────────────────────────────────────────
+    if controller not in CTRL_MAP:
+        raise RuntimeError(
+            f"Unknown controller='{controller}'. Valid: {list(CTRL_MAP)}")
+    pkg, exe, ctrl_cfg = CTRL_MAP[controller]
+    nodes.append(Node(
+        package=pkg,
+        executable=exe,
+        name=exe,
+        output='screen',
+        parameters=[cfg('bench_fsm.yaml'), cfg(ctrl_cfg),
+                    {'target_class': target_class,
+                     'benchmark_mode': benchmark_mode}],
+    ))
+
+    return nodes
+
+
+def generate_launch_description():
+    return LaunchDescription([
+        DeclareLaunchArgument('controller', default_value='proportional',
+            description='Servoing law: ibvs (TS1) | proportional (TS2) | h_vs (TS3)'),
+        DeclareLaunchArgument('detector', default_value='yolo',
+            description='yolo — Hailo NPU via yolo_bridge; oracle — synthetic bbox from pose'),
+        DeclareLaunchArgument('workspace',
+            default_value=EnvironmentVariable('WORKSPACE_DIR', default_value='/workspace')),
+        DeclareLaunchArgument('target_class', default_value='stop sign',
+            description='COCO class label(s) to track (comma-separated)'),
+        DeclareLaunchArgument('slam', default_value='false',
+            description='Start OV2SLAM inline (normally run_stack_hil.sh starts it separately)'),
+        DeclareLaunchArgument('ovcam', default_value='true',
+            description='Start ovcam_bridge (needed when slam=true or debug_image=true)'),
+        DeclareLaunchArgument('debug_image', default_value='false',
+            description='Publish /visp/debug_image back to MATLAB (costly — 921 KB/frame)'),
+        DeclareLaunchArgument('benchmark_mode', default_value='false',
+            description='true = wait for sim reset before engaging (bench); false = scout immediately'),
+        DeclareLaunchArgument('calib_yaml',
+            default_value=PathJoinSubstitution(
+                [EnvironmentVariable('WORKSPACE_DIR', default_value='/workspace'),
+                 'camera_calib', 'hil_sim_ov2slam.yaml']),
+            description='OV2SLAM calibration YAML'),
+        OpaqueFunction(function=launch_setup),
     ])

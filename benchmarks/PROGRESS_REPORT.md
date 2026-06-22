@@ -389,6 +389,77 @@ baseline (0.071m, 12.7ms) → fe_klt2 (0.093m, 12.4ms) → solver_tuned (0.160m,
 
 ---
 
+## Session 6 Results (June 22, 2026)
+
+### HIL Controller Benchmark — TS3 h_vs_servo (3 Runs Complete)
+
+**Branch**: `controller-benchmark`
+**Hardware**: Raspberry Pi 5 + Hailo-10H NPU (HIL, oracle detector, CycloneDDS)
+**Controller**: `h_vs_servo_node` (Benhimane & Malis homography-based 2D visual servoing)
+**Script**: `benchmarks/controller_hil_bench.sh h_vs <N>`
+
+#### Development Bugs Found and Fixed
+
+During integration, two fundamental issues were discovered before the 3 benchmark runs:
+
+**Bug 1 — Zero forward velocity (e_v[2]=0 always)**
+
+The oracle detector always produces axis-aligned bounding boxes. When four axis-aligned rectangle corners are passed to `cv::getPerspectiveTransform`, it returns a pure affine matrix where `G[2,0]=G[2,1]=0` and `G[2,2]=1` exactly. After the `H = K⁻¹ G K` conversion, `H[2,2]=1` permanently, making `e_v[2] = H[2,2]-1 = 0` regardless of range. The homography law cannot produce forward velocity for axis-aligned inputs.
+
+**Fix**: Bypass `e_v[2]` entirely. Use the same proportional forward approach as `hil_servo` (TS2):
+```cpp
+v.vx = std::max(0.0, k_fwd_ * (target_bbox_ratio_ - in.bbox_ratio));
+```
+
+**Bug 2 — Wrong yaw rotation axis (twist[5] vs twist[4])**
+
+The original body-frame mapping used `v.wz = -avg(5)`, which is `e_w[2]` = camera roll (rotation around Zc). Body yaw corresponds to rotation around body z (up axis) = rotation around camera Yc = `e_w[1]` = `twist[4]`.
+
+**Fix**: `v.wz = -avg(4)`, matching `ibvs_law.cpp`'s proven `out.wz = -v[4]`.
+
+#### Final Controller Configuration (`config/hil/bench_h_vs.yaml`)
+
+| Parameter | Value | Rationale |
+|-----------|-------|-----------|
+| `k_fwd` | 3.0 | Proportional forward gain (bypasses homography for vx) |
+| `lambda_v` | [1.0, 1.0, 0.0] | Lateral (Xc→vy) and vertical (Yc→vz) active; Zc unused |
+| `lambda_w` | [0.0, 0.4, 0.0] | Only ry (camera Yc = body yaw) active; rx and rz zeroed |
+| `twist_buffer_len` | 5 | 5-tick moving average at 20 Hz oracle rate |
+
+#### Body-Frame Mapping (`hvs_controller.cpp:computeApproach`)
+
+```
+Camera frame:  Xc=right, Yc=down, Zc=forward
+Body frame:    x=forward, y=left,  z=up
+
+v.vx = max(0, k_fwd * (target_bbox_ratio − bbox_ratio))   [proportional, not homography]
+v.vy = −avg(0)   // −Xc → body left
+v.vz = −avg(1)   // −Yc → body up
+v.wz = −avg(4)   // −ry (camera yaw) → body yaw-left
+```
+
+#### Benchmark Runs
+
+3 runs completed on June 22, 2026. Bags saved to Pi at:
+- `bags/ctrl_h_vs_N1_<stamp>/`
+- `bags/ctrl_h_vs_N2_<stamp>/`
+- `bags/ctrl_h_vs_N3_<stamp>/`
+
+Each bag contains: `/cmd_vel`, `/sim/drone_pose`, `/sim/target_pose`, `/sim/pitch_angle`, `/sim/heartbeat`, `/yolo/detections`, `/bench/state`
+
+> **Quantitative results** (approach time, settling time, cmd_vel statistics, CPU%) pending bag extraction on Pi.
+
+#### File Changes (Session 6)
+
+| File | Change |
+|------|--------|
+| `src/h_vs_servo/src/hvs_controller.cpp` | Fixed vx (proportional law), fixed wz (twist[4] not twist[5]); added k_fwd_ parameter |
+| `src/h_vs_servo/include/h_vs_servo/hvs_controller.hpp` | Added `k_fwd_`, `target_bbox_ratio_` members; updated header doc |
+| `config/hil/bench_h_vs.yaml` | Set k_fwd=3.0, lambda_v=[1,1,0], lambda_w=[0,0.4,0] |
+| `SIM_HIL.md` | Complete rewrite for CycloneDDS; fixed controller/target/config names; added MATLAB env vars, Windows firewall rule, network setup, log table |
+
+---
+
 ## Pending Work
 
 ### Priority 1: Paper Writing (All data collected ✓)

@@ -1,0 +1,9 @@
+# h_vs (TS3) scouting — YOLO + Benhimane homography VS, no SLAM.
+# Smoothest commands (~1.7 total variation). Requires Hailo HAT.
+matlab_host_ip: 192.168.1.201
+dds: cyclonedds
+ros_domain_id: 0
+controller: h_vs
+detector: yolo
+slam: false
+debug_image: false

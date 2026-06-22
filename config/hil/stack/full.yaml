@@ -1,0 +1,10 @@
+# Full stack — YOLO + Proportional + OV2SLAM.
+# Closest to the real flight config. Requires Hailo HAT.
+# SLAM is deferred 15 s after launch (drone must be moving before init).
+matlab_host_ip: 192.168.1.201
+dds: cyclonedds
+ros_domain_id: 0
+controller: proportional
+detector: yolo
+slam: true
+debug_image: false
