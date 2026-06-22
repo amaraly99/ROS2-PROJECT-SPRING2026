@@ -91,8 +91,16 @@ servo_core::ServoVel HVSController::computeApproach(const servo_core::ServoInput
     // ── 5. Camera frame → Simulink body frame (x=fwd, y=left, z=up) ─
     //   Camera: Xc=right, Yc=down, Zc=forward
     //   Body:   x=forward, y=left,  z=up
+    //
+    // G = getPerspectiveTransform(pts_star_, pts_curr) maps reference→current
+    // (scales DOWN when far). This gives H[2,2] < 1 and e_v[2] < 0 when the
+    // drone needs to approach. The Benhimane-Malis law expects H to map
+    // current→reference (scale UP when far) so that e_v[2] > 0 drives forward
+    // motion. Swapping G's direction fixes vx but would invert the lateral signs,
+    // which are already correct via the -avg(0)/-avg(1) negations below. The
+    // targeted fix: negate vx only.
     servo_core::ServoVel v;
-    v.vx =  avg(2);   // Zc  → body forward
+    v.vx = -avg(2);   // negated: G is star→curr (scale DOWN when far) so e_v[2]<0;
     v.vy = -avg(0);   // −Xc → body left
     v.vz = -avg(1);   // −Yc → body up
     v.wz = -avg(5);   // −rz → body yaw-left

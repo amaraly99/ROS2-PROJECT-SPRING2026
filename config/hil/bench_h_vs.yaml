@@ -1,9 +1,13 @@
 h_vs_servo_node:
   ros__parameters:
     # Translational gain (per-axis): scales camera-frame e_v = (H−I)m*
-    # Start low — the homography error is in normalised image coordinates
-    # so magnitudes are O(0.1–1.0) at typical approach distances.
-    lambda_v: [0.5, 0.5, 0.5]
+    #   [0] Xc → vy (lateral centering):  e_v[0] ~ pixel_offset/fx ~ 0.58 at image edge
+    #   [1] Yc → vz (vertical centering): same magnitude as [0]
+    #   [2] Zc → vx (forward approach):   e_v[2] ~ (1 - bbox_scale) ~ 0.82 when far
+    #       vx sign is negated in code (G maps star→curr, so raw e_v[2] < 0 when far)
+    # Tuned to give comparable approach speed to proportional (k_fwd=3.0, ~1.65 m/s peak):
+    #   far: vx = 1.5 * 0.82 ≈ 1.2 m/s   close: vx = 1.5 * 0.18 ≈ 0.27 m/s
+    lambda_v: [1.0, 1.0, 1.5]
 
     # Rotational gain (per-axis): scales e_w = vex(H − H^T)
     lambda_w: [0.3, 0.3, 0.3]
