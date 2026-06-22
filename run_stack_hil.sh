@@ -28,7 +28,7 @@
 #   ./run_stack_hil.sh hz [topic]             # rate check with HIL DDS profile loaded
 #
 #   --config <name>   read config/hil/stack/<name>.yaml (sets all vars below)
-#   --build           colcon build entire workspace first, then launch
+#   --build           colcon build all HIL stack packages first, then launch
 #   --no-slam         override: skip OV2SLAM even if config says slam: true
 #   --debug-image     override: publish /visp/debug_image (921 KB/frame extra)
 #
@@ -63,6 +63,14 @@ OPT="${1:-}"
 log()  { echo "[hil] $*"; }
 die()  { echo "[hil] ERROR: $*" >&2; exit 1; }
 sep()  { echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; }
+
+# Leaf packages of the HIL stack. --packages-up-to walks these and pulls their
+# in-workspace deps automatically (yolo_msgs, servo_core, ceres-solver, Sophus).
+# NOTE: never bare `colcon build` here — the workspace also contains the vendored
+# OpenCV source tree (/workspace/opencv) which is NOT a colcon package; building
+# it standalone dies with "Unknown CMake command ocv_define_module". We restrict
+# discovery to src/ (--base-paths src) and select only these leaves.
+STACK_PKGS="sim_camera_bridge ovcam_bridge yolo_bridge oracle_detector hil_servo visp_servo h_vs_servo ov2slam"
 
 # ── load_config: parse config/hil/stack/<name>.yaml (flat key: value only) ───
 load_config() {
@@ -137,21 +145,25 @@ DETECTOR="${DETECTOR:-yolo}"               # yolo | oracle
 # ── build [pkg] — colcon build inside a throwaway container ──────────────────
 # Artifacts land in /workspace/install/ (host filesystem via volume mount) and
 # persist across container restarts — so you only need to do this after code changes.
-#   ./run_stack_hil.sh build                      # build entire workspace
+#   ./run_stack_hil.sh build                      # build all HIL stack packages
 #   ./run_stack_hil.sh build sim_camera_bridge    # build one package
 if [[ "$OPT" == "build" ]]; then
     PKG="${2:-}"
-    BUILD_ARGS="--symlink-install"
-    [[ -n "$PKG" ]] && BUILD_ARGS+=" --packages-select ${PKG}"
-    log "Building workspace in Docker (pkg=${PKG:-all})..."
+    if [[ -n "$PKG" ]]; then
+        BUILD_SEL="--packages-select ${PKG}"
+        log "Building '${PKG}' in Docker..."
+    else
+        BUILD_SEL="--packages-up-to ${STACK_PKGS}"
+        log "Building HIL stack packages in Docker (${STACK_PKGS})..."
+    fi
     sudo docker run --rm \
         --entrypoint "" \
         -v "${WS}:/workspace" \
         ros2_perception_stack bash -lc "
             source /opt/ros/jazzy/setup.bash
             cd /workspace
-            colcon build ${BUILD_ARGS} 2>&1
-        "
+            colcon build --symlink-install --base-paths src ${BUILD_SEL} 2>&1
+        " || die "colcon build failed — fix errors above"
     log "Build done. install/ updated on host disk — run the stack normally now."
     exit 0
 fi
@@ -274,14 +286,15 @@ log "CONTROLLER=${CONTROLLER}  DETECTOR=${DETECTOR}  SLAM=${SLAM_ON}"
 # ── optional build step ───────────────────────────────────────────────────────
 if [[ "$_BUILD_FIRST" == "true" ]]; then
     sep
-    log "Building entire workspace in Docker before launch..."
+    log "Building HIL stack packages in Docker before launch..."
+    log "  packages: ${STACK_PKGS}"
     sudo docker run --rm \
         --entrypoint "" \
         -v "${WS}:/workspace" \
         ros2_perception_stack bash -lc "
             source /opt/ros/jazzy/setup.bash
             cd /workspace
-            colcon build --symlink-install 2>&1
+            colcon build --symlink-install --base-paths src --packages-up-to ${STACK_PKGS} 2>&1
         " || die "colcon build failed — fix errors above before launching"
     log "Build complete."
     sep
