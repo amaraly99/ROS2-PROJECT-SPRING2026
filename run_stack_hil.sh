@@ -350,7 +350,7 @@ if [[ "$DETECTOR" == "yolo" ]]; then
     # --conf 0.20: publish detections down to 0.20 so the controller (min_confidence=0.20)
     #   can act on low-confidence stop signs.
     # python3 -u: unbuffered stdout so per-stage timing/fps log is readable live.
-    taskset -c 1 python3 -u "${WS}/src/yolo_producer/yolo_producer.py" \
+    taskset -c 1 /usr/bin/python3 -u "${WS}/src/yolo_producer/yolo_producer.py" \
         --hef "${WS}/models/yolo26n_10h.hef" --no-image --conf 0.20 \
         > /tmp/yolo_producer.log 2>&1 &
     YOLO_PID=$!
