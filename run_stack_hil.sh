@@ -32,6 +32,7 @@
 #
 # Config files (config/hil/stack/<name>.yaml) set:
 #   matlab_host_ip, dds, ros_domain_id, controller, detector, slam, debug_image
+#   interface  — Pi network interface (e.g. wlan0, eth0). Omit to auto-detect from routing.
 #
 # Available configs:
 #   default     YOLO + proportional, no SLAM   (safe general-purpose default)
@@ -87,6 +88,7 @@ load_config() {
             ros_domain_id)  ROS_DOMAIN_ID="$val" ;;
             controller)     CONTROLLER="$val" ;;
             detector)       DETECTOR="$val" ;;
+            interface)      PI_INTERFACE="$val" ;;
             slam)           [[ "$val" == "true" ]] && SLAM_ON=true  || SLAM_ON=false ;;
             debug_image)    [[ "$val" == "true" ]] && DEBUG_IMAGE_ON=true || DEBUG_IMAGE_ON=false ;;
             *) log "WARNING: unknown config key '${key}' in ${name}.yaml" ;;
@@ -171,15 +173,23 @@ esac
 command -v taskset >/dev/null    || die "'taskset' not found — install util-linux"
 command -v envsubst >/dev/null   || die "'envsubst' not found — install gettext-base"
 [[ "$DETECTOR" == "yolo" ]] && { [[ -e /dev/hailo0 ]] || die "/dev/hailo0 not found — Hailo HAT must be powered (yolo detector needs it)"; }
-MATLAB_HOST_IP="${MATLAB_HOST_IP:-192.168.56.1}"
+export MATLAB_HOST_IP="${MATLAB_HOST_IP:-192.168.56.1}"
 if [[ "${MATLAB_HOST_IP}" == "192.168.56.1" ]]; then
-    log "WARNING: MATLAB_HOST_IP is the default (192.168.56.1) — set MATLAB_HOST_IP env var if your MATLAB machine uses a different address"
+    log "WARNING: MATLAB_HOST_IP is the default (192.168.56.1) — set it in your config yaml or via env var"
 fi
-# Detect Pi's local IP and outbound interface toward MATLAB (needed for DDS interface whitelist)
-PI_LOCAL_IP=$(ip route get "${MATLAB_HOST_IP}" | grep -oP 'src \K[0-9.]+' | head -1)
-[[ -z "$PI_LOCAL_IP" ]] && die "Cannot determine local IP toward ${MATLAB_HOST_IP} — is eth0 up?"
-PI_INTERFACE=$(ip route get "${MATLAB_HOST_IP}" | grep -oP 'dev \K\S+' | head -1)
-[[ -z "$PI_INTERFACE" ]] && die "Cannot determine network interface toward ${MATLAB_HOST_IP}"
+# Detect Pi's local IP + outbound interface (needed for DDS interface whitelist).
+# If 'interface' was set in the config, use that directly and read the IP from it.
+# Otherwise fall back to auto-detection via routing table.
+if [[ -n "${PI_INTERFACE:-}" ]]; then
+    log "Interface pinned by config: ${PI_INTERFACE}"
+    PI_LOCAL_IP=$(ip -4 addr show "$PI_INTERFACE" 2>/dev/null | grep -oP 'inet \K[0-9.]+' | head -1)
+    [[ -z "$PI_LOCAL_IP" ]] && die "Interface '${PI_INTERFACE}' has no IPv4 address — check 'ip addr show ${PI_INTERFACE}'"
+else
+    PI_LOCAL_IP=$(ip route get "${MATLAB_HOST_IP}" | grep -oP 'src \K[0-9.]+' | head -1)
+    [[ -z "$PI_LOCAL_IP" ]] && die "Cannot determine local IP toward ${MATLAB_HOST_IP} — is the network up?"
+    PI_INTERFACE=$(ip route get "${MATLAB_HOST_IP}" | grep -oP 'dev \K\S+' | head -1)
+    [[ -z "$PI_INTERFACE" ]] && die "Cannot determine network interface toward ${MATLAB_HOST_IP}"
+fi
 
 # Resolve DDS profile path + RMW
 case "$DDS" in

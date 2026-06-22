@@ -8,3 +8,4 @@ controller: ibvs
 detector: oracle
 slam: false
 debug_image: false
+interface: wlan0

@@ -7,3 +7,4 @@ controller: ibvs
 detector: yolo
 slam: false
 debug_image: false
+interface: wlan0
