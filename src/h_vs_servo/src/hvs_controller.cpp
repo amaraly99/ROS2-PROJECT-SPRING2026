@@ -10,7 +10,8 @@ HVSController::HVSController(rclcpp::Node* node) : node_(node) {
         "lambda_v", {0.5, 0.5, 0.5});
     std::vector<double> lw = node_->declare_parameter<std::vector<double>>(
         "lambda_w", {0.3, 0.3, 0.3});
-    buffer_len_ = node_->declare_parameter<int>("twist_buffer_len", 5);
+    buffer_len_  = node_->declare_parameter<int>("twist_buffer_len", 5);
+    k_fwd_       = node_->declare_parameter<double>("k_fwd", 3.0);
 
     Eigen::Vector3d lambda_v(lv[0], lv[1], lv[2]);
     Eigen::Vector3d lambda_w(lw[0], lw[1], lw[2]);
@@ -20,8 +21,9 @@ HVSController::HVSController(rclcpp::Node* node) : node_(node) {
     hvs_ = Homography2DVisualServo(K, lambda_v, lambda_w);
 
     RCLCPP_INFO(node_->get_logger(),
-        "HVSController (TS3): lambda_v=[%.2f,%.2f,%.2f] lambda_w=[%.2f,%.2f,%.2f] buf=%d",
-        lv[0], lv[1], lv[2], lw[0], lw[1], lw[2], buffer_len_);
+        "HVSController (TS3): lambda_v=[%.2f,%.2f,%.2f] lambda_w=[%.2f,%.2f,%.2f] "
+        "k_fwd=%.2f buf=%d",
+        lv[0], lv[1], lv[2], lw[0], lw[1], lw[2], k_fwd_, buffer_len_);
 }
 
 void HVSController::init(const servo_core::ServoInputs& cfg) {
@@ -45,6 +47,7 @@ void HVSController::init(const servo_core::ServoInputs& cfg) {
         {(float)(cx0 - bw_star / 2.0), (float)(cy0 + bh_star / 2.0)},  // BL
     };
 
+    target_bbox_ratio_ = cfg.target_bbox_ratio;
     initialized_ = true;
     RCLCPP_INFO(node_->get_logger(),
         "HVSController init: desired bbox %.1fpx x %.1fpx centred at (%.0f,%.0f)",
@@ -92,18 +95,25 @@ servo_core::ServoVel HVSController::computeApproach(const servo_core::ServoInput
     //   Camera: Xc=right, Yc=down, Zc=forward
     //   Body:   x=forward, y=left,  z=up
     //
-    // G = getPerspectiveTransform(pts_star_, pts_curr) maps reference→current
-    // (scales DOWN when far). This gives H[2,2] < 1 and e_v[2] < 0 when the
-    // drone needs to approach. The Benhimane-Malis law expects H to map
-    // current→reference (scale UP when far) so that e_v[2] > 0 drives forward
-    // motion. Swapping G's direction fixes vx but would invert the lateral signs,
-    // which are already correct via the -avg(0)/-avg(1) negations below. The
-    // targeted fix: negate vx only.
+    // vx: The oracle always produces axis-aligned bounding boxes, so
+    //   getPerspectiveTransform returns a pure affine G (G[2,0]=G[2,1]=0,
+    //   G[2,2]=1). This makes H[2,2]=1 → e_v[2]=0 regardless of range.
+    //   The homography law can never produce forward velocity from axis-aligned
+    //   bboxes. Use the same proportional approach as hil_servo (TS2) for vx.
+    //
+    // vy/vz: e_v[0] and e_v[1] correctly encode lateral and vertical offset
+    //   of the current bbox center vs the desired center (principal point).
+    //   G maps star→curr so H[0,2] = (cx_curr - cx0)/fx and
+    //   H[1,2] = (cy_curr - cy0)/fy. Negating gives the right body direction.
+    //
+    // wz: body yaw = rotation around body z (up) = rotation around camera Yc.
+    //   That is e_w[1] = twist[4], not e_w[2] = twist[5] (which is camera roll).
+    //   Matches ibvs_law.cpp: out.wz = -v[4].
     servo_core::ServoVel v;
-    v.vx = -avg(2);   // negated: G is star→curr (scale DOWN when far) so e_v[2]<0;
+    v.vx = std::max(0.0, k_fwd_ * (target_bbox_ratio_ - in.bbox_ratio));
     v.vy = -avg(0);   // −Xc → body left
     v.vz = -avg(1);   // −Yc → body up
-    v.wz = -avg(5);   // −rz → body yaw-left
+    v.wz = -avg(4);   // −ry (camera Yc rotation = yaw) → body yaw-left
     return v;
 }
 

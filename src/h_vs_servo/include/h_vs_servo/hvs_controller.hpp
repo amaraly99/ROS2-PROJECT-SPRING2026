@@ -19,10 +19,12 @@
 //   ω_c = −λ_w ⊙ e_w           (camera-frame angular velocity)
 //
 // Output mapped to Simulink body frame (x=fwd, y=left, z=up):
-//   vx =  v_c[2]  (Zc → forward)
+//   vx = proportional approach (bbox scale error) — homography cannot produce
+//        forward velocity for axis-aligned oracle bboxes because getPerspective-
+//        Transform returns a pure affine (H[2,2]=1 → e_v[2]=0 always).
 //   vy = −v_c[0]  (−Xc → left)
 //   vz = −v_c[1]  (−Yc → up)
-//   wz = −ω_c[2]  (−rz → yaw-left)
+//   wz = −ω_c[1]  (−ry → yaw-left; ry = rotation around Yc = camera yaw)
 // ─────────────────────────────────────────────────────────────────
 #ifndef H_VS_SERVO_HVS_CONTROLLER_HPP
 #define H_VS_SERVO_HVS_CONTROLLER_HPP
@@ -60,6 +62,12 @@ private:
     int buffer_len_{5};
 
     bool initialized_{false};
+
+    // Forward approach gain — same proportional law as hil_servo (TS2).
+    // The homography law handles lateral (vy) and yaw (wz); vx must come
+    // from outside because H[2,2]=1 for axis-aligned oracle bboxes.
+    double k_fwd_{3.0};
+    double target_bbox_ratio_{0.55};
 };
 
 }  // namespace h_vs_servo

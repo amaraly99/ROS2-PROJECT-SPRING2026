@@ -1,16 +1,19 @@
 h_vs_servo_node:
   ros__parameters:
-    # Translational gain (per-axis): scales camera-frame e_v = (H−I)m*
-    #   [0] Xc → vy (lateral centering):  e_v[0] ~ pixel_offset/fx ~ 0.58 at image edge
-    #   [1] Yc → vz (vertical centering): same magnitude as [0]
-    #   [2] Zc → vx (forward approach):   e_v[2] ~ (1 - bbox_scale) ~ 0.82 when far
-    #       vx sign is negated in code (G maps star→curr, so raw e_v[2] < 0 when far)
-    # Tuned to give comparable approach speed to proportional (k_fwd=3.0, ~1.65 m/s peak):
-    #   far: vx = 1.5 * 0.82 ≈ 1.2 m/s   close: vx = 1.5 * 0.18 ≈ 0.27 m/s
-    lambda_v: [1.0, 1.0, 1.5]
+    # Forward approach: proportional law (same as hil_servo TS2).
+    # The homography cannot produce vx for axis-aligned oracle bboxes
+    # because getPerspectiveTransform returns a pure affine (H[2,2]=1 → e_v[2]=0).
+    k_fwd: 3.0
 
-    # Rotational gain (per-axis): scales e_w = vex(H − H^T)
-    lambda_w: [0.3, 0.3, 0.3]
+    # Translational gains for lateral (Xc→vy) and vertical (Yc→vz) centering.
+    # lambda_v[2] (Zc→vx) is unused — vx comes from k_fwd above.
+    #   e_v[0] ~ (cx_curr - cx0) / fx  ~0.25 per 140px offset
+    #   e_v[1] ~ (cy_curr - cy0) / fy  similar magnitude
+    lambda_v: [1.0, 1.0, 0.0]
+
+    # Rotational gains: e_w = vex(H − H^T).
+    # Only lambda_w[1] (ry = camera yaw → body wz) is active for axis-aligned bboxes.
+    lambda_w: [0.0, 0.4, 0.0]
 
     # Moving average window for noise rejection (ticks at 20 Hz oracle rate)
     twist_buffer_len: 5
