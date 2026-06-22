@@ -1,0 +1,309 @@
+\documentclass[11pt]{article}
+
+% ─────────────────────────────────────────────────────────────────
+% Oracle detector & image-based servoing — projection math
+% Self-contained; compile with pdflatex.
+% ─────────────────────────────────────────────────────────────────
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{bm}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage[colorlinks=true,linkcolor=blue,urlcolor=blue]{hyperref}
+
+\newcommand{\Rcw}{R_{cw}}
+\newcommand{\tcw}{\bm{t}_{cw}}
+\newcommand{\pd}{\bm{p}_d}
+\newcommand{\pt}{\bm{p}_t}
+\newcommand{\Pc}{\bm{P}_c}
+
+\title{Oracle Detector and Image-Based Servoing:\\ The Projection Math}
+\author{HIL Controller Benchmark}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\noindent
+The oracle detector and a YOLO-style detector produce the \emph{same kind of
+output} (a pixel bounding box). The oracle \emph{computes} that box from
+ground-truth positions by running the camera projection \textbf{forward}; the
+controller recovers bearing and range by running it \textbf{backward}. This note
+derives both directions.
+
+\section{The forward model: the oracle}
+
+The oracle knows two 3D points in the world frame, the drone $\pd$ and the
+target $\pt$, plus the drone yaw $\psi$ and pitch $\theta$. It computes where the
+target lands on the image, in pixels.
+
+\paragraph{Givens.}
+\[
+\pd = \begin{bmatrix} x \\ y \\ z \end{bmatrix}_{\text{drone}},\qquad
+\pt = \begin{bmatrix} t_x \\ t_y \\ t_z \end{bmatrix}_{\text{target}},\qquad
+\text{yaw } \psi,\ \text{pitch } \theta.
+\]
+Camera intrinsics: $f_x=f_y=554$, principal point $(c_x,c_y)=(320,240)$,
+known target height $H=1.5\,\mathrm{m}$.
+
+\subsection*{Step 1 — Translation (world frame)}
+Only the position \emph{relative} to the drone matters:
+\[
+\Delta = \pt - \pd = \begin{bmatrix} dx \\ dy \\ dz \end{bmatrix}.
+\]
+
+\subsection*{Step 2 — Rotate world $\to$ body (undo the yaw)}
+The body frame is $x$=forward, $y$=left, $z$=up, yawed by $\psi$ about world-$Z$.
+Expressing $\Delta$ in body coordinates applies the inverse yaw $R_z(\psi)^\top$:
+\[
+\begin{bmatrix} \text{fwd} \\ \text{left} \\ \text{up} \end{bmatrix}
+=
+\underbrace{\begin{bmatrix}
+\cos\psi & \sin\psi & 0 \\
+-\sin\psi & \cos\psi & 0 \\
+0 & 0 & 1
+\end{bmatrix}}_{R_z(\psi)^\top}
+\begin{bmatrix} dx \\ dy \\ dz \end{bmatrix}.
+\]
+
+\subsection*{Step 3 — Apply the pitch (forward--up plane)}
+Pitch $\theta$ is a rotation about the body lateral (left) axis:
+\[
+\begin{bmatrix} \text{fwd}' \\ \text{left} \\ \text{up}' \end{bmatrix}
+=
+\underbrace{\begin{bmatrix}
+\cos\theta & 0 & \sin\theta \\
+0 & 1 & 0 \\
+-\sin\theta & 0 & \cos\theta
+\end{bmatrix}}_{R_{\text{pitch}}(\theta)}
+\begin{bmatrix} \text{fwd} \\ \text{left} \\ \text{up} \end{bmatrix}.
+\]
+
+\subsection*{Step 4 — Relabel body $\to$ camera-optical axes}
+Computer-vision cameras use $Z_c$=forward, $X_c$=right, $Y_c$=down. Converting
+from forward/left/up is a signed permutation $P$:
+\[
+\begin{bmatrix} X_c \\ Y_c \\ Z_c \end{bmatrix}
+=
+\underbrace{\begin{bmatrix}
+0 & -1 & 0 \\
+0 & 0 & -1 \\
+1 & 0 & 0
+\end{bmatrix}}_{P}
+\begin{bmatrix} \text{fwd}' \\ \text{left} \\ \text{up}' \end{bmatrix}
+=
+\begin{bmatrix} -\text{left} \\ -\text{up}' \\ \text{fwd}' \end{bmatrix}.
+\]
+The visibility guard $Z_c \le 0.1$ means ``behind the camera, not visible.''
+
+\subsection*{The rotation chain collapses to one matrix}
+Steps 2--4 fuse into a single world$\to$camera rotation:
+\[
+\boxed{\;\Rcw = P\,R_{\text{pitch}}(\theta)\,R_z(\psi)^\top,\qquad
+\Pc = \begin{bmatrix} X_c \\ Y_c \\ Z_c \end{bmatrix} = \Rcw\,(\pt - \pd)\;}
+\]
+or, in standard extrinsic $[\,R \mid t\,]$ form,
+\[
+\Pc = \Rcw\,\pt + \tcw,\qquad \tcw = -\Rcw\,\pd .
+\]
+
+\subsection*{Step 5 — Perspective projection (pinhole)}
+Flatten the 3D camera point to a pixel with the intrinsic matrix $K$:
+\[
+s \begin{bmatrix} u \\ v \\ 1 \end{bmatrix}
+=
+\underbrace{\begin{bmatrix}
+f_x & 0 & c_x \\
+0 & f_y & c_y \\
+0 & 0 & 1
+\end{bmatrix}}_{K}
+\begin{bmatrix} X_c \\ Y_c \\ Z_c \end{bmatrix},
+\qquad s = Z_c .
+\]
+Dividing by the scale $s=Z_c$ (this division \emph{is} perspective: far things
+shrink):
+\[
+\boxed{\;u = f_x\,\frac{X_c}{Z_c} + c_x,\qquad
+v = f_y\,\frac{Y_c}{Z_c} + c_y\;}
+\]
+This $(u,v)$ is the bounding-box \textbf{center}.
+
+\subsection*{Step 6 — Box size from known height}
+An object of physical height $H$ at depth $Z_c$ projects to a pixel height under
+the same $1/Z_c$ scaling:
+\[
+\boxed{\;b_h = \frac{f_y\,H}{Z_c}\;},\qquad b_w = b_h \cdot \text{aspect}.
+\]
+Box height is \textbf{inversely proportional to depth}: it grows as the drone
+nears the target.
+
+\subsection*{The oracle in one line}
+\[
+s\begin{bmatrix} u \\ v \\ 1 \end{bmatrix}
+= K\,P\,R_{\text{pitch}}(\theta)\,R_z(\psi)^\top\,(\pt - \pd),
+\qquad b_h = \frac{f_y H}{Z_c}.
+\]
+
+\section{The inverse model: what a detector gives the controller}
+
+A single detection contains a class label, a confidence, a pixel center
+$(c_x,c_y)$ and a pixel size $(b_w,b_h)$ --- \emph{not} a 3D world position. That
+pixel data splits into two physical meanings, each obtained by inverting a step
+above.
+
+\paragraph{(a) Box center $\to$ bearing.}
+Inverting Step 5 turns a pixel offset into an angle (direction to steer):
+\[
+\frac{X_c}{Z_c} = \frac{u - c_x}{f_x} \approx \tan(\text{horizontal angle}),
+\qquad
+\frac{Y_c}{Z_c} = \frac{v - c_y}{f_y}.
+\]
+The controller normalises this to a centring error in $[-1,1]$ (zero when
+centred):
+\[
+e_x = \frac{c_x - W/2}{W/2},\qquad e_y = \frac{c_y - H_{\text{img}}/2}{H_{\text{img}}/2}.
+\]
+
+\paragraph{(b) Box size $\to$ range.}
+Inverting Step 6 (the oracle's box equation solved for depth) recovers $Z_c$ from
+the known height $H$:
+\[
+\boxed{\;Z_c = \frac{f_y\,H}{b_h}\;}.
+\]
+A bigger box means a smaller $Z_c$: ``you are close.'' A proportional law may use
+the dimensionless ratio $b_h/H_{\text{img}}$ as a range proxy instead.
+
+\section{Q\&A: Clarifications}
+
+\subsection*{Q: Yaw of who and pitch of who?}
+
+Both are the \textbf{drone's} yaw and pitch --- not the target's.
+
+\begin{itemize}
+    \item \textbf{Yaw} $\psi$: which compass direction the drone's nose is pointing.
+    \item \textbf{Pitch} $\theta$: how much the drone's nose is tilted up or down.
+\end{itemize}
+
+Steps 2 and 3 undo the drone's own orientation so you can describe where the
+target sits relative to the camera. The target's yaw (which way the stop sign
+faces) is available in \texttt{/sim/target\_pose} but is deliberately discarded:
+
+\begin{verbatim}
+x, y, z, pitch, yaw = self.drone   # drone orientation used
+tx, ty, tz, _       = self.target  # target yaw thrown away
+\end{verbatim}
+
+It does not matter which way the sign is facing --- only where it is in space.
+
+\subsection*{Q: What are camera intrinsics and how are they used?}
+
+Camera intrinsics are \textbf{fixed properties of the lens and sensor} --- they
+never change during flight. They answer one question: for this specific camera,
+how do distances in the 3D world map to distances in pixels?
+
+There are four numbers:
+
+\begin{center}
+\begin{tabular}{@{}clll@{}}
+\toprule
+Parameter & Value (sim) & Meaning \\
+\midrule
+$f_x$ & 554\,px & horizontal ``zoom'' \\
+$f_y$ & 554\,px & vertical ``zoom'' \\
+$c_x$ & 320\,px & pixel column of image centre \\
+$c_y$ & 240\,px & pixel row of image centre \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{What focal length actually means.}
+$f_x = 554$ pixels is not 554\,mm like a camera lens. It is the focal length
+expressed in pixel units, which encodes the field of view:
+\[
+f_x = \frac{W}{2\tan(\mathrm{HFOV}/2)}.
+\]
+The sim has $\mathrm{HFOV}=60°$ and $W=640$, so:
+\[
+f_x = \frac{640}{2\tan(30°)} = \frac{640}{1.155} \approx 554.
+\]
+A larger $f_x$ means a narrower field of view (more zoom); a smaller $f_x$ means
+a wider field of view (fisheye-like).
+
+\paragraph{How they are used in Step 5.}
+After all the rotations you have $(X_c, Y_c, Z_c)$ in metres. The intrinsics
+convert that to pixels:
+\[
+u = f_x \cdot \frac{X_c}{Z_c} + c_x.
+\]
+Breaking this apart:
+\begin{itemize}
+    \item $X_c / Z_c$ is a \textbf{pure angle} (metres/metres, dimensionless).
+          It is the same regardless of which camera you have.
+    \item Multiply by $f_x$ to \textbf{scale that angle into pixels} for this
+          specific camera's sensor.
+    \item Add $c_x = 320$ to \textbf{shift the origin} from image centre to the
+          top-left corner, because pixels are counted from the top-left.
+\end{itemize}
+
+\paragraph{Numerical example.}
+Target 1\,m to the right at 10\,m depth:
+\[
+u = 554 \cdot \frac{1}{10} + 320 = 55.4 + 320 = 375\,\text{px} \quad
+\text{(55 pixels right of centre --- makes sense)}.
+\]
+
+\paragraph{The principal point $(c_x, c_y)$.}
+This is where a perfectly centred target ($X_c = Y_c = 0$, dead ahead) lands on
+the image. Ideally it is the exact middle:
+\[
+c_x = W/2 = 320, \qquad c_y = H_\text{img}/2 = 240.
+\]
+On a real physical camera it is slightly off-centre due to manufacturing
+tolerances and is measured during camera calibration. In the sim it is exactly
+centred.
+
+\paragraph{Intrinsics vs.\ extrinsics.}
+
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+ & What it answers & Changes during flight? \\
+\midrule
+\textbf{Extrinsics} (Steps 2--4) & Where is the target relative to my camera \emph{right now}? & Yes, every frame \\
+\textbf{Intrinsics} (Step 5)     & Given its position, what pixel does it land on?              & Never \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+The intrinsics are loaded once at startup and shared identically by the oracle,
+the FSM, and the IBVS controller --- because all three must agree on what a
+given pixel coordinate means in the real world.
+
+\section{The punchline}
+
+The oracle and the detector are the same projection equation run in opposite
+directions:
+
+\begin{center}
+\begin{tabular}{@{}llll@{}}
+\toprule
+ & Input & Output & Direction \\
+\midrule
+Oracle      & known 3D positions & pixel box $(u,v,b_h)$ & world $\to$ image (forward) \\
+Detector    & the image          & pixel box $(u,v,b_h)$ & pixels $\to$ box (measured) \\
+Controller  & pixel box          & bearing $e_x,e_y$ + depth $Z_c$ & image $\to$ world (inverse) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+Because the oracle emits the \emph{same} pixel box a real detector would, it is a
+drop-in replacement on the detection topic. The box \textbf{center is a
+direction} and the box \textbf{size is a distance}; together they form a ray plus
+a range --- a full relative position, if one ever wants to reconstruct it. Basic
+image-based servoing never does: it simply drives ``centre the box and make it
+the right size.''
+
+\end{document}

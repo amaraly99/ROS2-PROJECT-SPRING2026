@@ -1,0 +1,12 @@
+h_vs_servo_node:
+  ros__parameters:
+    # Translational gain (per-axis): scales camera-frame e_v = (H−I)m*
+    # Start low — the homography error is in normalised image coordinates
+    # so magnitudes are O(0.1–1.0) at typical approach distances.
+    lambda_v: [0.5, 0.5, 0.5]
+
+    # Rotational gain (per-axis): scales e_w = vex(H − H^T)
+    lambda_w: [0.3, 0.3, 0.3]
+
+    # Moving average window for noise rejection (ticks at 20 Hz oracle rate)
+    twist_buffer_len: 5

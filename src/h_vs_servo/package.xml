@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>h_vs_servo</name>
+  <version>0.1.0</version>
+  <description>
+    TS3: Homography-based 2D Visual Servoing.
+    Adapts RViMLab/h_vs (Benhimane and Malis, ICRA 2006) to the
+    IServoController interface for the HIL controller benchmark.
+  </description>
+  <maintainer email="homieaj99@gmail.com">Amar Aly</maintainer>
+  <license>BSD</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>servo_core</depend>
+
+  <build_depend>eigen</build_depend>
+  <build_depend>opencv</build_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

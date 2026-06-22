@@ -80,6 +80,17 @@ def launch_setup(context, *args, **kwargs):
                         {'target_class': target_class,
                          'benchmark_mode': benchmark_mode}],
         ))
+    elif controller == 'h_vs':
+        nodes.append(Node(
+            package='h_vs_servo',
+            executable='h_vs_servo_node',
+            name='h_vs_servo_node',
+            output='screen',
+            prefix=prefix,
+            parameters=[cfg('bench_fsm.yaml'), cfg('bench_h_vs.yaml'),
+                        {'target_class': target_class,
+                         'benchmark_mode': benchmark_mode}],
+        ))
 
     return nodes
 
@@ -87,7 +98,7 @@ def launch_setup(context, *args, **kwargs):
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('controller', default_value='proportional',
-            description="Test subject: 'ibvs' (TS1) or 'proportional' (TS2)"),
+            description="Test subject: 'ibvs' (TS1), 'proportional' (TS2), or 'h_vs' (TS3)"),
         DeclareLaunchArgument('workspace',
             default_value=EnvironmentVariable('WORKSPACE_DIR', default_value='/workspace')),
         DeclareLaunchArgument('target_class', default_value='stop sign'),
