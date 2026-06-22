@@ -21,10 +21,11 @@
 #   Core 2,3   OV2SLAM
 #
 # Usage:
-#   ./run_stack_hil.sh --config <name>   # load config/hil/stack/<name>.yaml
+#   ./run_stack_hil.sh --config <name>        # load config/hil/stack/<name>.yaml
 #   ./run_stack_hil.sh [--no-slam] [--debug-image]    # raw flags (no config)
+#   ./run_stack_hil.sh build [pkg]            # colcon build inside Docker, then exit
 #   ./run_stack_hil.sh stop
-#   ./run_stack_hil.sh hz [topic]        # rate check with HIL DDS profile loaded
+#   ./run_stack_hil.sh hz [topic]             # rate check with HIL DDS profile loaded
 #
 #   --config <name>   read config/hil/stack/<name>.yaml (sets all vars below)
 #   --no-slam         override: skip OV2SLAM even if config says slam: true
@@ -128,6 +129,28 @@ DDS="${DDS:-fastrtps}"
 ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-0}"
 CONTROLLER="${CONTROLLER:-proportional}"   # ibvs | proportional | h_vs
 DETECTOR="${DETECTOR:-yolo}"               # yolo | oracle
+
+# ── build [pkg] — colcon build inside a throwaway container ──────────────────
+# Artifacts land in /workspace/install/ (host filesystem via volume mount) and
+# persist across container restarts — so you only need to do this after code changes.
+#   ./run_stack_hil.sh build                      # build entire workspace
+#   ./run_stack_hil.sh build sim_camera_bridge    # build one package
+if [[ "$OPT" == "build" ]]; then
+    PKG="${2:-}"
+    BUILD_ARGS="--symlink-install"
+    [[ -n "$PKG" ]] && BUILD_ARGS+=" --packages-select ${PKG}"
+    log "Building workspace in Docker (pkg=${PKG:-all})..."
+    sudo docker run --rm \
+        --entrypoint "" \
+        -v "${WS}:/workspace" \
+        ros2_perception_stack bash -lc "
+            source /opt/ros/jazzy/setup.bash
+            cd /workspace
+            colcon build ${BUILD_ARGS} 2>&1
+        "
+    log "Build done. install/ updated on host disk — run the stack normally now."
+    exit 0
+fi
 
 # ── stop ──────────────────────────────────────────────────────────────────────
 if [[ "$OPT" == "stop" ]]; then

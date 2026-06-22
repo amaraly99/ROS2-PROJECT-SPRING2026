@@ -7,5 +7,5 @@ ros_domain_id: 0
 controller: proportional
 detector: yolo
 slam: true
-debug_image: false
+debug_image: false  
 interface: wlan0
