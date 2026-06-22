@@ -40,8 +40,8 @@ CONTROLLER="${1:-}"
 RUN_NUM="${2:-1}"
 DURATION="${3:-0}"
 BENCHMARK_MODE="${4:-true}"
-[[ "$CONTROLLER" == "ibvs" || "$CONTROLLER" == "proportional" ]] \
-    || die "usage: $0 <ibvs|proportional> [run_num] [duration_sec] [benchmark_mode]"
+[[ "$CONTROLLER" == "ibvs" || "$CONTROLLER" == "proportional" || "$CONTROLLER" == "h_vs" ]] \
+    || die "usage: $0 <ibvs|proportional|h_vs> [run_num] [duration_sec] [benchmark_mode]"
 [[ "$RUN_NUM" =~ ^[0-9]+$ ]] || die "run_num must be a positive integer (got '$RUN_NUM')"
 case "$BENCHMARK_MODE" in
     true|false) ;;
@@ -108,7 +108,11 @@ GIT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo nogit)
 } > "$WS/$RUNREL/meta.txt"
 log "Run dir: $RUNREL  (git $GIT_SHA)"
 
-NODE_EXEC=$([[ "$CONTROLLER" == ibvs ]] && echo visp_servo_node || echo hil_servo_node)
+case "$CONTROLLER" in
+    ibvs)         NODE_EXEC=visp_servo_node ;;
+    proportional) NODE_EXEC=hil_servo_node ;;
+    h_vs)         NODE_EXEC=h_vs_servo_node ;;
+esac
 
 BAG_PID=; CPU_PID=; LAUNCH_PID=
 cleanup() {
@@ -139,6 +143,7 @@ log "Killing any stale nodes from previous runs..."
 pkill -f oracle_detector_node 2>/dev/null || true
 pkill -f visp_servo_node      2>/dev/null || true
 pkill -f hil_servo_node       2>/dev/null || true
+pkill -f h_vs_servo_node      2>/dev/null || true
 sleep 0.5
 
 log "Launching oracle + $CONTROLLER (output visible below)..."
