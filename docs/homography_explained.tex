@@ -1,0 +1,409 @@
+% homography_explained.tex
+% Standalone, self-contained explainer. Compile with:
+%     pdflatex homography_explained.tex
+% (no bibliography, no external figures required)
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage[colorlinks=true,linkcolor=blue,urlcolor=blue]{hyperref}
+
+% "vex" operator (skew-symmetric matrix -> 3-vector)
+\DeclareMathOperator{\vex}{vex}
+
+% compact inline matrices for use inside table cells
+\newcommand{\sm}[1]{\left[\begin{smallmatrix}#1\end{smallmatrix}\right]}
+
+% C++ code listing style
+\definecolor{codegray}{gray}{0.95}
+\definecolor{codekw}{rgb}{0.0,0.0,0.6}
+\definecolor{codecom}{rgb}{0.0,0.5,0.0}
+\lstset{
+  language=C++,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{codekw}\bfseries,
+  commentstyle=\color{codecom}\itshape,
+  backgroundcolor=\color{codegray},
+  frame=single,
+  framerule=0pt,
+  breaklines=true,
+  showstringspaces=false,
+  columns=fullflexible,
+  xleftmargin=6pt,
+}
+
+\title{Homography, Affine, Planar --- Explained From Scratch\\[2pt]
+\large for the \texttt{h\_vs} controller}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\noindent\textbf{Who this is for:} you've taken linear algebra --- vectors,
+matrices, matrix multiplication, inverse, transpose, the identity matrix.
+That's all you need. No projective geometry, no Lie groups, no differential
+geometry. We build everything else from those pieces and then read the actual
+\texttt{h\_vs} code with it.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{The one-sentence idea}
+
+\begin{quote}
+A \textbf{homography} is a single $3\times3$ matrix that describes how a
+\textbf{flat surface} (a plane --- e.g.\ the face of a stop sign) appears to
+move/warp between two camera views.
+\end{quote}
+
+If you know where the four corners of the sign are \emph{now}, and where you
+\emph{want} them to be, the homography is the matrix that connects those two
+pictures. The \texttt{h\_vs} controller measures that matrix and turns ``how
+far is the matrix from doing nothing'' into ``how should the drone move.''
+
+That's the whole story. The rest is unpacking three words: \textbf{homogeneous},
+\textbf{affine}, \textbf{planar}.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{The ``add a 1'' trick: homogeneous coordinates}
+
+A pixel is a 2D point $(u,v)$. We staple a $1$ on the end and treat it as a 3D
+vector:
+\[
+(u,v)\;\longrightarrow\;\begin{bmatrix} u\\ v\\ 1\end{bmatrix}.
+\]
+Why? Two reasons, both pure linear algebra.
+
+\paragraph{Reason A --- translation becomes multiplication.}
+Normally ``shift right by $t_x$, down by $t_y$'' is an \emph{addition}. With the
+extra $1$ it becomes a matrix multiply:
+\[
+\begin{bmatrix} 1&0&t_x\\ 0&1&t_y\\ 0&0&1\end{bmatrix}
+\begin{bmatrix} u\\ v\\ 1\end{bmatrix}
+=\begin{bmatrix} u+t_x\\ v+t_y\\ 1\end{bmatrix}.
+\]
+Now \emph{every} operation --- rotate, scale, shift, even perspective --- is one
+$3\times3$ matrix. That uniformity is the entire point.
+
+\paragraph{Reason B --- we may rescale the whole vector.}
+In this homogeneous world these all mean the \emph{same} pixel:
+\[
+\begin{bmatrix} u\\ v\\ 1\end{bmatrix}\sim
+\begin{bmatrix} 2u\\ 2v\\ 2\end{bmatrix}\sim
+\begin{bmatrix} 10u\\ 10v\\ 10\end{bmatrix}.
+\]
+The rule to recover a real pixel: \textbf{divide by the last entry.} So
+$(2u,2v,2)\to(u,v)$. This ``divide by the last number'' is exactly what produces
+\emph{perspective} (far things look smaller). Because of this freedom a
+homography only matters \textbf{up to scale}: multiplying the whole matrix by
+$7$ gives the same transform (hence people normalize the bottom-right entry
+to~$1$).
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{The ladder of transformations (rigid $\to$ projective)}
+
+All of these are $3\times3$ matrices acting on $(u,v,1)$. They differ only in
+how much freedom the matrix has.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.6}
+\begin{tabular}{@{}lccl@{}}
+\toprule
+Name & Matrix shape & Can do & Preserves \\
+\midrule
+Translation & $\sm{1&0&t_x\\0&1&t_y\\0&0&1}$ & slide & all but position \\
+Euclidean (rigid) & $\sm{R&\;t\\0\,0&1}$ & rotate $+$ slide & lengths, angles \\
+Similarity & $\sm{sR&\;t\\0\,0&1}$ & $+$ uniform zoom & angles, ratios \\
+Affine & $\sm{a&b&t_x\\c&d&t_y\\0&0&1}$ & $+$ shear, non-uniform scale & \textbf{parallel lines} \\
+Projective (homography) & $\sm{a&b&t_x\\c&d&t_y\\ \mathbf{g}&\mathbf{h}&1}$ & $+$ perspective & \textbf{straight lines only} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The single most important row is the \textbf{bottom row}.
+
+\begin{itemize}
+\item \textbf{Affine} has bottom row $[0,\,0,\,1]$. The last entry of the output
+stays exactly $1$, so ``divide by the last entry'' does nothing.
+\textbf{No perspective.} Parallel lines in, parallel lines out. Think of a
+photocopier: a flat page scanned straight-on, scaled/sheared but never tilted
+away.
+\item \textbf{Projective / homography} has a general bottom row $[g,h,1]$. The
+last entry of the output is $g\,u+h\,v+1$, which \textbf{changes from pixel to
+pixel}. Dividing by it squishes some points toward the center --- that's
+perspective foreshortening (railroad tracks converging to a vanishing point).
+\end{itemize}
+
+\begin{quote}
+\textbf{So ``affine'' is just ``a homography that forgot how to do
+perspective.''} It is the special case $g=h=0$. Keep this sentence; it is the
+key to the whole \texttt{h\_vs} story in Section~\ref{sec:affinetrap}.
+\end{quote}
+
+\paragraph{Tiny numeric example of the perspective divide.}
+Take the projective matrix with $g=0.001$, $h=0$:
+\[
+\begin{bmatrix} 1&0&0\\ 0&1&0\\ 0.001&0&1\end{bmatrix}
+\begin{bmatrix} 500\\ 200\\ 1\end{bmatrix}
+=\begin{bmatrix} 500\\ 200\\ 1.5\end{bmatrix}
+\xrightarrow{\;\div\,1.5\;}
+\begin{bmatrix} 333\\ 133\end{bmatrix}.
+\]
+The point got pulled inward, and \emph{how much} depended on its
+$u$-coordinate~($500$). An affine matrix ($g=h=0$) could never do that --- it
+leaves the last entry at $1$ and pulls nothing.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{What ``planar'' means and why it's required}
+
+A homography is only \emph{exactly} correct for points that all lie on
+\textbf{one flat plane} in the real world. A stop-sign face is a plane. A wall
+is a plane. The ground is a plane.
+
+The theorem (proof not needed): \textbf{two images of the same flat plane are
+always related by a single $3\times3$ homography.} Four corner-pairs is exactly
+enough to solve for it --- each corner gives $2$ equations, $H$ has $8$ free
+numbers, and $4\times2=8$. That's why the controller uses the \textbf{four
+bounding-box corners} of the detected sign: a box is planar, and $4$ corners
+pin down $H$ exactly.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{The camera matrix $K$ (pixels $\leftrightarrow$ rays)}
+
+A camera turns a 3D direction into a pixel via the \emph{intrinsics} matrix
+\[
+K=\begin{bmatrix} f_x&0&c_{x0}\\ 0&f_y&c_{y0}\\ 0&0&1\end{bmatrix},
+\]
+where $f_x,f_y$ are focal lengths in pixels (how ``zoomed in'' the camera is)
+and $(c_{x0},c_{y0})$ is the \emph{principal point} (the pixel at the optical
+center, essentially the middle of the image).
+
+$K$ maps a normalized 3D ray $\to$ a pixel; so $K^{-1}$ maps a
+\textbf{pixel $\to$ a normalized ray} (a real-world direction, stripped of the
+camera's zoom/offset). Remember: \textbf{$K^{-1}$ converts ``where it is on
+screen'' into ``which real-world direction it is.''} We need that to talk about
+drone motion in meters/radians instead of pixels.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{The control law, exactly as the code computes it}
+\label{sec:law}
+
+Here is the whole math core from
+\texttt{src/h\_vs\_servo/src/homography\_2d\_vs.cpp}:
+
+\begin{lstlisting}
+Eigen::Matrix3d H = _K.inverse() * G * _K;          // line 15
+Eigen::Vector3d m_star = _K.inverse() * p_star;     // line 16
+twist << _lambda_v.asDiagonal() * _computeEv(H, m_star),   // (H - I) m*
+         _lambda_w.asDiagonal() * _computeEw(H);           // vex(H - H^T)
+\end{lstlisting}
+
+\subsection{Measure $G$ (pixel-space homography)}
+In \texttt{hvs\_controller.cpp} the controller builds two sets of four corners:
+\texttt{pts\_star\_} (where we \emph{want} the box --- centered, target size)
+and \texttt{pts\_curr} (where the box \emph{is}). OpenCV solves the 4-corner
+system:
+\begin{lstlisting}
+cv::Mat G_cv = cv::getPerspectiveTransform(pts_star_, pts_curr);  // line 72
+\end{lstlisting}
+$G$ is the $3\times3$ mapping \emph{desired pixels $\to$ current pixels}.
+
+\subsection{Convert to the ``Euclidean'' homography $H$}
+\[
+\boxed{\,H = K^{-1}\,G\,K\,}
+\]
+This is a \emph{change of basis} (sandwich a matrix between $K^{-1}$ and $K$).
+It re-expresses the same warp in normalized-ray coordinates instead of pixels,
+so $H$ now has physical meaning.
+
+\begin{quote}
+\textbf{Key intuition:} if the drone is \emph{exactly} where it should be, then
+current $=$ desired, $G$ does nothing, and $H=I$ (the identity). \textbf{The
+error is ``how far is $H$ from the identity.''} The next two formulas are just
+two different ways to measure ``$H$ minus doing-nothing.''
+\end{quote}
+
+\subsection{Translation error --- how far off in \emph{position}}
+\[
+\mathbf{e}_v=(H-I)\,\mathbf{m}^{*}\qquad\text{(paper's eq.\ 15)}
+\]
+The code defaults $\mathbf{m}^{*}$ to the principal point,
+$p^{*}=(c_{x0},c_{y0},1)$, so $\mathbf{m}^{*}=K^{-1}p^{*}=(0,0,1)$ --- ``straight
+ahead.'' Multiplying $(H-I)$ by $(0,0,1)$ simply \textbf{picks out the third
+column of $H-I$}:
+\[
+\mathbf{e}_v=\begin{bmatrix} H_{0,2}\\ H_{1,2}\\ H_{2,2}-1\end{bmatrix}
+=\begin{bmatrix}\text{sideways offset}\\ \text{up/down offset}\\ \text{depth
+offset}\end{bmatrix}.
+\]
+
+\subsection{Rotation error --- how far off in \emph{orientation}}
+\[
+\mathbf{e}_\omega=\vex\!\left(H-H^{\top}\right)\qquad\text{(paper's eq.\ 16)}
+\]
+One fact you can prove with transpose rules: for \textbf{any} matrix $H$, the
+matrix $S=H-H^{\top}$ is \textbf{skew-symmetric}, i.e.\ $S^{\top}=-S$:
+\[
+(H-H^{\top})^{\top}=H^{\top}-H=-(H-H^{\top}).\;\checkmark
+\]
+A skew-symmetric $3\times3$ always has zeros on the diagonal and only
+\textbf{three} independent numbers:
+\[
+S=\begin{bmatrix} 0&-z&y\\ z&0&-x\\ -y&x&0\end{bmatrix}.
+\]
+The operator $\vex(\cdot)$ (``vee'') just \textbf{reads those three numbers out}
+into the vector $(x,y,z)$ --- the inverse of building the skew matrix. In code:
+\begin{lstlisting}
+return Eigen::Vector3d(H_skew(2,1), H_skew(0,2), H_skew(1,0));   // line 39
+\end{lstlisting}
+Those three numbers are the small camera rotation (roll/pitch/yaw) needed to
+line back up with the sign. \emph{Why does the antisymmetric part encode
+rotation?} Because a tiny rotation matrix is $I+S$ with $S$ skew-symmetric;
+subtracting $H^{\top}$ cancels the symmetric stretch part and leaves the
+rotation.
+
+\subsection{Stack into a 6-DOF twist, with gains}
+\[
+\text{twist}=\begin{bmatrix}\boldsymbol{\lambda}_v\odot\mathbf{e}_v\\
+\boldsymbol{\lambda}_\omega\odot\mathbf{e}_\omega\end{bmatrix}
+=[\,t_x,t_y,t_z,\;r_x,r_y,r_z\,],
+\]
+where $\odot$ is element-wise multiply (the gains scale each axis). The gains
+live in \texttt{config/hil/bench\_h\_vs.yaml}:
+$\boldsymbol{\lambda}_v=[1.0,1.0,0.0]$,
+$\boldsymbol{\lambda}_\omega=[0.0,0.4,0.0]$.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{From camera twist to drone motion (the body mapping)}
+
+\texttt{hvs\_controller.cpp} (lines 112--117) converts the camera twist into
+body velocities, after a \textbf{5-tick moving average} (averaging the last $5$
+computations kills jitter --- this is exactly why \texttt{h\_vs} has the
+smoothest commands in the benchmark):
+
+\begin{lstlisting}
+v.vx = std::max(0.0, k_fwd_ * (target_bbox_ratio_ - in.bbox_ratio)); // forward
+v.vy = -avg(0);   // camera "off to the side" -> body left/right
+v.vz = -avg(1);   // camera "up/down"          -> body up/down
+v.wz = -avg(4);   // camera yaw (e_w[1])       -> body yaw
+\end{lstlisting}
+
+Note that \texttt{vx} does \textbf{not} come from the homography --- it is a plain
+proportional law on bounding-box size (\texttt{bbox\_ratio}, the box height
+fraction, a stand-in for range). The next section explains \emph{why it has to
+be that way here}.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Why the simulator's box breaks the homography (the ``affine trap'')}
+\label{sec:affinetrap}
+
+This is the crux, and the issue flagged in the paper and report.
+
+In the benchmark, detection comes from an \textbf{oracle} that draws a
+\textbf{perfectly axis-aligned} rectangle (sides parallel to the image edges,
+never tilted). Mapping four axis-aligned corners to four axis-aligned corners can
+be satisfied \textbf{without any perspective} --- the solution is
+\textbf{affine}. From Section~3, affine means bottom row $[0,0,1]$, so after
+$H=K^{-1}GK$:
+\[
+H_{2,2}=1\quad\text{always.}
+\]
+Two consequences fall straight out of the formulas in Section~\ref{sec:law}.
+
+\paragraph{(i) No forward motion.}
+The depth component of the translation error is
+$\mathbf{e}_v[2]=H_{2,2}-1=0$, \emph{always}, no matter how far the drone is.
+The homography simply cannot sense or command range here, so the code bypasses
+it with the proportional $v_x=k_{\mathrm{fwd}}(\rho^{*}-\rho)$ (line 113). With a
+real, textured, tilted target the corners would \emph{not} be axis-aligned, $G$
+would be genuinely projective, $H_{2,2}\neq1$, and the homography would produce
+forward motion on its own.
+
+\paragraph{(ii) ``Lateral parking.''}
+For an affine $H$, the two horizontal error terms are
+\[
+\underbrace{\mathbf{e}_v[0]=H_{0,2}=\frac{c_x-c_{x0}}{f_x}}_{\text{slide
+sideways }(v_y)}
+\qquad
+\underbrace{\mathbf{e}_\omega[1]=H_{0,2}-H_{2,0}=\frac{c_x-c_{x0}}{f_x}-0}_{\text{yaw
+}(w_z)}.
+\]
+They are the \textbf{same number} --- the horizontal pixel offset of the sign.
+So the \emph{same} error drives both ``slide sideways'' and ``rotate.'' Rotating
+is the cheaper way to make the sign appear centered, so the drone yaws to face
+the sign from wherever it is --- and the instant the sign looks centered,
+\emph{both} corrections switch off together. Result: it parks slightly
+\textbf{to the side} of the sign, facing it diagonally, instead of squaring up
+in front.
+
+This is a degeneracy of the \emph{input} (a flat, untextured, axis-aligned box
+carries no perspective information to tell ``I'm off to the side'' apart from
+``I'm rotated''), \textbf{not a bug in the code}.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{The paper's symbols, decoded}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.4}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Symbol & Reads as & Plain meaning \\
+\midrule
+$\mathbf{G}$ & ``gee'' & pixel-space homography (desired $\to$ current corners) \\
+$\mathbf{K}$ & ``kay'' & camera intrinsics (focal lengths $+$ principal point) \\
+$H=K^{-1}GK$ & & same warp in real-world ray coords; $=I$ when on-target \\
+$\mathbf{m}^{*}$ & ``em star'' & desired reference ray $K^{-1}p^{*}=(0,0,1)$, straight ahead \\
+$\mathbf{e}_v=(H-I)\mathbf{m}^{*}$ & & translation error $=$ 3rd column of $H-I$ \\
+$\mathbf{e}_\omega=\vex(H-H^{\top})$ & & rotation error $=$ the 3 numbers of the skew part \\
+$H_{2,2}=1\Rightarrow e_{v,z}=0$ & & affine box $\Rightarrow$ no depth error $\Rightarrow$ no forward push \\
+$(c_x-c_{x0})/f_x$ & & horizontal pixel offset (drives both $v_y$ and $w_z$) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+When the paper calls the homography law \emph{image-based} yet says it
+\emph{``places it between pure image-based and pose-based control''}: it only
+ever measures things in the image (the four corners), but because $H=K^{-1}GK$
+secretly contains rotation $+$ scaled-translation structure, it borrows a little
+of the ``reconstruct the pose'' flavor --- hence ``between.''
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{File map}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{@{}p{0.45\textwidth}p{0.40\textwidth}c@{}}
+\toprule
+Concept & File & Lines \\
+\midrule
+Solve $G$ from 4 corners; build desired corners & \texttt{h\_vs\_servo/src/hvs\_controller.cpp} & 43--72 \\
+$H=K^{-1}GK$, $\mathbf{e}_v$, $\mathbf{e}_\omega$, twist & \texttt{h\_vs\_servo/src/homography\_2d\_vs.cpp} & 12--40 \\
+$\vex$ (read 3 numbers from skew matrix) & \texttt{homography\_2d\_vs.cpp} & 37--40 \\
+Twist $\to$ body velocities; 5-tick average & \texttt{hvs\_controller.cpp} & 87--117 \\
+Gains $\boldsymbol{\lambda}_v,\boldsymbol{\lambda}_\omega$, \texttt{k\_fwd}, buffer & \texttt{config/hil/bench\_h\_vs.yaml} & 1--19 \\
+Paper write-up $+$ affine-degeneracy caveats & \texttt{paper.tex} & \texttt{sec:vs\_arch}, \texttt{sec:vs\_discuss} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{One-paragraph recap}
+
+Staple a $1$ onto pixels so every transform is a $3\times3$ matrix. A
+\textbf{homography} is the matrix relating two views of a \textbf{flat plane};
+an \textbf{affine} transform is the crippled homography whose bottom row is
+$[0,0,1]$, so it cannot do perspective. \texttt{h\_vs} measures the homography
+$G$ from the four box corners, rewrites it as $H=K^{-1}GK$ (which equals the
+identity when the drone is on-target), and reads the \emph{position} error off
+the third column of $H-I$ and the \emph{orientation} error off the
+skew-symmetric part $H-H^{\top}$. Because the simulator's boxes are
+axis-aligned, the measured homography collapses to affine, which zeroes the
+depth term (no forward push from the homography $\to$ handled by a separate
+proportional law) and makes the sideways and yaw errors identical ($\to$ the
+controller parks beside the sign). With a real, textured, tilted target the full
+perspective returns and those degeneracies disappear.
+
+\end{document}

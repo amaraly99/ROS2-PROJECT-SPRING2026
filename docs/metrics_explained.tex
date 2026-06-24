@@ -1,0 +1,425 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{parskip}
+
+\geometry{margin=2.5cm}
+
+\definecolor{codebg}{rgb}{0.96,0.96,0.96}
+\definecolor{codekey}{rgb}{0.0,0.4,0.7}
+\definecolor{codestr}{rgb}{0.6,0.1,0.1}
+\definecolor{codecom}{rgb}{0.3,0.5,0.3}
+
+\lstset{
+  language=Python,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{codekey}\bfseries,
+  stringstyle=\color{codestr},
+  commentstyle=\color{codecom}\itshape,
+  backgroundcolor=\color{codebg},
+  frame=single,
+  framesep=4pt,
+  breaklines=true,
+  numbers=none,
+  showstringspaces=false,
+}
+
+\title{\textbf{Controller Evaluation Metrics}\\[4pt]
+  \large Equations, definitions, and code correspondence}
+\author{ROS2 HIL Visual Servoing Project}
+\date{2026}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\bigskip
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Setup and notation}
+
+All metrics are computed by \texttt{benchmarks/plot\_controller\_hil.py}, which
+reads a recorded rosbag and writes a \texttt{metrics.csv} file.  Nothing is
+measured live --- the drone flies once, then the bag is analysed offline.
+
+\subsection*{Coordinate frame}
+
+The simulator publishes ground-truth positions on two topics:
+\begin{itemize}
+  \item \texttt{/sim/drone\_pose} --- drone position $(x_d, y_d, z_d)$ at each timestep.
+  \item \texttt{/sim/target\_pose} --- target (sign) position $(x_T, y_T, z_T)$,
+        constant throughout a run.
+\end{itemize}
+
+\subsection*{Time origin}
+
+Every metric is measured \emph{from the moment the benchmark FSM enters the
+\texttt{APPROACHING} state} --- i.e.\ from the instant the controller takes
+over after the search phase.  This time is called $t = 0$.  The full run
+lasts until $t = T$ (the bag ends or the FSM transitions to \texttt{REACHED}).
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Target standoff distance \boldmath$d^*$}
+
+The regulation target is not zero distance --- the drone should stop at a
+specific standoff, not crash into the sign.  $d^*$ is derived from the
+camera's perspective model: when the target bounding box spans a fraction
+$\rho^*$ of the image height, the drone is exactly at standoff.
+
+\[
+  \boxed{d^* = \frac{f_y \, H}{\rho^* \, H_{\mathrm{img}}}}
+\]
+
+\begin{center}
+  \begin{tabular}{lll}
+    \toprule
+    Symbol & Code constant & Value \\
+    \midrule
+    $f_y$ & \texttt{FY} & 554.0 px (focal length, vertical) \\
+    $H$ & \texttt{KNOWN\_H} & 1.5 m (physical target height) \\
+    $\rho^*$ & \texttt{TARGET\_BBOX\_RATIO} & 0.55 (fraction of image height at stop) \\
+    $H_{\mathrm{img}}$ & \texttt{IMG\_H} & 480 px (image height) \\
+    $d^*$ & \texttt{STANDOFF} & $\approx 3.15$ m \\
+    \bottomrule
+  \end{tabular}
+\end{center}
+
+This comes directly from the pinhole camera projection:
+a target of height $H$ at distance $d$ projects to
+$h_{\mathrm{px}} = f_y H / d$ pixels.
+Setting $h_{\mathrm{px}} = \rho^* H_{\mathrm{img}}$ and solving for $d$ gives the formula above.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Distance and error signal}
+
+At each timestep, the 3-D Euclidean distance from the drone to the target is
+
+\[
+  d(t) = \bigl\| \mathbf{p}_T - \mathbf{p}_d(t) \bigr\|_2
+        = \sqrt{(x_T - x_d)^2 + (y_T - y_d)^2 + (z_T - z_d)^2}
+\]
+
+The \emph{regulation error} --- how far the drone is from the desired standoff
+--- is
+
+\[
+  e(t) = d(t) - d^*
+\]
+
+$e > 0$: drone is too far away.
+$e < 0$: drone has overshot past the standoff (closer than desired).
+$e = 0$: perfect standoff.
+
+\begin{lstlisting}
+dist3d = np.sqrt((tx - xs)**2 + (ty - ys)**2 + (tz - zs)**2)
+err = dist3d - STANDOFF
+\end{lstlisting}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Integral error metrics}
+
+These three metrics summarise total accumulated error over the whole run.
+They are computed by numerical quadrature (trapezoidal rule) over the
+post-engage trajectory.
+
+\subsection{IAE --- Integral of Absolute Error}
+
+\[
+  \mathrm{IAE} = \int_0^T |e(t)|\, dt
+\]
+
+The most natural summary of total error.  Units: m$\cdot$s.
+A fast controller with small steady-state error gets a low IAE.
+
+\subsection{ISE --- Integral of Squared Error}
+
+\[
+  \mathrm{ISE} = \int_0^T e(t)^2\, dt
+\]
+
+Squaring penalises large instantaneous errors more heavily than small ones.
+Units: m$^2\cdot$s.
+A controller that mostly stays close to $d^*$ but occasionally spikes will have
+a higher ISE relative to its IAE than a controller with a smooth, uniform
+approach.
+
+\subsection{ITAE --- Integral of Time-weighted Absolute Error}
+
+\[
+  \mathrm{ITAE} = \int_0^T t\,|e(t)|\, dt
+\]
+
+The time-weighting means errors that persist \emph{late} in the run are
+penalised much more than early errors (when the drone is still approaching).
+Units: m$\cdot$s$^2$.
+ITAE rewards controllers that settle quickly and stay settled.
+
+\begin{lstlisting}
+_trapz = np.trapezoid   # or np.trapz for older numpy
+iae  = _trapz(np.abs(err), tt)
+ise  = _trapz(err**2,      tt)
+itae = _trapz(np.abs(err) * tt, tt)
+\end{lstlisting}
+
+\subsection*{Comparison}
+
+\begin{center}
+  \begin{tabular}{lccc}
+    \toprule
+    & IAE & ISE & ITAE \\
+    \midrule
+    Penalises large spikes? & linear & quadratic & linear \\
+    Penalises late errors?  & equally & equally & more\\
+    Units                   & m$\cdot$s & m$^2\cdot$s & m$\cdot$s$^2$ \\
+    \bottomrule
+  \end{tabular}
+\end{center}
+
+The comparison tables in the report use \textbf{IAE} as the primary integral
+metric because it is the most interpretable: ``the drone accumulated $X$
+metre-seconds of distance error.''
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Settling time \boldmath$t_s$}
+
+Settling time is the first instant at which the error enters a tolerance band
+and \emph{stays there} for a hold period $T_{\mathrm{hold}}$.
+
+\[
+  \boxed{t_s = \min\bigl\{\, t \in [0,T] \;:\; |e(\tau)| \le \delta \;\; \forall\, \tau \in [t,\; t + T_{\mathrm{hold}}] \bigr\}}
+\]
+
+\begin{center}
+  \begin{tabular}{lll}
+    \toprule
+    Symbol & Code constant & Value \\
+    \midrule
+    $\delta$ & \texttt{SETTLE\_BAND} & 0.30 m \\
+    $T_{\mathrm{hold}}$ & \texttt{SETTLE\_HOLD} & 2.0 s \\
+    \bottomrule
+  \end{tabular}
+\end{center}
+
+The 2-second hold requirement filters out momentary dips through the band
+that are followed by further oscillation.
+If the drone never settles (e.g.\ it oscillates past $\delta$ indefinitely),
+$t_s$ is recorded as \texttt{nan}.
+
+\begin{lstlisting}
+SETTLE_BAND = 0.30   # metres
+SETTLE_HOLD = 2.0    # seconds
+
+settle = float('nan')
+for i in range(len(tt)):
+    if abs(err[i]) <= SETTLE_BAND:
+        j = i
+        while j < len(tt) and tt[j] - tt[i] < SETTLE_HOLD:
+            if abs(err[j]) > SETTLE_BAND:
+                break
+            j += 1
+        else:
+            settle = tt[i]; break
+\end{lstlisting}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Steady-state error \boldmath$e_{ss}$}
+
+Once the drone has (presumably) settled, we measure how accurately it holds
+the standoff.  The last 3 seconds of the run are used as the ``steady-state
+window'':
+
+\[
+  e_{ss} = \frac{1}{|W|} \int_{T-3}^{T} |e(t)|\, dt
+         \approx \mathrm{mean}\bigl(|e(t)|\bigr),\quad t \in [T-3,\, T]
+\]
+
+Units: metres.  A perfect hover at $d^*$ gives $e_{ss} = 0$.
+
+\begin{lstlisting}
+tail = err[tt >= (tt[-1] - 3.0)]
+ss_err = float(np.mean(np.abs(tail)))
+\end{lstlisting}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Overshoot}
+
+Overshoot is how far \emph{past} the standoff the drone lunged before the
+controller pulled it back.
+
+\[
+  \Delta_{\mathrm{os}} = \max\!\bigl(0,\; d^* - \min_{t} d(t)\bigr)
+\]
+
+If the drone never crosses $d^*$ (it approaches and stops without
+overshooting), $\Delta_{\mathrm{os}} = 0$.  Units: metres.
+
+\begin{lstlisting}
+overshoot = float(max(0.0, STANDOFF - float(np.min(dist3d))))
+\end{lstlisting}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Path metrics}
+
+\subsection{Path length \boldmath$L$}
+
+The total 3-D arc length of the drone's trajectory from $t=0$ to $t=T$:
+
+\[
+  L = \sum_{k=1}^{N-1}
+      \sqrt{(\Delta x_k)^2 + (\Delta y_k)^2 + (\Delta z_k)^2}
+\]
+
+where $(\Delta x_k, \Delta y_k, \Delta z_k) = \mathbf{p}_d(t_{k}) - \mathbf{p}_d(t_{k-1})$.
+Units: metres.
+
+\subsection{Path efficiency \boldmath$\eta$}
+
+How straight was the approach, as a ratio of ideal to actual travel:
+
+\[
+  \eta = \frac{d(0) - d^*}{L}
+\]
+
+The numerator $d(0) - d^*$ is the straight-line distance the drone
+\emph{needed} to cover (from its initial distance to the standoff ring).
+$L$ is what it actually flew.
+
+\begin{itemize}
+  \item $\eta = 1.0$: perfectly straight beeline to the standoff ring.
+  \item $\eta < 1.0$: path was longer than necessary (lateral wander, overshooting, circling).
+  \item $\eta > 1.0$: impossible in practice (would require the drone to appear
+        closer than $d^*$ at $t=0$, which the FSM design prevents).
+\end{itemize}
+
+\begin{lstlisting}
+seg      = np.sqrt(np.diff(xs)**2 + np.diff(ys)**2 + np.diff(zs)**2)
+path_len = float(np.sum(seg))
+straight = float(max(0.0, dist3d[0] - STANDOFF))
+path_eff = (straight / path_len) if path_len > 1e-6 else float('nan')
+\end{lstlisting}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Control effort}
+
+These metrics are computed from the \texttt{/cmd\_vel} topic
+(\texttt{geometry\_msgs/Twist}), using the linear velocity components
+$(v_x, v_y, v_z)$.
+
+\subsection{RMS command speed}
+
+The root-mean-square of the commanded linear speed over the run:
+
+\[
+  v_{\mathrm{rms}} = \sqrt{\frac{1}{N} \sum_{k=1}^{N} \bigl(v_{x,k}^2 + v_{y,k}^2 + v_{z,k}^2\bigr)}
+\]
+
+Units: m/s.  High $v_{\mathrm{rms}}$ means the controller commanded aggressive
+motion throughout.  The velocity clamp is 3.0 m/s, so $v_{\mathrm{rms}} = 3.0$
+would mean the controller was saturated for the entire run.
+
+\subsection{Total variation (control jerk)}
+
+Total variation measures how much the velocity command \emph{changes} between
+consecutive timesteps --- a proxy for jerk:
+
+\[
+  \mathrm{TV} = \sum_{k=1}^{N-1}
+      \sqrt{(\Delta v_{x,k})^2 + (\Delta v_{y,k})^2 + (\Delta v_{z,k})^2}
+\]
+
+where $\Delta v_{x,k} = v_{x,k} - v_{x,k-1}$, etc.
+Units: m/s (summed velocity increments).  A smooth controller produces small
+step-to-step changes; a chattery controller produces large ones.
+
+\begin{lstlisting}
+v   = np.sqrt(c[:,1]**2 + c[:,2]**2 + c[:,3]**2)
+rms_v = float(np.sqrt(np.mean(v**2)))
+
+dv       = np.sqrt(np.sum(np.diff(c[:,1:4], axis=0)**2, axis=1))
+total_var = float(np.sum(dv))
+\end{lstlisting}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Resource metrics}
+
+These are sampled by the benchmark harness into a \texttt{cpu.csv} file
+alongside the rosbag, then averaged.
+
+\subsection{CPU usage}
+
+\[
+  \overline{\mathrm{CPU}} = \frac{1}{N} \sum_{k=1}^{N} p_k
+\]
+
+where $p_k$ is the CPU percentage (\texttt{pcpu} column) at sample $k$.
+Expressed as \% of one core (so 100 = one full core, 400 = all four
+RPi5 cores fully used by this process).
+
+\subsection{Memory (RSS)}
+
+\[
+  \overline{M} = \frac{1}{N} \sum_{k=1}^{N} \frac{r_k}{1024}
+\]
+
+where $r_k$ is the resident set size in KB (\texttt{rss\_kb} column).
+Result is in MB.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Summary table}
+
+\begin{center}
+  \begin{tabular}{llll}
+    \toprule
+    Metric & Symbol & Units & Ideal \\
+    \midrule
+    Standoff target         & $d^*$                   & m                & fixed at $\approx$3.15 m \\
+    Settling time           & $t_s$                   & s                & small \\
+    Steady-state error      & $e_{ss}$                & m                & small \\
+    Overshoot               & $\Delta_\mathrm{os}$    & m                & 0 \\
+    IAE                     & $\mathrm{IAE}$          & m$\cdot$s        & small \\
+    ISE                     & $\mathrm{ISE}$          & m$^2\cdot$s      & small \\
+    ITAE                    & $\mathrm{ITAE}$         & m$\cdot$s$^2$    & small \\
+    Path length             & $L$                     & m                & small \\
+    Path efficiency         & $\eta$                  & dimensionless    & close to 1 \\
+    RMS command speed       & $v_\mathrm{rms}$        & m/s              & task-dependent \\
+    Total variation (jerk)  & $\mathrm{TV}$           & m/s              & small \\
+    CPU usage               & $\overline{\mathrm{CPU}}$ & \% of one core & small \\
+    Memory RSS              & $\overline{M}$          & MB               & small \\
+    \bottomrule
+  \end{tabular}
+\end{center}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Notes on interpretation}
+
+\paragraph{IAE vs.\ settling time.}
+These are not the same thing.  A controller can settle early but at a large
+steady-state error (low $t_s$, high $e_{ss}$, low IAE if settled quickly).
+Conversely, a controller that creeps slowly toward the target will have a
+high IAE even if it never overshoots.
+
+\paragraph{RMS speed and saturation.}
+IBVS shows $v_\mathrm{rms} \approx 2.38$ m/s, which is 79\% of the 3.0 m/s
+clamp.  This means IBVS was riding the velocity ceiling for a substantial
+fraction of the approach --- explaining both its fast settling time and its
+high total variation (jerk from repeatedly hitting and releasing the clamp).
+
+\paragraph{Path efficiency and h\_vs.}
+The \texttt{h\_vs} controller shows lower path efficiency than expected.
+This is a structural property of the affine homography controller: the
+yaw and lateral-translation error signals are degenerate (they reduce to the
+same pixel-centroid term), so the controller resolves yaw before it can
+translate laterally --- causing the drone to arc around rather than approach
+straight.  See \texttt{docs/homography\_explained.tex}, Section~9 for the
+derivation.
+
+\paragraph{Settling band width.}
+The $\pm 0.30$ m band is about 10\% of $d^* = 3.15$ m, which corresponds
+roughly to a $\pm$10\% bounding-box height variation --- visible but
+acceptable for outdoor signage approach.
+
+\end{document}

@@ -104,22 +104,31 @@ def main():
         mx = read_metrics(r)
         grouped.setdefault(ctrl, []).append((r.name, tr, mx))
 
-    # ── Fig 1: distance vs time overlay ──
+    # ── Fig 1: distance vs time — mean ± 1σ band per controller ──
+    # Runs have different lengths/sample times, so interpolate each onto a
+    # common time grid, then take mean and std across runs at each instant.
+    # np.interp holds endpoint values beyond a run's range (the held REACHED
+    # distance ≈ standoff), which is exactly the right behaviour here.
     fig, ax = plt.subplots(figsize=(9, 5))
-    for ctrl, items in grouped.items():
-        for i, (name, tr, _) in enumerate(items):
-            if tr is None:
-                continue
-            tt, dist = tr[0], tr[1]
-            ax.plot(tt, dist, color=COLORS.get(ctrl, 'gray'), alpha=0.8, lw=1.6,
-                    label=LABELS.get(ctrl, ctrl) if i == 0 else None)
-    ax.axhline(STANDOFF, color='green', ls='--', lw=1, label=f'standoff {STANDOFF:.2f} m')
-    ax.set_xlabel('time since engage (s)'); ax.set_ylabel('distance to target (m)')
-    ax.set_title('Approach: distance to target vs time (3 runs each)')
-    # Clip x-axis to the approach window — drop the long REACHED tail
     max_settle = max(
         (mx.get('settling_time_s', 0) for items in grouped.values() for _, _, mx in items),
         default=60.0)
+    t_grid = np.linspace(0, max_settle + 12, 300)
+    for ctrl, items in grouped.items():
+        curves = [np.interp(t_grid, tr[0], tr[1])
+                  for _, tr, _ in items if tr is not None]
+        if not curves:
+            continue
+        arr = np.vstack(curves)
+        mean = arr.mean(axis=0)
+        std = arr.std(axis=0, ddof=1) if arr.shape[0] > 1 else np.zeros_like(mean)
+        col = COLORS.get(ctrl, 'gray')
+        ax.plot(t_grid, mean, color=col, lw=2.2,
+                label=f'{LABELS.get(ctrl, ctrl)}  (mean, n={arr.shape[0]})')
+        ax.fill_between(t_grid, mean - std, mean + std, color=col, alpha=0.20)
+    ax.axhline(STANDOFF, color='green', ls='--', lw=1, label=f'standoff {STANDOFF:.2f} m')
+    ax.set_xlabel('time since engage (s)'); ax.set_ylabel('distance to target (m)')
+    ax.set_title('Approach: distance to target vs time (mean ± 1σ)')
     ax.set_xlim(0, max_settle + 12)
     ax.legend(); ax.grid(True, alpha=0.3)
     fig.tight_layout(); fig.savefig(out / 'cmp_distance.png', dpi=140); plt.close(fig)

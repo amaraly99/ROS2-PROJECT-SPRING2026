@@ -1,3 +1,5 @@
+> ⚠️ **SUPERSEDED** by the N=10 benchmark: [`reports/N10_all_controllers/REPORT.md`](../N10_all_controllers/REPORT.md) (2026-06-23, 10 runs/controller). This N=3 report is kept for history.
+
 # HIL Controller Benchmark — IBVS vs Proportional vs h_vs (N=3 each)
 
 **Date:** 2026-06-16 (TS1/TS2 rerun, 10:xx UTC) · 2026-06-22 (TS3 added)  
