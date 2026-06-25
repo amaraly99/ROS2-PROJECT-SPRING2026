@@ -45,16 +45,16 @@ bool ok = cv::solvePnP(object_pts, img_pts, K, cv::noArray(), rvec, tvec);
 if (!ok) return{};
 cv::Mat R;
 cv::Rodrigues(rvec, R);
-vpRotationMatrix Rvp(
-    R.at<double>(0,0), R.at<double>(0,1), R.at<double>(0,2),
-    R.at<double>(1,0), R.at<double>(1,1), R.at<double>(1,2),
-    R.at<double>(2,0), R.at<double>(2,1), R.at<double>(2,2));
+vpRotationMatrix Rvp;
+for(int i = 0; i < 3; i++)
+    for(int j = 0; j < 3; j++)
+        Rvp[i][j] = R.at<double>(i, j);
 
 vpTranslationVector tvp(
     tvec.at<double>(0), tvec.at<double>(1), tvec.at<double>(2)
 );
 
-vpHomogeneousMatrix cMo_current(Rvp, tvp);
+vpHomogeneousMatrix cMo_current(tvp, Rvp);
 
 vpHomogeneousMatrix cdMc = cMo_desired_.inverse() * cMo_current;
 ft_.buildFrom(cdMc); //build translation from desired
