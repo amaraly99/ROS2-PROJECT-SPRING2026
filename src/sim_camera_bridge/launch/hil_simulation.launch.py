@@ -29,6 +29,7 @@ CTRL_MAP = {
     'proportional': ('hil_servo',  'hil_servo_node',   'bench_proportional.yaml'),
     'ibvs':         ('visp_servo', 'visp_servo_node',  'bench_ibvs.yaml'),
     'h_vs':         ('h_vs_servo', 'h_vs_servo_node',  'bench_h_vs.yaml'),
+    'pbvs':         ('visp_pbvs_servo', 'visp_pbvs_node', 'bench_pbvs.yaml')
 }
 
 
@@ -126,7 +127,7 @@ def launch_setup(context, *args, **kwargs):
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('controller', default_value='proportional',
-            description='Servoing law: ibvs (TS1) | proportional (TS2) | h_vs (TS3)'),
+            description='Servoing law: ibvs (TS1) | proportional (TS2) | h_vs (TS3) | pbvs (TS4)'),
         DeclareLaunchArgument('detector', default_value='yolo',
             description='yolo — Hailo NPU via yolo_bridge; oracle — synthetic bbox from pose'),
         DeclareLaunchArgument('workspace',

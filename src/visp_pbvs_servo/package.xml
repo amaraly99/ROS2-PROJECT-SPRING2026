@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>visp_pbvs_servo</name>
+  <version>2.0.0</version>
+  <description>TS4 — Pose-Based Visual Servoing (ViSP vpServo, interaction matrix +
+  pseudo-inverse) as a ROS2 node. Shared FSM (servo_core) + PBVS control law.</description>
+  <maintainer email="amaraly304@gmail.com">team</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>yolo_msgs</depend>
+  <depend>servo_core</depend>
+  <depend>eigen</depend>
+  <depend>opencv2</depend>
+  <depend>libvisp-dev</depend>
+
+  <export><build_type>ament_cmake</build_type></export>
+</package>

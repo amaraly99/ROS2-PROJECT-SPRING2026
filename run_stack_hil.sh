@@ -70,7 +70,7 @@ sep()  { echo "━━━━━━━━━━━━━━━━━━━━━�
 # OpenCV source tree (/workspace/opencv) which is NOT a colcon package; building
 # it standalone dies with "Unknown CMake command ocv_define_module". We restrict
 # discovery to src/ (--base-paths src) and select only these leaves.
-STACK_PKGS="sim_camera_bridge ovcam_bridge yolo_bridge oracle_detector hil_servo visp_servo h_vs_servo ov2slam"
+STACK_PKGS="sim_camera_bridge ovcam_bridge yolo_bridge oracle_detector hil_servo visp_servo h_vs_servo ov2slam visp_pbvs_servo"
 
 # ── load_config: parse config/hil/stack/<name>.yaml (flat key: value only) ───
 load_config() {
