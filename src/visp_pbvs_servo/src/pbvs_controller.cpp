@@ -10,7 +10,7 @@ PBVSController::PBVSController(rclcpp::Node* node) : node_(node) {
 void PBVSController::init(const servo_core::ServoInputs& cfg) {
     sign_height_ = cfg.known_target_height;
     cam_.initPersProjWithoutDistortion(cfg.fx, cfg.fy, cfg.cx0, cfg.cy0);
-    servo_.setServo(vpServo::PBVS);
+    servo_.setServo(vpServo::EYEINHAND_CAMERA);
     servo_.setInteractionMatrixType(vpServo::CURRENT);
     servo_.setLambda(lambda_);
     servo_.addFeature(ft_);
