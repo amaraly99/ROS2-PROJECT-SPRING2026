@@ -2,5 +2,5 @@
 # Pass AFTER bench_fsm.yaml.
 /**:
   ros__parameters:
-    lambda: 0.5        # PBVS gain: v = -lambda * L^-1 * e
-    sign_width: 0.6    # physical sign width (m) — used for solvePnP 3D corners
+    lambda: 0.3    # lateral depth-scaled gain: vy = clamp(-lambda * tx_metric, +/-1.5)
+    k_fwd:  3.0    # forward bbox-ratio gain: vx = k_fwd * (target_ratio - bbox_ratio)
