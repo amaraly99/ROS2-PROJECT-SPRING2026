@@ -2,5 +2,9 @@
 # Pass AFTER bench_fsm.yaml.
 /**:
   ros__parameters:
+<<<<<<< HEAD
     lambda: 0.3    # lateral depth-scaled gain: vy = clamp(-lambda * tx_metric, +/-1.5)
+=======
+    lambda: 0.3    # lateral depth-scaled gain: vy = clamp(-lambda * tx_metric, ±1.5)
+>>>>>>> 907f36d (more changes)
     k_fwd:  3.0    # forward bbox-ratio gain: vx = k_fwd * (target_ratio - bbox_ratio)
