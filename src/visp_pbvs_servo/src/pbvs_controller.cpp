@@ -63,7 +63,7 @@ vpColVector v = servo_.computeControlLaw();
 servo_core::ServoVel vel;
 vel.vx =  v[2];   // camera Zc (forward) → body forward
 vel.vy = -v[0];   // camera Xc (right)   → body left (negate)
-vel.vz = -v[1];   // camera Yc (down)    → body up (negate)
+vel.vz = 0.0;     // altitude held by FSM pitch-return, not PBVS
 vel.wz = -v[5];   // camera wz           → body yaw-left (negate)
 return vel;
 
