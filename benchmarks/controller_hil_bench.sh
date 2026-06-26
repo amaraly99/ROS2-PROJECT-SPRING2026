@@ -40,8 +40,8 @@ CONTROLLER="${1:-}"
 RUN_NUM="${2:-1}"
 DURATION="${3:-0}"
 BENCHMARK_MODE="${4:-true}"
-[[ "$CONTROLLER" == "ibvs" || "$CONTROLLER" == "proportional" || "$CONTROLLER" == "h_vs" ]] \
-    || die "usage: $0 <ibvs|proportional|h_vs> [run_num] [duration_sec] [benchmark_mode]"
+[[ "$CONTROLLER" == "ibvs" || "$CONTROLLER" == "proportional" || "$CONTROLLER" == "h_vs" || "$CONTROLLER" == "pbvs" ]] \
+    || die "usage: $0 <ibvs|proportional|h_vs|pbvs> [run_num] [duration_sec] [benchmark_mode]"
 [[ "$RUN_NUM" =~ ^[0-9]+$ ]] || die "run_num must be a positive integer (got '$RUN_NUM')"
 case "$BENCHMARK_MODE" in
     true|false) ;;
@@ -112,6 +112,7 @@ case "$CONTROLLER" in
     ibvs)         NODE_EXEC=visp_servo_node ;;
     proportional) NODE_EXEC=hil_servo_node ;;
     h_vs)         NODE_EXEC=h_vs_servo_node ;;
+    pbvs)         NODE_EXEC=visp_pbvs_node ;;
 esac
 
 BAG_PID=; CPU_PID=; LAUNCH_PID=

@@ -91,6 +91,17 @@ def launch_setup(context, *args, **kwargs):
                         {'target_class': target_class,
                          'benchmark_mode': benchmark_mode}],
         ))
+    elif controller == 'pbvs':
+        nodes.append(Node(
+            package='visp_pbvs_servo',
+            executable='visp_pbvs_node',
+            name='visp_pbvs_node',
+            output='screen',
+            prefix=prefix,
+            parameters=[cfg('bench_fsm.yaml'), cfg('bench_pbvs.yaml'),
+                        {'target_class': target_class,
+                         'benchmark_mode': benchmark_mode}],
+        ))
 
     return nodes
 
