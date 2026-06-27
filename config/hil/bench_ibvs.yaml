@@ -2,7 +2,7 @@
 # Pass AFTER bench_fsm.yaml. Only the servoing-law parameter lives here.
 /**:
   ros__parameters:
-    lambda: 0.5            # IBVS gain:  v = -lambda * L^+ * (s - s*)
+    lambda: 0.3            # IBVS gain:  v = -lambda * L^+ * (s - s*)
     # Depth source for the interaction matrix:
     #   false → bbox depth (default; identical to TS2, fair comparison)
     #   true  → SLAM depth via /vo_pose + /point_cloud (fallback: bbox)
