@@ -56,6 +56,31 @@ MATLAB/Simulink (Windows)
 
 ---
 
+## Quick start — end-to-end run order
+
+Once (per machine): [Network setup](#network-setup-one-time-per-machine) + firewall rule.
+Then every session, in this order:
+
+1. **MATLAB (Windows):** run the [MATLAB startup sequence](#matlab-startup-sequence)
+   Steps 1–6 until `latest_frame` is publishing and `sim_camera_publisher_timer_LT` is running.
+2. **Pi:** set `network.matlab_host_ip` in your chosen `config/hil/stack/<name>.yaml`
+   (Step 0 below), then start the stack:
+   ```bash
+   ./run_stack_hil.sh --config full_ov2slam      # see the config table below for choices
+   ```
+3. **Verify** topics are flowing — [Verifying the stack](#verifying-the-stack)
+   (`/yolo/detections`, `/cmd_vel`, and `/slam/pose` for SLAM configs).
+4. **Benchmark mode only** (`ov2slam_oracle`, or any config with `--mode benchmark`):
+   when the script prints `recording …`, **Stop → Run** the Simulink model once for a clean
+   `t=0`. The run is recorded to `bags/run_<config>_<stamp>/`.
+5. **Stop:** `./run_stack_hil.sh stop` (tears down the main container, the SLAM sidecar,
+   `yolo_producer`, and SHM; finalizes any benchmark bag).
+
+> First time only / after code changes: build inside Docker with
+> `./run_stack_hil.sh build` (all stack packages) or `./run_stack_hil.sh build <pkg>`.
+
+---
+
 ## Prerequisites
 
 ### Both machines
@@ -274,38 +299,63 @@ Coordinate convention (Simulink-confirmed):
 
 ## Running on the RPi5
 
-### Start (CycloneDDS — primary)
+The stack is **config-driven**. Each `config/hil/stack/<name>.yaml` (nested schema —
+`full_ov2slam.yaml` is the commented reference) sets the MATLAB host IP, DDS, interface,
+detector, controller, SLAM, and the run **mode**. You pick one config; the script reads
+it via `scripts/parse_stack.py`. To add your own controller/detector, see
+[`docs/EXTENDING.md`](docs/EXTENDING.md).
+
+### Step 0 — set your Windows IP in the config (once)
+
+All shipped configs default to `network.matlab_host_ip: 192.168.1.201`. Edit that line in
+the config you intend to run to your actual Windows IP (from the Network setup section).
+
+### Step 1 — pick a config
+
+| Config | Detector | Controller | SLAM | Mode | Use |
+|---|---|---|---|---|---|
+| `default` | yolo | ibvs | off | scout | general scouting (needs Hailo) |
+| `oracle` | oracle | ibvs | off | scout | **no Hailo needed** — test the law |
+| `ibvs` / `h_vs` | yolo | ibvs / h_vs | off | scout | controller A/B |
+| `full_ov2slam` | yolo | proportional | OV2SLAM | scout | closest to real flight |
+| `ov2slam_ibvs` | yolo | ViSP IBVS | OV2SLAM | scout | SLAM + IBVS |
+| `ov2slam_oracle` | oracle | proportional | OV2SLAM | **benchmark** | **SLAM RMSE capture (TARGET 2)** |
+
+### Step 2 — run
 
 ```bash
-DDS=cyclonedds MATLAB_HOST_IP=192.168.1.42 ./run_stack_hil.sh
+./run_stack_hil.sh --config full_ov2slam
 ```
 
-Replace `192.168.1.42` with your actual Windows IP.
-
-**Optional flags** (append after the script name):
+**Override flags** (applied after the config; order-independent):
 
 ```bash
-# Skip OV2SLAM — faster startup; use for DDS and controller testing only
-DDS=cyclonedds MATLAB_HOST_IP=192.168.1.42 ./run_stack_hil.sh --no-slam
-
-# Enable debug image published back to MATLAB (+921 KB/frame extra traffic)
-DDS=cyclonedds MATLAB_HOST_IP=192.168.1.42 ./run_stack_hil.sh --debug-image
+./run_stack_hil.sh --config full_ov2slam --mode benchmark   # force-record a bag this run
+./run_stack_hil.sh --config full_ov2slam --no-slam          # skip the SLAM sidecar
+./run_stack_hil.sh --config ibvs        --debug-image       # publish /visp/debug_image back to MATLAB
 ```
+
+> **scout vs benchmark.** *scout* engages on boot (live flight / demo). *benchmark* makes
+> the controller FSM wait for a clean Simulink reset (t=0) **and** records a bag of the
+> metric topics to `bags/run_<config>_<stamp>/` for offline RMSE. When the script prints
+> `recording …`, Stop→Run the Simulink sim once to start the clean run.
 
 ### What the script does (in order)
 
 | Step | Action |
 |---|---|
-| Pre-flight | Checks `taskset`, `envsubst`, `/dev/hailo0`. Falls back to default `MATLAB_HOST_IP=192.168.56.1` with a warning if unset. |
-| IP detection | `ip route get $MATLAB_HOST_IP` → auto-detects `PI_LOCAL_IP` and `PI_INTERFACE`. |
-| Kernel tuning | Sets `net.core.rmem_max=16 MB`, `net.ipv4.ipfrag_high_thresh=32 MB` (idempotent). 640×480 bgr8 fragments into ~660 UDP datagrams at MTU 1500; default kernel settings cap receive rate near 13 Hz. |
-| DDS profile | `envsubst` substitutes `${MATLAB_HOST_IP}` and `${PI_INTERFACE}` in `config/hil/cyclonedds_hil.xml` → `/tmp/cyclonedds_hil.resolved.xml`. |
-| Cleanup | Kills any stale Docker container and SHM files from prior runs. |
-| Docker | `docker run -d --net=host --ipc=host --privileged` mounts workspace at `/workspace`. |
-| Launch | `ros2 launch sim_camera_bridge hil_simulation.launch.py slam:=false` starts `sim_camera_bridge`, `ovcam_bridge`, `yolo_bridge`, `hil_servo_node` inside Docker. |
-| SHM wait | Waits up to 10 s for `/dev/shm/ovcam_frames`; fixes permissions to 0666. |
-| yolo_producer | `taskset -c 1 python3 -u yolo_producer.py --conf 0.20 --no-image` on the host. |
-| OV2SLAM watchdog | After 15 s delay, starts `ov2slam_node` on cores 2–3 inside Docker, auto-restarting on exit. |
+| Parse config | `eval "$(python3 scripts/parse_stack.py <cfg> --emit-env)"` → all module vars (detector/controller/slam + per-module CPU pins + MODE). |
+| Pre-flight | Checks `taskset`, `envsubst`, and `/dev/hailo0` (yolo only). |
+| IP / interface | Uses `network.interface` from the config, else `ip route get $MATLAB_HOST_IP` auto-detect. |
+| Kernel tuning | `net.core.rmem_max=16 MB`, `net.ipv4.ipfrag_high_thresh=32 MB` (idempotent). 640×480 frames fragment into ~660 UDP datagrams; stock kernel caps near 13 Hz. |
+| DDS profile | `envsubst` resolves `config/hil/<dds>_hil.xml` → `/tmp/<dds>_hil.resolved.xml`. |
+| Cleanup | Removes stale main container, **any `slam_*` sidecar**, SHM files. |
+| Docker | `docker run -d --net=host --ipc=host --privileged` main container, workspace at `/workspace`. |
+| Launch | `ros2 launch … hil_simulation.launch.py slam:=false controller:=… detector:=… benchmark_mode:=… controller_cpu:=… detector_cpu:=…` → `sim_camera_bridge`, `ovcam_bridge`, the detector, the controller. |
+| SHM wait | Waits for `/dev/shm/ovcam_frames`; fixes permissions to 0666. |
+| Detector (host) | yolo only: `taskset -c $DETECTOR_HOST_CPU python3 -u yolo_producer.py --conf 0.20 --no-image`. oracle needs no host process. |
+| **SLAM sidecar** | If `slam.enabled`: `docker run -d --name slam_<algo> --restart <policy> … taskset -c <cpu> <command> --ros-args <remaps>`. The startup delay runs **inside** the container. Replaces the old bash watchdog. |
+| **Recording** | benchmark mode only: `ros2 bag record` of `/cmd_vel /sim/drone_pose /sim/target_pose /sim/heartbeat /bench/state /yolo/detections` (+ `/slam/pose /tf /tf_static` when SLAM on) → `bags/run_<config>_<stamp>/`. |
 
 ### Stop
 
@@ -313,8 +363,9 @@ DDS=cyclonedds MATLAB_HOST_IP=192.168.1.42 ./run_stack_hil.sh --debug-image
 ./run_stack_hil.sh stop
 ```
 
-Kills the Docker container, `yolo_producer`, and clears `/dev/shm/ovcam_frames`,
-`/dev/shm/yolo_shm`, and both semaphores.
+Removes the main Docker container **and any `slam_*` sidecar** (force-removed because they
+use `--restart`), kills `yolo_producer`, clears the SHM files and semaphores, and finalizes
+any in-progress benchmark bag.
 
 ### Rate check
 
@@ -322,9 +373,10 @@ Kills the Docker container, `yolo_producer`, and clears `/dev/shm/ovcam_frames`,
 ./run_stack_hil.sh hz /sim/camera/image_raw
 ./run_stack_hil.sh hz /yolo/detections
 ./run_stack_hil.sh hz /cmd_vel
+./run_stack_hil.sh hz /slam/pose            # SLAM sidecar output (after ~15 s startup delay)
 ```
 
-Runs `ros2 topic hz` inside the container with the CycloneDDS profile already loaded.
+Runs `ros2 topic hz` inside the container with the DDS profile already loaded.
 
 ---
 
@@ -400,6 +452,10 @@ ros2 topic echo /cmd_vel --once
 
 # Detection stream
 ros2 topic echo /yolo/detections --field detections | head -20
+
+# SLAM pose (SLAM configs only) — starts ~15 s after launch, once the drone moves
+sudo docker ps --format '{{.Names}}' | grep slam_   # sidecar container is up
+ros2 topic hz /slam/pose
 ```
 
 **Expected log lines** (`/tmp/hil_launch.log`):
@@ -454,9 +510,10 @@ The FastDDS profile (`config/hil/fastrtps_hil.xml`) uses two UDPv4 transports:
 
 | File | Content |
 |---|---|
-| `/tmp/hil_launch.log` | `ros2 launch` output — `sim_camera_bridge`, `ovcam_bridge`, `yolo_bridge`, `hil_servo_node` |
+| `/tmp/hil_launch.log` | `ros2 launch` output — `sim_camera_bridge`, `ovcam_bridge`, detector, controller |
 | `/tmp/yolo_producer.log` | Host `yolo_producer.py` — per-stage timing, FPS, Hailo NPU init status |
-| `/tmp/ov2slam_hil.log` | OV2SLAM watchdog — restart events, SLAM init and tracking status |
+| `sudo docker logs slam_ov2slam` | SLAM sidecar — startup-delay, SLAM init and tracking status (replaces the old `/tmp/ov2slam_hil.log`) |
+| `bags/run_<config>_<stamp>/` | benchmark mode only — recorded bag + `meta.txt` + `bag_record.log` (the RMSE input) |
 
 ---
 
@@ -472,9 +529,16 @@ The FastDDS profile (`config/hil/fastrtps_hil.xml`) uses two UDPv4 transports:
 - **Unicast-only, same L2 required.** `AllowMulticast=false` on the Pi means both
   machines must be on the same Ethernet switch (or VLAN). Cross-subnet routing will
   not work without explicit firewall holes on both ends for the DDS UDP port ranges.
-- **OV2SLAM deferred 15 s.** The watchdog deliberately waits 15 s before launching
-  OV2SLAM so the drone has time to begin motion (parallax required for init). If
-  SLAM does not initialise after the drone starts moving, check `/tmp/ov2slam_hil.log`.
+- **SLAM sidecar deferred 15 s.** The SLAM container waits 15 s (its `startup_delay_sec`,
+  run as a `sleep` inside the container) before launching the SLAM node so the drone has
+  time to begin motion (parallax required for init). It auto-restarts via Docker's
+  `--restart` policy (no bash watchdog). If SLAM does not initialise after the drone
+  starts moving, check `sudo docker logs slam_ov2slam`.
+- **SLAM pose topic is `/slam/pose`, not `/vo_pose`.** The sidecar remaps the algo-native
+  output (`vo_pose` for OV2SLAM) onto the canonical `/slam/pose`, so the pipeline never
+  needs to know which SLAM is running. In benchmark mode `/slam/pose` is recorded into the
+  Pi-side bag for RMSE; the MATLAB `/vo_pose` subscriber from the legacy flow is no longer
+  fed (pose lives in the bag instead).
 - **Docker SHM permissions.** `sim_camera_bridge` runs as root inside Docker and
   creates SHM with 0644. `run_stack_hil.sh` automatically fixes this to 0666 so the
   host-user `yolo_producer` can access it. If you restart Docker manually, re-run
@@ -498,7 +562,10 @@ The FastDDS profile (`config/hil/fastrtps_hil.xml`) uses two UDPv4 transports:
 | `config/hil/fastrtps_hil.xml` | FastDDS profile (alternate) — dual-transport (`eth0` + loopback). |
 | `config/hil/fastrtps_matlab.xml` | FastDDS profile template for the MATLAB Windows side — edit with real IPs before use. |
 | `config/hil/bag_qos_overrides.yaml` | QoS overrides for `ros2 bag play` replay. |
-| `run_stack_hil.sh` | Bash wrapper — Docker + DDS env + `ros2 launch` + native `yolo_producer` + OV2SLAM watchdog. |
+| `run_stack_hil.sh` | Bash wrapper — parses the stack config, Docker + DDS env + `ros2 launch` + native `yolo_producer` + SLAM sidecar (`docker run -d --restart`) + benchmark recording. |
+| `scripts/parse_stack.py` | Flattens a nested `config/hil/stack/<name>.yaml` to shell-safe `KEY=value` env vars for `run_stack_hil.sh` to `eval`. |
+| `config/hil/stack/*.yaml` | Nested stack configs (one per detector/controller/SLAM/mode combination). `full_ov2slam.yaml` is the commented schema reference. |
+| `docs/EXTENDING.md` | How to add a new controller (`CTRL_MAP`) or detector (`DET_MAP`) — the modularity guide. |
 | `SIM_HIL.md` | This file. |
 | `matlab/hil_ros_init_LT.m` | MATLAB session init — reads `RMW_IMPLEMENTATION` from env, creates `ros2node`, all publishers/subscribers, 20 Hz state timer. Run once per session. |
 | `matlab/sim_camera_publisher_timer_LT.m` | Rate-configurable timer publisher — reads `latest_frame`, RGB→BGR, sparse checksum dedup, sends `sensor_msgs/Image` to `/sim/camera/image_raw`. |

@@ -61,7 +61,10 @@ def launch_setup(context, *args, **kwargs):
 
     cfg = lambda name: f'{workspace}/config/hil/{name}'
     # taskset prefix for a node, or None when the cpu arg is empty (no pinning).
-    pfx = lambda cpu: ['taskset', '-c', cpu] if cpu else None
+    # MUST be a space-separated STRING — launch_ros concatenates a list with NO
+    # spaces (['taskset','-c','0'] → 'taskset-c0', a bogus command). Matches the
+    # inline ov2slam node's prefix='taskset -c 2,3'.
+    pfx = lambda cpu: f'taskset -c {cpu}' if cpu else None
 
     nodes = []
 

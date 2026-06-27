@@ -430,6 +430,7 @@ if [[ "$SLAM_ENABLED" == "true" ]]; then
     # docker run -d prints the container ID (or an error) to the terminal; the SLAM
     # node's own stdout/stderr is reachable via `docker logs ${SLAM_CONTAINER}`.
     sudo docker run -d \
+        --entrypoint "" \
         --name "$SLAM_CONTAINER" \
         --restart "${SLAM_RESTART:-no}" \
         --net=host --ipc=host --privileged \
