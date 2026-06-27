@@ -13,7 +13,8 @@
 namespace visp_servo {
 
 IBVSController::IBVSController(rclcpp::Node* node) : node_(node) {
-    lambda_         = node_->declare_parameter<double>("lambda", 0.5);
+    lambda_         = node_->declare_parameter<double>("lambda", 0.3);
+    k_fwd_          = node_->declare_parameter<double>("k_fwd",   3.0);
     use_slam_depth_ = node_->declare_parameter<bool>("use_slam_depth", false);
 
     // Pick the depth module. Adding SLAM is exactly this branch + its subs.
@@ -23,7 +24,8 @@ IBVSController::IBVSController(rclcpp::Node* node) : node_(node) {
         depth_ = std::make_unique<BboxDepthSource>();
 
     RCLCPP_INFO(node_->get_logger(),
-        "IBVSController (TS1): lambda=%.2f, depth='%s'", lambda_, depth_->name());
+        "IBVSController (TS1): lambda=%.2f k_fwd=%.2f depth='%s'",
+        lambda_, k_fwd_, depth_->name());
 }
 
 void IBVSController::init(const servo_core::ServoInputs& cfg) {
@@ -57,15 +59,19 @@ servo_core::ServoVel IBVSController::computeApproach(const servo_core::ServoInpu
 
     // current features
     Corners cur = box_from_center(in.cx, in.cy, in.bw, in.bh);
-    // desired features (centred, target height, same aspect)
-    Corners des = centered_box(image_width_, image_height_, target_bbox_ratio_, aspect);
-    double  Z_des = depth_for_box_height(cam_, known_height_, des.y2 - des.y1);
+    // desired = same size as current, centred → error is CENTERING only (no size error).
+    // Size/range is handled by the proportional vx term below, not by IBVS.
+    // This prevents size-error dominance from collapsing the yaw/lateral channels in L^+.
+    Corners des = centered_box(image_width_, image_height_, in.bbox_ratio, aspect);
 
     try {
-        update_corner_features(cam_, cur, Z_cur,  s_tl_,   s_tr_,   s_br_,   s_bl_);
-        update_corner_features(cam_, des, Z_des,  s_tl_d_, s_tr_d_, s_br_d_, s_bl_d_);
+        update_corner_features(cam_, cur, Z_cur, s_tl_,   s_tr_,   s_br_,   s_bl_);
+        update_corner_features(cam_, des, Z_cur, s_tl_d_, s_tr_d_, s_br_d_, s_bl_d_);
         vpColVector v = servo_.computeControlLaw();          // v = -lambda*L^+*(s-s*)
-        return camera_twist_to_body(v);
+        auto vel = camera_twist_to_body(v);
+        // Proportional approach: IBVS owns centering (vy/vz/wz); this owns range.
+        vel.vx = k_fwd_ * std::max(0.0, target_bbox_ratio_ - in.bbox_ratio);
+        return vel;
     } catch (const vpException& e) {
         RCLCPP_WARN_THROTTLE(node_->get_logger(), *node_->get_clock(), 2000,
             "IBVS computeControlLaw failed: %s — cmd 0", e.what());

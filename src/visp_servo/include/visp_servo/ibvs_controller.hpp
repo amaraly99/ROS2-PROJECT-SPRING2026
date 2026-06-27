@@ -46,6 +46,7 @@ private:
     bool               initialized_ = false;
 
     double target_bbox_ratio_ = 0.55;
+    double k_fwd_             = 3.0;
     int    image_width_  = 640;
     int    image_height_ = 480;
     double known_height_ = 1.5;

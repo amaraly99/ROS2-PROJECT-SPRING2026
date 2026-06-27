@@ -71,8 +71,23 @@ step and was skipped. Correct order: lambda first → MEAN if needed → not bot
 ## Open TODOs
 
 - **TODO-I**: ~~RESOLVED~~ Pi test confirmed lambda=0.3 reduced severity but oscillation
-  persisted → `vpServo::MEAN` applied (step 2). Retest on Pi pending.
-- **TODO-J**: Verify `s_tl_d_` desired features have `Z_des` explicitly set (not ViSP
-  default Z=1.0). Check `ibvs_controller.cpp` `update_corner_features` call for desired
-  corners — `Z_des` is computed via `depth_for_box_height(cam_, known_height_, des.y2-des.y1)`.
-  Confirm `known_target_height` is set correctly in `bench_fsm.yaml`.
+  persisted → `vpServo::MEAN` applied (step 2). Oscillation persisted → decoupled fix
+  applied (step 3, see below). Retest on Pi pending.
+- **TODO-J**: ~~RESOLVED~~ `Z_des = Z_cur` in decoupled fix; Z is no longer computed
+  from desired box height at all.
+
+### Step 3 — Decoupled approach (applied after MEAN+lambda still oscillated)
+
+**Root cause confirmed from Pi logs**: at ratio=0.042, `vx=+152 m/s` (13× size mismatch
+dominates L^+), `wz=+0.000` throughout 18s approach (`yaw=6.50` constant across all
+diag ticks). IBVS assigns near-zero weight to Wy (yaw) channel because size error vector
+is orthogonal to yaw in L^+ — not a noise problem, a structural one.
+
+**Fix (critic: do not merge wz override → re-diagnose → decouple)**:
+- Change desired features from `centered_box(target_bbox_ratio)` → `centered_box(in.bbox_ratio)`:
+  desired = same size as current, centred → feature error is CENTERING only, zero size error.
+  L^+ is now well-conditioned; vy/vz/wz get proper budget.
+- `vel.vx = k_fwd_ * max(0, target_bbox_ratio - bbox_ratio)`: proportional range control,
+  decoupled from IBVS centering.
+- `k_fwd: 3.0` added to `bench_ibvs.yaml`; `lambda` default baked to 0.3 in constructor.
+- `Z_des = Z_cur` (trivially, since desired box = current size).
