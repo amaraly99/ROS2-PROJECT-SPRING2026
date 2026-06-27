@@ -1,5 +1,7 @@
-# Full stack — YOLO + Proportional + OV2SLAM. Closest to real flight. Requires Hailo HAT.
-# Lean alias of full_ov2slam.yaml (which is the fully-commented schema reference).
+# Integration test — OV2SLAM + YOLO + ViSP IBVS (scout).
+# Verifies the SLAM sidecar runs alongside the ViSP controller. Requires Hailo HAT.
+# SLAM stays decoupled: it only publishes /slam/pose for recording/eval (no controller
+# subscribes). (Nested schema; see full_ov2slam.yaml for the fully-commented reference.)
 mode: scout
 
 network:
@@ -17,7 +19,7 @@ detector:
     confidence: 0.20
 
 controller:
-  type: proportional
+  type: ibvs
   cpu:  "0"
 
 slam:

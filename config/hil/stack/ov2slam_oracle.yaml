@@ -1,6 +1,9 @@
-# Full stack — YOLO + Proportional + OV2SLAM. Closest to real flight. Requires Hailo HAT.
-# Lean alias of full_ov2slam.yaml (which is the fully-commented schema reference).
-mode: scout
+# SLAM RMSE capture — OV2SLAM + ORACLE detector + Proportional controller (BENCHMARK).
+# This is the TARGET-2 config: oracle detector + proportional controller drive a clean,
+# repeatable approach while OV2SLAM runs; benchmark mode records /slam/pose vs the GT
+# /sim/drone_pose into bags/run_ov2slam_oracle_<stamp>/ for offline ATE/RMSE.
+# No Hailo HAT needed (oracle replaces YOLO). See full_ov2slam.yaml for the schema.
+mode: benchmark
 
 network:
   matlab_host_ip: 192.168.1.201
@@ -9,12 +12,8 @@ network:
   ros_domain_id:  0
 
 detector:
-  type:     yolo
-  cpu:      "0"
-  host_cpu: "1"
-  yolo:
-    hef:        /workspace/models/yolo26n_10h.hef
-    confidence: 0.20
+  type: oracle
+  cpu:  "0"
 
 controller:
   type: proportional

@@ -21,27 +21,37 @@
 #   Core 2,3   OV2SLAM
 #
 # Usage:
-#   ./run_stack_hil.sh --config <name>        # load config/hil/stack/<name>.yaml
+#   ./run_stack_hil.sh --config <name>        # load config/hil/stack/<name>.yaml (NESTED)
+#   ./run_stack_hil.sh --config <name> --mode benchmark    # override the config's mode
 #   ./run_stack_hil.sh [--no-slam] [--debug-image]    # raw flags (no config)
 #   ./run_stack_hil.sh build [pkg]            # colcon build inside Docker, then exit
 #   ./run_stack_hil.sh stop
 #   ./run_stack_hil.sh hz [topic]             # rate check with HIL DDS profile loaded
 #
-#   --config <name>   read config/hil/stack/<name>.yaml (sets all vars below)
+#   --config <name>   read config/hil/stack/<name>.yaml via scripts/parse_stack.py
+#   --mode <m>        override config mode: benchmark | scout
 #   --build           colcon build all HIL stack packages first, then launch
-#   --no-slam         override: skip OV2SLAM even if config says slam: true
+#   --no-slam         override: skip the SLAM sidecar even if config enables it
 #   --debug-image     override: publish /visp/debug_image (921 KB/frame extra)
 #
-# Config files (config/hil/stack/<name>.yaml) set:
-#   matlab_host_ip, dds, ros_domain_id, controller, detector, slam, debug_image
-#   interface  — Pi network interface (e.g. wlan0, eth0). Omit to auto-detect from routing.
+# Config is the NESTED schema (config/hil/stack/full_ov2slam.yaml is the reference):
+#   mode (benchmark|scout), network{matlab_host_ip,interface,dds,ros_domain_id},
+#   detector{type,cpu,host_cpu,topics,yolo}, controller{type,cpu,topics},
+#   slam{enabled,type,image,container_name,cpu,startup_delay_sec,restart,command,
+#        topics,remap}.  parse_stack.py flattens it to the env vars consumed below.
+#
+#   scout      engage on boot (live flight / demo). No recording.
+#   benchmark  FSM waits for a clean sim reset (t=0); records bags/run_<cfg>_<stamp>/
+#              for offline RMSE (controller approach and/or SLAM pose vs GT).
 #
 # Available configs:
-#   default     YOLO + proportional, no SLAM   (safe general-purpose default)
-#   ibvs        YOLO + IBVS,         no SLAM   (fastest settle ~20 s)
-#   h_vs        YOLO + h_vs,         no SLAM   (smoothest commands)
-#   oracle      oracle detector + IBVS, no SLAM (no Hailo HAT needed)
-#   full        YOLO + proportional, SLAM on    (closest to real flight)
+#   default        YOLO + proportional, no SLAM   (safe general-purpose default)
+#   ibvs           YOLO + IBVS,         no SLAM   (fastest settle ~20 s)
+#   h_vs           YOLO + h_vs,         no SLAM   (smoothest commands)
+#   oracle         oracle detector + IBVS, no SLAM (no Hailo HAT needed)
+#   full_ov2slam   YOLO + proportional + OV2SLAM   (closest to real flight)
+#   ov2slam_ibvs   YOLO + ViSP IBVS + OV2SLAM
+#   ov2slam_oracle oracle + proportional + OV2SLAM, benchmark mode (SLAM RMSE capture)
 #
 # Env vars (used as fallback when no --config; can still override after config):
 #   MATLAB_HOST_IP   — Windows host IP for unicast DDS discovery
@@ -72,7 +82,11 @@ sep()  { echo "━━━━━━━━━━━━━━━━━━━━━�
 # discovery to src/ (--base-paths src) and select only these leaves.
 STACK_PKGS="sim_camera_bridge ovcam_bridge yolo_bridge oracle_detector hil_servo visp_servo h_vs_servo ov2slam visp_pbvs_servo"
 
-# ── load_config: parse config/hil/stack/<name>.yaml (flat key: value only) ───
+# ── load_config: parse NESTED config/hil/stack/<name>.yaml via parse_stack.py ─
+# The Python parser flattens the nested schema to shell-safe KEY=value lines
+# (MODE, MATLAB_HOST_IP, DDS, CONTROLLER[_CPU], DETECTOR[_CPU/_HOST_CPU],
+#  SLAM_ENABLED/_TYPE/_IMAGE/_CONTAINER/_CPU/_DELAY/_RESTART/_COMMAND/_REMAPS, …).
+# Every value is shlex-quoted so spaces in SLAM_COMMAND/SLAM_REMAPS survive eval.
 load_config() {
     local name="$1"
     local cfg="${WS}/config/hil/stack/${name}.yaml"
@@ -83,35 +97,17 @@ load_config() {
         die "Config '${name}' not found at ${cfg}\n  Available: ${available}"
     fi
     log "Config: ${cfg}"
-    local key val
-    while IFS= read -r line; do
-        [[ "$line" =~ ^[[:space:]]*# ]] && continue      # comment
-        [[ -z "${line//[[:space:]]/}" ]] && continue      # blank
-        key="${line%%:*}"
-        val="${line#*:}"
-        # trim surrounding whitespace
-        key="${key#"${key%%[![:space:]]*}"}"; key="${key%"${key##*[![:space:]]}"}"
-        val="${val#"${val%%[![:space:]]*}"}"; val="${val%"${val##*[![:space:]]}"}"
-        case "$key" in
-            matlab_host_ip) MATLAB_HOST_IP="$val" ;;
-            dds)            DDS="$val" ;;
-            ros_domain_id)  ROS_DOMAIN_ID="$val" ;;
-            controller)     CONTROLLER="$val" ;;
-            detector)       DETECTOR="$val" ;;
-            interface)      PI_INTERFACE="$val" ;;
-            slam)           [[ "$val" == "true" ]] && SLAM_ON=true  || SLAM_ON=false ;;
-            debug_image)    [[ "$val" == "true" ]] && DEBUG_IMAGE_ON=true || DEBUG_IMAGE_ON=false ;;
-            *) log "WARNING: unknown config key '${key}' in ${name}.yaml" ;;
-        esac
-    done < "$cfg"
+    eval "$(python3 "${WS}/scripts/parse_stack.py" "$cfg" --emit-env)" \
+        || die "parse_stack.py failed on ${cfg} (is pyyaml installed? is the YAML valid?)"
 }
 
 # ── Parse flags (all args; order doesn't matter) ──────────────────────────────
-SLAM_ON=true
+SLAM_ENABLED=true
 DEBUG_IMAGE_ON=false
 CONFIG_NAME=""
 _NO_SLAM_FLAG=false
 _DEBUG_FLAG=false
+_MODE_OVERRIDE=""
 
 _BUILD_FIRST=false
 
@@ -121,6 +117,10 @@ while [[ $_i -le $# ]]; do
         --no-slam)     _NO_SLAM_FLAG=true ;;
         --debug-image) _DEBUG_FLAG=true ;;
         --build)       _BUILD_FIRST=true ;;
+        --mode)
+            _i=$((_i + 1))
+            [[ $_i -le $# ]] || die "--mode requires an argument (benchmark|scout)"
+            _MODE_OVERRIDE="${!_i}" ;;
         --config)
             _i=$((_i + 1))
             [[ $_i -le $# ]] || die "--config requires a name argument"
@@ -129,18 +129,26 @@ while [[ $_i -le $# ]]; do
     _i=$((_i + 1))
 done
 
-# Load config file (sets MATLAB_HOST_IP, DDS, CONTROLLER, DETECTOR, SLAM_ON, etc.)
+# Load config file (sets MODE, MATLAB_HOST_IP, DDS, CONTROLLER, DETECTOR,
+# SLAM_ENABLED, and all the *_CPU / SLAM_* vars consumed below).
 [[ -n "$CONFIG_NAME" ]] && load_config "$CONFIG_NAME"
 
 # CLI flags override config values
-[[ "$_NO_SLAM_FLAG" == "true" ]] && SLAM_ON=false
-[[ "$_DEBUG_FLAG"   == "true" ]] && DEBUG_IMAGE_ON=true
+[[ "$_NO_SLAM_FLAG"    == "true" ]] && SLAM_ENABLED=false
+[[ "$_DEBUG_FLAG"      == "true" ]] && DEBUG_IMAGE_ON=true
+[[ -n "$_MODE_OVERRIDE"          ]] && MODE="$_MODE_OVERRIDE"
 
 # Env-var defaults for anything not set by config or caller
+MODE="${MODE:-scout}"                      # benchmark | scout
 DDS="${DDS:-fastrtps}"
 ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-0}"
-CONTROLLER="${CONTROLLER:-proportional}"   # ibvs | proportional | h_vs
+CONTROLLER="${CONTROLLER:-proportional}"   # ibvs | proportional | h_vs | pbvs
 DETECTOR="${DETECTOR:-yolo}"               # yolo | oracle
+
+case "$MODE" in
+    benchmark|scout) ;;
+    *) die "Unknown MODE='${MODE}'. Valid: benchmark | scout" ;;
+esac
 
 # ── build [pkg] — colcon build inside a throwaway container ──────────────────
 # Artifacts land in /workspace/install/ (host filesystem via volume mount) and
@@ -173,6 +181,10 @@ if [[ "$OPT" == "stop" ]]; then
     log "Stopping HIL stack..."
     sudo docker kill ros2_perception_stack 2>/dev/null || true
     sudo docker rm  ros2_perception_stack 2>/dev/null || true
+    # SLAM sidecars use --restart, so a plain kill is not enough: force-remove any
+    # container whose name starts with 'slam_' (the schema mandates that prefix).
+    _slam_cids=$(sudo docker ps -aq --filter 'name=^slam_' 2>/dev/null)
+    [[ -n "$_slam_cids" ]] && sudo docker rm -f $_slam_cids 2>/dev/null || true
     sudo pkill -f yolo_producer 2>/dev/null || true
     sudo rm -f /dev/shm/ovcam_frames /dev/shm/yolo_shm \
                /dev/shm/sem.ovcam_ready /dev/shm/sem.yolo_ready 2>/dev/null || true
@@ -200,8 +212,8 @@ fi
 
 # ── validate env vars ─────────────────────────────────────────────────────────
 case "$CONTROLLER" in
-    ibvs|proportional|h_vs) ;;
-    *) die "Unknown CONTROLLER='${CONTROLLER}'. Valid: ibvs | proportional | h_vs" ;;
+    ibvs|proportional|h_vs|pbvs) ;;
+    *) die "Unknown CONTROLLER='${CONTROLLER}'. Valid: ibvs | proportional | h_vs | pbvs" ;;
 esac
 case "$DETECTOR" in
     yolo|oracle) ;;
@@ -281,7 +293,7 @@ MATLAB_HOST_IP="$MATLAB_HOST_IP" PI_LOCAL_IP="$PI_LOCAL_IP" PI_ADDR="$PI_LOCAL_I
        envsubst < "$DDS_TEMPLATE" | sudo tee "$DDS_RESOLVED" > /dev/null
 log "DDS=${DDS}  RMW=${RMW_IMPLEMENTATION}  profile=${DDS_RESOLVED}"
 log "MATLAB_HOST_IP=${MATLAB_HOST_IP}  PI_LOCAL_IP=${PI_LOCAL_IP}  PI_INTERFACE=${PI_INTERFACE}  ROS_DOMAIN_ID=${ROS_DOMAIN_ID}"
-log "CONTROLLER=${CONTROLLER}  DETECTOR=${DETECTOR}  SLAM=${SLAM_ON}"
+log "MODE=${MODE}  CONTROLLER=${CONTROLLER}  DETECTOR=${DETECTOR}  SLAM=${SLAM_ENABLED} (${SLAM_TYPE:-none})"
 
 # ── optional build step ───────────────────────────────────────────────────────
 if [[ "$_BUILD_FIRST" == "true" ]]; then
@@ -304,6 +316,9 @@ fi
 log "Cleaning up any stale processes / shm..."
 sudo docker kill ros2_perception_stack 2>/dev/null || true
 sudo docker rm  ros2_perception_stack 2>/dev/null || true
+# Force-remove stale SLAM sidecars (they use --restart; a kill alone respawns them).
+_slam_cids=$(sudo docker ps -aq --filter 'name=^slam_' 2>/dev/null)
+[[ -n "$_slam_cids" ]] && sudo docker rm -f $_slam_cids 2>/dev/null || true
 sudo pkill -f yolo_producer 2>/dev/null || true
 sudo rm -f /dev/shm/ovcam_frames /dev/shm/yolo_shm \
            /dev/shm/sem.ovcam_ready /dev/shm/sem.yolo_ready 2>/dev/null || true
@@ -329,15 +344,19 @@ sleep 1
 # which prevents the premature auto-exit that fires when parallax is near-zero at
 # startup (buffered frames make cam_delay tiny → 100×cam_delay threshold fires fast).
 LAUNCH_ARGS=" slam:=false"
-[[ "$SLAM_ON"        == "false" ]] && log "OV2SLAM will be skipped (--no-slam)"
+[[ "$SLAM_ENABLED"   == "false" ]] && log "SLAM will be skipped (--no-slam / slam.enabled=false)"
 [[ "$DEBUG_IMAGE_ON" == "true"  ]] && LAUNCH_ARGS+=" debug_image:=true" && log "Debug image enabled (--debug-image)"
 # ovcam_bridge is needed when SLAM will be started later, or debug is on
-if [[ "$SLAM_ON" == "false" && "$DEBUG_IMAGE_ON" == "false" ]]; then
+if [[ "$SLAM_ENABLED" == "false" && "$DEBUG_IMAGE_ON" == "false" ]]; then
     LAUNCH_ARGS+=" ovcam:=false"
     log "ovcam_bridge will be skipped (slam off + debug off)"
 fi
-# Controller and detector selection
-LAUNCH_ARGS+=" controller:=${CONTROLLER} detector:=${DETECTOR} benchmark_mode:=false"
+# benchmark mode → FSM waits for a clean sim reset (t=0); scout → engage on boot.
+BENCH_FLAG=false
+[[ "$MODE" == "benchmark" ]] && BENCH_FLAG=true
+# Controller / detector selection + per-module CPU pinning (applied as Node taskset).
+LAUNCH_ARGS+=" controller:=${CONTROLLER} detector:=${DETECTOR} benchmark_mode:=${BENCH_FLAG}"
+LAUNCH_ARGS+=" controller_cpu:=${CONTROLLER_CPU:-} detector_cpu:=${DETECTOR_CPU:-}"
 if [[ "$DETECTOR" == "oracle" ]]; then
     log "Detector: oracle (yolo_bridge skipped, oracle_detector_node starts in Docker)"
 else
@@ -377,13 +396,14 @@ log "SHM permissions fixed (0666)."
 # ── 3. Detector — yolo_producer (host) OR oracle (Docker) ─────────────────────
 YOLO_PID=""
 if [[ "$DETECTOR" == "yolo" ]]; then
-    log "3/4  yolo_producer  →  core 1 (host, native)"
+    DETECTOR_HOST_CPU="${DETECTOR_HOST_CPU:-1}"
+    log "3/4  yolo_producer  →  core ${DETECTOR_HOST_CPU} (host, native)"
     # Ensure log file is writable (may have been left root-owned by a prior sudo run)
     sudo chmod 666 /tmp/yolo_producer.log 2>/dev/null || true
     # --conf 0.20: publish detections down to 0.20 so the controller (min_confidence=0.20)
     #   can act on low-confidence stop signs.
     # python3 -u: unbuffered stdout so per-stage timing/fps log is readable live.
-    taskset -c 1 /usr/bin/python3 -u "${WS}/src/yolo_producer/yolo_producer.py" \
+    taskset -c "${DETECTOR_HOST_CPU}" /usr/bin/python3 -u "${WS}/src/yolo_producer/yolo_producer.py" \
         --hef "${WS}/models/yolo26n_10h.hef" --no-image --conf 0.20 \
         > /tmp/yolo_producer.log 2>&1 &
     YOLO_PID=$!
@@ -397,46 +417,78 @@ else
     log "3/4  Detector=oracle — yolo_producer skipped (oracle_detector_node starts via launch)"
 fi
 
-# ── 4. OV2SLAM — deferred start + watchdog, cores 2,3 ────────────────────────
-if [[ "$SLAM_ON" == "true" ]]; then
-    log "4/4  OV2SLAM deferred: waiting 15 s for drone to begin motion before init..."
-    sleep 15
-    log "Starting OV2SLAM watchdog  →  cores 2,3 (Docker)"
-    # Watchdog loop: restarts ov2slam_node whenever it exits (crash or auto-exit).
-    # Runs in the background so run_stack_hil.sh returns immediately.
-    # Stops when the Docker container is gone (stack was stopped).
-    # Pre-create log file as root (via docker) so the host ahmed user can append.
-    sudo docker exec ros2_perception_stack bash -c "
-        touch /tmp/ov2slam_hil.log && chmod 666 /tmp/ov2slam_hil.log
-    " 2>/dev/null || true
-    (
-        RMW="${RMW_IMPLEMENTATION}"
-        DDS_VAR="${DDS_ENV_VAR}"
-        ROS_ID="${ROS_DOMAIN_ID}"
-        while sudo docker inspect ros2_perception_stack --format '{{.State.Running}}' 2>/dev/null | grep -q true; do
-            # Redirect inside the container (root) to avoid host permission issues.
-            sudo docker exec ros2_perception_stack bash -lc "
-                source /opt/ros/jazzy/setup.bash
-                source /workspace/install/setup.bash
-                export RMW_IMPLEMENTATION=${RMW}
-                export ROS_DOMAIN_ID=${ROS_ID}
-                export ${DDS_VAR}
-                export LD_LIBRARY_PATH=/workspace/opencv/build/lib:\${LD_LIBRARY_PATH:-}
-                taskset -c 2,3 ros2 run ov2slam ov2slam_node \
-                    /workspace/camera_calib/hil_sim_ov2slam.yaml \
-                    >> /tmp/ov2slam_hil.log 2>&1
-            "
-            sudo docker inspect ros2_perception_stack --format '{{.State.Running}}' 2>/dev/null | grep -q true \
-                && echo "[hil-watchdog] ov2slam exited — restarting in 3 s..." >> /tmp/ov2slam_hil.log \
-                && sleep 3
-        done
-        echo "[hil-watchdog] container gone — watchdog exiting" >> /tmp/ov2slam_hil.log
-    ) &
-    WATCHDOG_PID=$!
-    log "OV2SLAM watchdog PID $WATCHDOG_PID — log: /tmp/ov2slam_hil.log"
+# ── 4. SLAM sidecar — separate docker-run container, config-driven ───────────
+# Replaces the old bash watchdog: `docker run -d --restart` gives a named,
+# auto-restarting sidecar. The startup delay runs INSIDE the container so this
+# script returns immediately (the drone can start moving for parallax). All SLAM
+# wiring (image/cpu/command/remaps) comes from the config via parse_stack.py.
+if [[ "$SLAM_ENABLED" == "true" ]]; then
+    : "${SLAM_CONTAINER:?slam.container_name missing from config}"
+    : "${SLAM_IMAGE:?slam.image missing from config}"
+    : "${SLAM_COMMAND:?slam.command missing from config}"
+    log "4/4  SLAM sidecar: ${SLAM_TYPE} → '${SLAM_CONTAINER}' on cores ${SLAM_CPU:-all} (delay ${SLAM_DELAY:-0}s)"
+    # docker run -d prints the container ID (or an error) to the terminal; the SLAM
+    # node's own stdout/stderr is reachable via `docker logs ${SLAM_CONTAINER}`.
+    sudo docker run -d \
+        --name "$SLAM_CONTAINER" \
+        --restart "${SLAM_RESTART:-no}" \
+        --net=host --ipc=host --privileged \
+        -v "${WS}:/workspace" -v /tmp:/tmp \
+        "$SLAM_IMAGE" bash -lc "
+            sleep ${SLAM_DELAY:-0}
+            source /opt/ros/jazzy/setup.bash
+            source /workspace/install/setup.bash
+            export RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION}
+            export ROS_DOMAIN_ID=${ROS_DOMAIN_ID}
+            export ${DDS_ENV_VAR}
+            export LD_LIBRARY_PATH=/workspace/opencv/build/lib:\${LD_LIBRARY_PATH:-}
+            exec ${SLAM_CPU:+taskset -c ${SLAM_CPU}} ${SLAM_COMMAND} --ros-args ${SLAM_REMAPS}
+        " || die "SLAM sidecar failed to start (is image '${SLAM_IMAGE}' present? name clash on '${SLAM_CONTAINER}'?)"
+    log "SLAM sidecar started — log: docker logs ${SLAM_CONTAINER}"
 else
-    log "4/4  OV2SLAM skipped (--no-slam)"
-    WATCHDOG_PID=""
+    log "4/4  SLAM skipped (slam.enabled=false / --no-slam)"
+fi
+
+# ── 4b. Benchmark recording — only in benchmark mode ─────────────────────────
+# Records the metric topics to a timestamped bag for offline RMSE analysis
+# (controller approach and/or SLAM-pose-vs-GT). Runs inside the main container so
+# the bag lands on the host via the /workspace volume mount.
+BAG_HOST=""
+if [[ "$MODE" == "benchmark" ]]; then
+    STAMP=$(date +%Y%m%d_%H%M%S)
+    RUNREL="bags/run_${CONFIG_NAME:-nocfg}_${STAMP}"
+    BAG_HOST="${WS}/${RUNREL}"
+    mkdir -p "$BAG_HOST"
+    GIT_SHA=$(git -C "$WS" rev-parse --short HEAD 2>/dev/null || echo nogit)
+    {
+        echo "config=${CONFIG_NAME:-nocfg}"
+        echo "mode=benchmark"
+        echo "controller=${CONTROLLER}"
+        echo "detector=${DETECTOR}"
+        echo "slam_enabled=${SLAM_ENABLED}"
+        echo "slam_type=${SLAM_TYPE:-none}"
+        echo "git_sha=${GIT_SHA}"
+        echo "stamp=${STAMP}"
+        echo "matlab_host_ip=${MATLAB_HOST_IP}"
+        echo "dds=${DDS} domain=${ROS_DOMAIN_ID}"
+    } > "${BAG_HOST}/meta.txt"
+
+    # Base metric topics (controller RMSE); add SLAM pose + TF when SLAM is on.
+    BAG_TOPICS="/cmd_vel /sim/drone_pose /sim/target_pose /sim/heartbeat /bench/state /yolo/detections"
+    [[ "$SLAM_ENABLED" == "true" ]] && BAG_TOPICS+=" ${SLAM_POSE_OUT:-/slam/pose} /tf /tf_static"
+
+    log "Benchmark mode: recording → ${RUNREL}/bag"
+    log "  topics: ${BAG_TOPICS}"
+    sudo docker exec -d ros2_perception_stack bash -lc "
+        source /opt/ros/jazzy/setup.bash
+        source /workspace/install/setup.bash
+        export RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION}
+        export ROS_DOMAIN_ID=${ROS_DOMAIN_ID}
+        export ${DDS_ENV_VAR}
+        ros2 bag record -o /workspace/${RUNREL}/bag \
+            --qos-profile-overrides-path /workspace/config/hil/bench_bag_qos.yaml \
+            ${BAG_TOPICS} > /workspace/${RUNREL}/bag_record.log 2>&1
+    "
 fi
 
 # ── 5. summary ────────────────────────────────────────────────────────────────
@@ -444,7 +496,7 @@ sep
 echo ""
 echo "  HIL stack is running."
 echo ""
-echo "  Controller : ${CONTROLLER}   Detector : ${DETECTOR}   SLAM : ${SLAM_ON}"
+echo "  Mode : ${MODE}   Controller : ${CONTROLLER}   Detector : ${DETECTOR}   SLAM : ${SLAM_ENABLED} (${SLAM_TYPE:-none})"
 echo ""
 echo "  MATLAB side must publish:"
 echo "    /sim/camera/image_raw       sensor_msgs/Image  rgb8  640x480  ~20 Hz"
@@ -457,8 +509,14 @@ echo "    /tmp/hil_launch.log     (ros2 launch — camera bridge, detector, cont
 if [[ "$DETECTOR" == "yolo" ]]; then
 echo "    /tmp/yolo_producer.log  (host Hailo NPU, PID ${YOLO_PID})"
 fi
-if [[ "$SLAM_ON" == "true" ]]; then
-echo "    /tmp/ov2slam_hil.log    (OV2SLAM watchdog PID ${WATCHDOG_PID} — auto-restarts on exit)"
+if [[ "$SLAM_ENABLED" == "true" ]]; then
+echo "    docker logs ${SLAM_CONTAINER}   (SLAM sidecar — auto-restarts via --restart=${SLAM_RESTART:-no})"
+fi
+if [[ "$MODE" == "benchmark" ]]; then
+echo ""
+echo "  Recording (benchmark mode):"
+echo "    ${RUNREL}/bag            (RMSE input — meta.txt + bag_record.log alongside)"
+echo "    → restart the Simulink sim NOW for a clean t=0, then let the run play out."
 fi
 echo ""
 echo "  Stop:  ./run_stack_hil.sh stop"

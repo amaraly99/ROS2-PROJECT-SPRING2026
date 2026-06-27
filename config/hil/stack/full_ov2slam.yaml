@@ -1,0 +1,81 @@
+# ============================================================================
+# HIL Stack Config — "full_ov2slam"  (NESTED SCHEMA — schema reference)
+#
+# Consumed by run_stack_hil.sh via scripts/parse_stack.py (flattens to env vars).
+# Three swappable modules: detector, controller, slam. Each declares its OWN cpu
+# pinning and topics. Topic wiring is EXPLICIT — no convention-based auto-wiring.
+# DDS auto-discovers at the transport layer, but every topic NAME is stated here.
+#
+# Pi 5 core map (4 cores). Defaults below; override per module:
+#   core 0    bridges + controller
+#   core 1    detector host side (yolo_producer needs the Hailo NPU)
+#   core 2,3  slam
+# ============================================================================
+
+# ── Run mode ─────────────────────────────────────────────────────────────────
+# scout     — engage on boot (live flight / demo / quick check). No recording.
+# benchmark — FSM waits for a clean sim reset (t=0); run_stack_hil.sh records a
+#             ros2 bag (bags/run_<config>_<stamp>/) for offline RMSE analysis
+#             (controller RMSE and/or SLAM-pose-vs-GT RMSE). Override: --mode <x>.
+mode: scout
+
+# ── Global / network ─────────────────────────────────────────────────────────
+network:
+  matlab_host_ip: 192.168.1.201
+  interface:      wlan0          # Pi NIC for DDS whitelist (omit -> auto-detect)
+  dds:            cyclonedds     # cyclonedds | fastrtps
+  ros_domain_id:  0
+
+# ── Module 1: DETECTION ──────────────────────────────────────────────────────
+# Runs INSIDE ros2_perception_stack (via ros2 launch). `cpu` is applied as the ROS
+# Node prefix `taskset -c <cpu>`. yolo also spawns yolo_producer on the HOST
+# (Hailo NPU access), pinned separately via `host_cpu`.
+detector:
+  type:     yolo                 # yolo | oracle
+  cpu:      "0"                  # taskset for yolo_bridge / oracle node (container)
+  host_cpu: "1"                  # taskset for yolo_producer (host; yolo only)
+  topics:
+    image_in: /ovcam/image_raw   # frames the detector consumes
+    out:      /yolo/detections   # bbox output (oracle publishes the same topic)
+  yolo:                          # ignored when type: oracle
+    hef:        /workspace/models/yolo26n_10h.hef
+    confidence: 0.20
+
+# ── Module 2: CONTROLLER ─────────────────────────────────────────────────────
+# Runs INSIDE ros2_perception_stack (via ros2 launch). `cpu` = Node prefix taskset.
+controller:
+  type:       proportional       # proportional | ibvs | h_vs | pbvs
+  cpu:        "0"
+  gains_file: bench_proportional.yaml   # resolved under config/hil/
+  topics:
+    detections_in: /yolo/detections
+    cmd_out:       /cmd_vel
+
+# ── Module 3: SLAM ───────────────────────────────────────────────────────────
+# Runs as a SEPARATE sidecar container. Swap algo => swap this whole block.
+# `cpu` is applied via the container command's `taskset -c <cpu>`.
+slam:
+  enabled:           true        # false -> no slam container started at all
+  type:              ov2slam     # ov2slam | rtabmap | orbslam3 | orbslam2
+
+  # Container
+  image:             ros2_perception_stack    # ov2slam shares the main image
+  container_name:    slam_ov2slam             # MUST start with 'slam_' — run_stack_hil.sh
+                                              # tears down sidecars by `name=^slam_` filter
+                                              # (they use --restart, so a plain kill won't do)
+  cpu:               "2,3"
+  startup_delay_sec: 15          # wait for drone motion before init (parallax)
+  restart:           unless-stopped           # docker-native; replaces watchdog
+
+  # Launch (command run inside the container after the startup delay)
+  command:           "ros2 run ov2slam ov2slam_node /workspace/camera_calib/hil_sim_ov2slam.yaml"
+
+  # Topic wiring — EXPLICIT. image_in/pose_out are the CANONICAL pipeline topics;
+  # `remap` rewires the algo's NATIVE topics onto them so the rest of the stack
+  # never needs to know which SLAM is running.
+  topics:
+    image_in: /ovcam/image_raw   # pipeline frame source (from ovcam_bridge)
+    pose_out: /slam/pose         # canonical downstream pose
+  remap:                         # algo-native := canonical-pipeline
+    - "/ovcam/image_raw:=/ovcam/image_raw"   # input  (no-op; ov2slam reads it natively)
+    - "vo_pose:=/slam/pose"                  # output (ov2slam vo_pose -> /slam/pose)

@@ -1,11 +1,21 @@
 # Oracle scouting — synthetic bbox (no Hailo needed) + IBVS, no SLAM.
-# Fastest to start: no yolo_producer, no /dev/hailo0 required.
-# Use this to test the control law without the Hailo HAT attached.
-matlab_host_ip: 192.168.1.201
-dds: cyclonedds
-ros_domain_id: 0
-controller: ibvs
-detector: oracle
-slam: false
-debug_image: false
-interface: wlan0
+# Fastest to start: no yolo_producer, no /dev/hailo0 required. Tests the control
+# law without the Hailo HAT attached.  (Nested schema; see full_ov2slam.yaml.)
+mode: scout
+
+network:
+  matlab_host_ip: 192.168.1.201
+  interface:      wlan0
+  dds:            cyclonedds
+  ros_domain_id:  0
+
+detector:
+  type: oracle
+  cpu:  "0"
+
+controller:
+  type: ibvs
+  cpu:  "0"
+
+slam:
+  enabled: false

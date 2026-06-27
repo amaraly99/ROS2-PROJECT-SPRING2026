@@ -1,10 +1,24 @@
 # IBVS (TS1) scouting — YOLO + ViSP 4-corner IBVS, no SLAM.
-# Fastest settle (~20 s). Requires Hailo HAT.
-matlab_host_ip: 192.168.1.201
-dds: cyclonedds
-ros_domain_id: 0
-controller: ibvs
-detector: yolo
-slam: false
-debug_image: false
-interface: wlan0
+# Fastest settle (~20 s). Requires Hailo HAT.  (Nested schema; see full_ov2slam.yaml.)
+mode: scout
+
+network:
+  matlab_host_ip: 192.168.1.201
+  interface:      wlan0
+  dds:            cyclonedds
+  ros_domain_id:  0
+
+detector:
+  type:     yolo
+  cpu:      "0"
+  host_cpu: "1"
+  yolo:
+    hef:        /workspace/models/yolo26n_10h.hef
+    confidence: 0.20
+
+controller:
+  type: ibvs
+  cpu:  "0"
+
+slam:
+  enabled: false

@@ -17,6 +17,8 @@
 #   benchmark_mode  true | false  (default: false = scout, engage immediately on boot)
 #   target_class    COCO label string  (default: stop sign)
 #   calib_yaml      OV2SLAM calibration file path
+#   controller_cpu  taskset core(s) for the controller node  (e.g. "0"; empty = no pin)
+#   detector_cpu    taskset core(s) for yolo_bridge/oracle node  (empty = no pin)
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
@@ -32,6 +34,15 @@ CTRL_MAP = {
     'pbvs':         ('visp_pbvs_servo', 'visp_pbvs_node', 'bench_pbvs.yaml')
 }
 
+DET_MAP = {
+    # detector_name: (package, executable, node_name, [param_yaml, ...], wants_target_class)
+    # Every detector MUST publish /yolo/detections (yolo_msgs/DetectionArray). To add one,
+    # add a row here. Hardware-backed detectors that need a HOST producer (like yolo's
+    # yolo_producer on the Hailo NPU) wire that host process in run_stack_hil.sh, not here.
+    'yolo':   ('yolo_bridge',     'yolo_bridge_node',     'yolo_bridge',     [],                    False),
+    'oracle': ('oracle_detector', 'oracle_detector_node', 'oracle_detector', ['bench_oracle.yaml'], True),
+}
+
 
 def launch_setup(context, *args, **kwargs):
     def s(name): return LaunchConfiguration(name).perform(context)
@@ -45,8 +56,12 @@ def launch_setup(context, *args, **kwargs):
     debug_image    = s('debug_image').lower() == 'true'
     benchmark_mode = s('benchmark_mode').lower() in ('true', '1', 'yes')
     calib_yaml     = s('calib_yaml')
+    controller_cpu = s('controller_cpu').strip()
+    detector_cpu   = s('detector_cpu').strip()
 
     cfg = lambda name: f'{workspace}/config/hil/{name}'
+    # taskset prefix for a node, or None when the cpu arg is empty (no pinning).
+    pfx = lambda cpu: ['taskset', '-c', cpu] if cpu else None
 
     nodes = []
 
@@ -73,26 +88,26 @@ def launch_setup(context, *args, **kwargs):
             output='screen',
         ))
 
-    # ── 3. Detector: yolo_bridge OR oracle_detector (never both) ─────────────────
-    if detector == 'oracle':
-        # Oracle: projects known target world point through drone pose.
-        # Publishes on /yolo/detections (identical format to yolo_bridge).
-        # /sim/drone_pose + /sim/target_pose must be arriving from MATLAB.
-        nodes.append(Node(
-            package='oracle_detector',
-            executable='oracle_detector_node',
-            name='oracle_detector',
-            output='screen',
-            parameters=[cfg('bench_oracle.yaml'), {'target_class': target_class}],
-        ))
-    else:
-        # yolo: reads /yolo_shm written by host yolo_producer, publishes /yolo/detections
-        nodes.append(Node(
-            package='yolo_bridge',
-            executable='yolo_bridge_node',
-            name='yolo_bridge',
-            output='screen',
-        ))
+    # ── 3. Detector (DET_MAP-driven; exactly one runs) ───────────────────────────
+    #   oracle → projects the known target through the sim drone pose (needs
+    #            /sim/drone_pose + /sim/target_pose from MATLAB; no hardware).
+    #   yolo   → yolo_bridge reads /yolo_shm written by the host yolo_producer.
+    # Both publish /yolo/detections. Add a detector by adding a DET_MAP row above.
+    if detector not in DET_MAP:
+        raise RuntimeError(
+            f"Unknown detector='{detector}'. Valid: {list(DET_MAP)}")
+    dpkg, dexe, dname, dparam_files, dwants_class = DET_MAP[detector]
+    dparams = [cfg(p) for p in dparam_files]
+    if dwants_class:
+        dparams.append({'target_class': target_class})
+    nodes.append(Node(
+        package=dpkg,
+        executable=dexe,
+        name=dname,
+        output='screen',
+        prefix=pfx(detector_cpu),
+        parameters=dparams,
+    ))
 
     # ── 4. OV2SLAM — normally deferred by run_stack_hil.sh (slam:=false passed). ─
     #    Only active when this launch file is invoked directly with slam:=true.
@@ -116,6 +131,7 @@ def launch_setup(context, *args, **kwargs):
         executable=exe,
         name=exe,
         output='screen',
+        prefix=pfx(controller_cpu),
         parameters=[cfg('bench_fsm.yaml'), cfg(ctrl_cfg),
                     {'target_class': target_class,
                      'benchmark_mode': benchmark_mode}],
@@ -142,6 +158,10 @@ def generate_launch_description():
             description='Publish /visp/debug_image back to MATLAB (costly — 921 KB/frame)'),
         DeclareLaunchArgument('benchmark_mode', default_value='false',
             description='true = wait for sim reset before engaging (bench); false = scout immediately'),
+        DeclareLaunchArgument('controller_cpu', default_value='',
+            description='taskset core(s) for the controller node (e.g. "0"); empty = no pin'),
+        DeclareLaunchArgument('detector_cpu', default_value='',
+            description='taskset core(s) for yolo_bridge/oracle_detector node; empty = no pin'),
         DeclareLaunchArgument('calib_yaml',
             default_value=PathJoinSubstitution(
                 [EnvironmentVariable('WORKSPACE_DIR', default_value='/workspace'),
