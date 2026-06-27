@@ -41,8 +41,9 @@ Step 1 applied (yaml-only, zero code change):
 -    lambda: 0.5
 +    lambda: 0.3
 ```
+Pi result: oscillation less severe but persisted — confirmed Candidate A partial, Candidate B still active.
 
-Step 2 pending (TODO-I): apply `vpServo::MEAN` if oscillation persists at lambda=0.3.
+Step 2 applied (TODO-I resolved):
 ```diff
 # src/visp_servo/src/ibvs_controller.cpp
 -    servo_.setInteractionMatrixType(vpServo::CURRENT);
@@ -69,8 +70,8 @@ step and was skipped. Correct order: lambda first → MEAN if needed → not bot
 
 ## Open TODOs
 
-- **TODO-I**: After Pi test with `lambda=0.3` — if oscillation stops, log confirmed root
-  cause as Candidate A. If oscillation persists, apply `vpServo::MEAN` and retest.
+- **TODO-I**: ~~RESOLVED~~ Pi test confirmed lambda=0.3 reduced severity but oscillation
+  persisted → `vpServo::MEAN` applied (step 2). Retest on Pi pending.
 - **TODO-J**: Verify `s_tl_d_` desired features have `Z_des` explicitly set (not ViSP
   default Z=1.0). Check `ibvs_controller.cpp` `update_corner_features` call for desired
   corners — `Z_des` is computed via `depth_for_box_height(cam_, known_height_, des.y2-des.y1)`.

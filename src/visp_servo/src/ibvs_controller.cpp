@@ -36,7 +36,7 @@ void IBVSController::init(const servo_core::ServoInputs& cfg) {
     depth_->init(cfg);
 
     servo_.setServo(vpServo::EYEINHAND_CAMERA);
-    servo_.setInteractionMatrixType(vpServo::CURRENT);
+    servo_.setInteractionMatrixType(vpServo::MEAN);
     servo_.setLambda(lambda_);
     servo_.addFeature(s_tl_, s_tl_d_);
     servo_.addFeature(s_tr_, s_tr_d_);
