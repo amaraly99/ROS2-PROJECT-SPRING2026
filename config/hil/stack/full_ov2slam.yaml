@@ -7,8 +7,8 @@
 # DDS auto-discovers at the transport layer, but every topic NAME is stated here.
 #
 # Pi 5 core map (4 cores). Defaults below; override per module:
-#   core 0    bridges + controller
-#   core 1    detector host side (yolo_producer needs the Hailo NPU)
+#   core 0    controller (+ lightweight bridges: sim_camera_bridge, ovcam_bridge)
+#   core 1    detector — yolo_producer (host, Hailo NPU) + yolo_bridge (container, reads shm)
 #   core 2,3  slam
 # ============================================================================
 
@@ -32,7 +32,8 @@ network:
 # (Hailo NPU access), pinned separately via `host_cpu`.
 detector:
   type:     yolo                 # yolo | oracle
-  cpu:      "0"                  # taskset for yolo_bridge / oracle node (container)
+  cpu:      "1"                  # taskset for yolo_bridge / oracle node (container)
+                                 # core 1: co-locate with yolo_producer (shared /dev/shm)
   host_cpu: "1"                  # taskset for yolo_producer (host; yolo only)
   topics:
     image_in: /ovcam/image_raw   # frames the detector consumes
