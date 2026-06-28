@@ -357,6 +357,7 @@ BENCH_FLAG=false
 # Controller / detector selection + per-module CPU pinning (applied as Node taskset).
 LAUNCH_ARGS+=" controller:=${CONTROLLER} detector:=${DETECTOR} benchmark_mode:=${BENCH_FLAG}"
 LAUNCH_ARGS+=" controller_cpu:=${CONTROLLER_CPU:-} detector_cpu:=${DETECTOR_CPU:-}"
+LAUNCH_ARGS+=" use_slam_depth:=${CONTROLLER_USE_SLAM_DEPTH:-false}"
 if [[ "$DETECTOR" == "oracle" ]]; then
     log "Detector: oracle (yolo_bridge skipped, oracle_detector_node starts in Docker)"
 else

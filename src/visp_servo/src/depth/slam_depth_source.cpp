@@ -10,15 +10,20 @@
 
 namespace visp_servo {
 
-SlamDepthSource::SlamDepthSource(rclcpp::Node* node) : node_(node) {
+// NOTE: on_pose/on_cloud and depth() all run on the visp node's SingleThreadedExecutor
+// (visp_servo_main uses rclcpp::spin) — same thread, serialized, so Rcw_/tcw_/cloud_ need
+// no mutex. If this node ever moves to a MultiThreadedExecutor, add one.
+SlamDepthSource::SlamDepthSource(rclcpp::Node* node, double depth_scale)
+    : node_(node), depth_scale_(depth_scale) {
     sub_pose_ = node_->create_subscription<geometry_msgs::msg::PoseStamped>(
-        "/vo_pose", rclcpp::QoS(10),
+        kPoseTopic, rclcpp::QoS(10),
         std::bind(&SlamDepthSource::on_pose, this, std::placeholders::_1));
     sub_cloud_ = node_->create_subscription<sensor_msgs::msg::PointCloud2>(
-        "/point_cloud", rclcpp::QoS(1).best_effort(),
+        kCloudTopic, rclcpp::QoS(1).best_effort(),
         std::bind(&SlamDepthSource::on_cloud, this, std::placeholders::_1));
     RCLCPP_INFO(node_->get_logger(),
-        "SlamDepthSource active — subscribing /vo_pose + /point_cloud");
+        "SlamDepthSource active — pose='%s' cloud='%s' scale=%.4f",
+        kPoseTopic, kCloudTopic, depth_scale_);
 }
 
 void SlamDepthSource::init(const servo_core::ServoInputs& cfg) {
@@ -73,7 +78,7 @@ double SlamDepthSource::depth(const servo_core::ServoInputs& in) {
     }
     if (depths.empty()) return in.Z;
     std::sort(depths.begin(), depths.end());
-    return depths[depths.size() / 2];          // median
+    return depth_scale_ * depths[depths.size() / 2];   // scaled median
 }
 
 }  // namespace visp_servo

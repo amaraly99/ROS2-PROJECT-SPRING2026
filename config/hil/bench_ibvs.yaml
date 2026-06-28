@@ -4,8 +4,13 @@
   ros__parameters:
     lambda: 0.3            # IBVS centering gain: v = -lambda * L^+ * (s - s*)
     k_fwd:  3.0            # Proportional approach gain: vx = k_fwd*(target_ratio-ratio)
-    # Depth source for the interaction matrix:
+    # Depth source for the interaction matrix (use_slam_depth is set per-stack-config,
+    # NOT here — see config/hil/stack/*.yaml controller.use_slam_depth):
     #   false → bbox depth (default; identical to TS2, fair comparison)
-    #   true  → SLAM depth via /vo_pose + /point_cloud (fallback: bbox)
-    # Flip to true to "add SLAM" — no code change, just this subscription.
-    use_slam_depth: false
+    #   true  → SLAM depth: median of map points (slam_cloud_topic) inside the bbox,
+    #           projected via the SLAM pose (slam_pose_topic). Fallback: bbox depth.
+    # SLAM depth uses canonical topics /slam/pose + /slam/cloud (hardcoded in
+    # SlamDepthSource; every SLAM remaps its native topics onto them).
+    # Monocular SLAM is up-to-scale; calibrate this once so SLAM depth matches metric
+    # bbox depth (1.0 = raw). Only scales the SLAM median, never the bbox fallback.
+    slam_depth_scale: 1.0

@@ -1,7 +1,7 @@
-# Integration test — OV2SLAM + YOLO + ViSP IBVS (scout).
-# Verifies the SLAM sidecar runs alongside the ViSP controller. Requires Hailo HAT.
-# SLAM stays decoupled: it only publishes /slam/pose for recording/eval (no controller
-# subscribes). (Nested schema; see full_ov2slam.yaml for the fully-commented reference.)
+# Benchmark variant — OV2SLAM + YOLO + ViSP IBVS with SLAM DEPTH (scout).
+# A/B pair with ov2slam_ibvs.yaml: IDENTICAL stack, only controller.use_slam_depth flips.
+# Here IBVS gets its interaction-matrix depth from OV2SLAM map points (/slam/cloud)
+# projected via the SLAM pose (/slam/pose), instead of bbox depth. Compare RMSE vs baseline.
 mode: scout
 
 network:
@@ -21,7 +21,7 @@ detector:
 controller:
   type: ibvs
   cpu:  "0"
-  use_slam_depth: false        # BASELINE: bbox depth (A/B pair: ov2slam_ibvs_slamdepth)
+  use_slam_depth: true         # SLAM DEPTH: map-point median in bbox (A/B pair: ov2slam_ibvs)
 
 slam:
   enabled:           true

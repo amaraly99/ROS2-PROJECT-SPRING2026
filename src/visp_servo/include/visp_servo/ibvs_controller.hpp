@@ -36,6 +36,7 @@ private:
     rclcpp::Node* node_;
     double lambda_;
     bool   use_slam_depth_;
+    double slam_depth_scale_ = 1.0;
 
     std::unique_ptr<IDepthSource> depth_;     // swappable: bbox | slam
 

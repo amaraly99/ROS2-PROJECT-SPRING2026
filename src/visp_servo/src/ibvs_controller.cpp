@@ -15,11 +15,12 @@ namespace visp_servo {
 IBVSController::IBVSController(rclcpp::Node* node) : node_(node) {
     lambda_         = node_->declare_parameter<double>("lambda", 0.3);
     k_fwd_          = node_->declare_parameter<double>("k_fwd",   3.0);
-    use_slam_depth_ = node_->declare_parameter<bool>("use_slam_depth", false);
+    use_slam_depth_   = node_->declare_parameter<bool>("use_slam_depth", false);
+    slam_depth_scale_ = node_->declare_parameter<double>("slam_depth_scale", 1.0);
 
     // Pick the depth module. Adding SLAM is exactly this branch + its subs.
     if (use_slam_depth_)
-        depth_ = std::make_unique<SlamDepthSource>(node_);
+        depth_ = std::make_unique<SlamDepthSource>(node_, slam_depth_scale_);
     else
         depth_ = std::make_unique<BboxDepthSource>();
 

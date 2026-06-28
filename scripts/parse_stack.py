@@ -85,6 +85,7 @@ def emit_env(cfg):
         ("CONTROLLER_GAINS_FILE", get(cfg, "controller.gains_file", "")),
         ("CONTROLLER_DET_IN",     get(cfg, "controller.topics.detections_in", "/yolo/detections")),
         ("CONTROLLER_CMD_OUT",    get(cfg, "controller.topics.cmd_out", "/cmd_vel")),
+        ("CONTROLLER_USE_SLAM_DEPTH", as_bool(get(cfg, "controller.use_slam_depth"), False)),
 
         # ── slam (separate sidecar container) ──
         ("SLAM_ENABLED",   as_bool(get(cfg, "slam.enabled"), False)),

@@ -23,7 +23,14 @@ namespace visp_servo {
 
 class SlamDepthSource : public IDepthSource {
 public:
-    explicit SlamDepthSource(rclcpp::Node* node);
+    // Canonical SLAM topics. Every SLAM remaps its native pose/cloud onto these
+    // (e.g. ov2slam: -r vo_pose:=/slam/pose -r point_cloud:=/slam/cloud). The consumer
+    // side is FIXED by contract — no tunable topic param (that would be a second source
+    // of truth that can silently disagree with the remap and re-break the wiring).
+    static constexpr const char* kPoseTopic  = "/slam/pose";
+    static constexpr const char* kCloudTopic = "/slam/cloud";
+
+    SlamDepthSource(rclcpp::Node* node, double depth_scale);
 
     void init(const servo_core::ServoInputs& cfg) override;
     double depth(const servo_core::ServoInputs& in) override;
@@ -37,6 +44,7 @@ private:
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr sub_pose_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr   sub_cloud_;
 
+    double depth_scale_{1.0};   // monocular up-to-scale correction (1.0 = raw)
     double fx_{554.0}, fy_{554.0}, u0_{320.0}, v0_{240.0};
     Eigen::Matrix3d Rcw_ = Eigen::Matrix3d::Identity();
     Eigen::Vector3d tcw_ = Eigen::Vector3d::Zero();
