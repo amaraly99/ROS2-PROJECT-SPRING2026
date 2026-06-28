@@ -1,0 +1,4 @@
+[submodule "ros2-ORB_SLAM2"]
+	path = ros2-ORB_SLAM2
+	url = https://github.com/alsora/ros2-ORB_SLAM2.git
+	branch = master

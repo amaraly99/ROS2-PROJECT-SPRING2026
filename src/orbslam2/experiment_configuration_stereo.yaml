@@ -1,0 +1,33 @@
+experiment:
+  mode: stereo  # stereo or mono
+
+dataset:
+  base_path: .
+  sequences_dir: "datasets/sequences/"
+  gt_dir: "datasets/gt"
+  sequences: all
+  # sequences: all
+
+orbslam:
+  package: orbslam
+  vocabulary_path: Vocabulary/ORBvoc.txt
+  mono_settings_path: ros2-ORB_SLAM2/src/monocular/EuRoC.yaml
+  stereo_settings_path: ros2-ORB_SLAM2/src/stereo/EuRoC.yaml
+  setup_scripts:
+    - /opt/ros/jazzy/setup.bash
+    - /root/ws/install/setup.bash
+    - install_stereo/setup.bash
+
+playback:
+  bag_rate: 1.0
+  launch_settle_sec: 15.0
+  post_bag_wait_sec: 5.0
+  shutdown_grace_sec: 6.0
+  cooldown_sec: 5.0
+
+evaluation:
+  n_retries: 10
+  t_max_diff: 0.01
+  rerun_match_threshold: 0.10
+  results_dir: results
+  log_dir: run_logs

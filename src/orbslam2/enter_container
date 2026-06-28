@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+sudo docker exec -it orbslam2_container /bin/bash -lc '
+  source /opt/ros/jazzy/setup.bash
+  if [ -f /root/ws/install/setup.bash ]; then
+    source /root/ws/install/setup.bash
+  fi
+  if [ -f /workspace/install_stereo/setup.bash ]; then
+    source /workspace/install_stereo/setup.bash
+  fi
+  if [ -f /workspace/devel/setup.bash ]; then
+    source /workspace/devel/setup.bash
+  fi
+  export LD_LIBRARY_PATH=/workspace/lib:/usr/local/lib:${LD_LIBRARY_PATH:-}
+  export LIBRARY_PATH=/workspace/lib:/usr/local/lib:${LIBRARY_PATH:-}
+  cd /workspace
+  exec /bin/bash
+'

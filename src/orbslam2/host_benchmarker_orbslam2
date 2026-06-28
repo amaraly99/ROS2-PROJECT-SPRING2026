@@ -1,0 +1,167 @@
+#!/usr/bin/env bash
+# =============================================================================
+# host_benchmarker_orbslam2
+# =============================================================================
+# Run the ORB-SLAM2 EuRoC benchmark from the HOST without entering Docker.
+# All benchmarking logic executes inside the orbslam2_container; stdout/stderr
+# are streamed live to this terminal so you can monitor progress, pipe to tee,
+# or redirect to a log file for cron jobs.
+#
+# CycloneDDS is ENFORCED: RMW_IMPLEMENTATION=rmw_cyclonedds_cpp is injected
+# via docker exec -e AND the package is auto-installed if missing.
+#
+# Usage (from the ORB_SLAM2 directory or anywhere):
+#   ./host_benchmarker_orbslam2 [OPTIONS]
+#
+# Options:
+#   --container NAME   Docker container to use  (default: orbslam2_container)
+#   --config PATH      Host-side path to experiment_configuration*.yaml
+#                      (default: <script_dir>/experiment_configuration_stereo.yaml)
+#   --sequence NAME    Run a single sequence instead of config's list
+#   --mode mono|stereo Override experiment mode
+#   --help             Show this help and exit
+#
+# Cron example — stereo (runs nightly at 02:00, logs to dated file):
+#   0 2 * * * /home/amaraly/ORB_SLAM2/host_benchmarker_orbslam2 \
+#       --config /home/amaraly/ORB_SLAM2/experiment_configuration_stereo.yaml \
+#       >> /home/amaraly/ORB_SLAM2/run_logs/cron_stereo_$(date +\%Y\%m\%d).log 2>&1
+#
+# Cron example — mono (runs nightly at 04:00, logs to dated file):
+#   0 4 * * * /home/amaraly/ORB_SLAM2/host_benchmarker_orbslam2 \
+#       --config /home/amaraly/ORB_SLAM2/experiment_configuration_mono.yaml \
+#       >> /home/amaraly/ORB_SLAM2/run_logs/cron_mono_$(date +\%Y\%m\%d).log 2>&1
+# =============================================================================
+
+set -euo pipefail
+
+# ── Script location ────────────────────────────────────────────────────────────
+SCRIPT_PATH="$(realpath "${BASH_SOURCE[0]}")"
+HOST_WS="$(dirname "$SCRIPT_PATH")"
+
+# ── Defaults ───────────────────────────────────────────────────────────────────
+CONTAINER_NAME="orbslam2_container"
+CONTAINER_WS="/workspace"
+BENCHMARK_SCRIPT="${CONTAINER_WS}/benchmark_euroc.py"
+DEFAULT_CONFIG="${HOST_WS}/experiment_configuration_stereo.yaml"
+
+# ── Colour helpers ─────────────────────────────────────────────────────────────
+RED='\033[91m'; GREEN='\033[92m'; YELLOW='\033[93m'
+CYAN='\033[96m'; BOLD='\033[1m'; DIM='\033[2m'; RESET='\033[0m'
+
+log()  { printf "${BOLD}${CYAN}[host_benchmarker_orbslam2]${RESET} %s\n" "$*"; }
+warn() { printf "${YELLOW}[host_benchmarker_orbslam2] WARN:${RESET} %s\n" "$*" >&2; }
+die()  { printf "${RED}[host_benchmarker_orbslam2] ERROR:${RESET} %s\n" "$*" >&2; exit 1; }
+ok()   { printf "${GREEN}[host_benchmarker_orbslam2]${RESET} ✓ %s\n" "$*"; }
+
+# ── Argument parsing ───────────────────────────────────────────────────────────
+CONFIG_HOST=""
+SEQUENCE=""
+MODE_OVERRIDE=""
+EXTRA_ARGS=()
+
+usage() {
+    grep '^#' "$SCRIPT_PATH" | grep -v '^#!/' | sed 's/^# \?//'
+    exit 0
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --help|-h)        usage ;;
+        --container)      CONTAINER_NAME="$2"; shift 2 ;;
+        --container=*)    CONTAINER_NAME="${1#*=}"; shift ;;
+        --config)         CONFIG_HOST="$2"; shift 2 ;;
+        --config=*)       CONFIG_HOST="${1#*=}"; shift ;;
+        --sequence)       SEQUENCE="$2"; shift 2 ;;
+        --sequence=*)     SEQUENCE="${1#*=}"; shift ;;
+        --mode)           MODE_OVERRIDE="$2"; shift 2 ;;
+        --mode=*)         MODE_OVERRIDE="${1#*=}"; shift ;;
+        *)                EXTRA_ARGS+=("$1"); shift ;;
+    esac
+done
+
+# ── Resolve host config → container path ──────────────────────────────────────
+if [[ -z "$CONFIG_HOST" ]]; then
+    CONFIG_HOST="$DEFAULT_CONFIG"
+fi
+
+if [[ ! -f "$CONFIG_HOST" ]]; then
+    die "Config file not found on host: ${CONFIG_HOST}"
+fi
+
+# Map host path → container path (files under HOST_WS map to CONTAINER_WS)
+config_realpath="$(realpath "$CONFIG_HOST")"
+if [[ "$config_realpath" == "${HOST_WS}"/* ]]; then
+    CONFIG_CONTAINER="${CONTAINER_WS}/${config_realpath#${HOST_WS}/}"
+else
+    # Config is outside the workspace mount — copy it in temporarily
+    tmpname="host_bench_config_$(date +%s).yaml"
+    sudo docker cp "$config_realpath" "${CONTAINER_NAME}:${CONTAINER_WS}/${tmpname}"
+    CONFIG_CONTAINER="${CONTAINER_WS}/${tmpname}"
+    trap 'sudo docker exec "$CONTAINER_NAME" rm -f "${CONTAINER_WS}/${tmpname}" 2>/dev/null || true' EXIT
+fi
+
+# ── Pre-flight: container must be running ──────────────────────────────────────
+log "Checking container '${CONTAINER_NAME}' ..."
+if ! sudo docker inspect --format='{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null | grep -q 'true'; then
+    die "Container '${CONTAINER_NAME}' is not running.\n       Start it first:  ${HOST_WS}/start_container"
+fi
+ok "Container is running."
+
+# ── ENFORCE CycloneDDS ────────────────────────────────────────────────────────
+log "Enforcing RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ..."
+CYCLONE_CHECK=$(sudo docker exec "$CONTAINER_NAME" bash -c \
+    "dpkg -l ros-jazzy-rmw-cyclonedds-cpp 2>/dev/null | grep -c '^ii' || echo 0" 2>/dev/null || echo 0)
+if [[ "$CYCLONE_CHECK" -eq 0 ]]; then
+    warn "ros-jazzy-rmw-cyclonedds-cpp not found — installing now ..."
+    sudo docker exec "$CONTAINER_NAME" bash -c \
+        "apt-get update -qq 2>/dev/null && apt-get install -y --no-install-recommends \
+         ros-jazzy-rmw-cyclonedds-cpp ros-jazzy-cyclonedds" > /dev/null 2>&1 \
+        && ok "CycloneDDS installed." \
+        || die "Failed to install CycloneDDS. Cannot enforce rmw_cyclonedds_cpp."
+fi
+# Double-check: verify the package is now present
+if ! sudo docker exec "$CONTAINER_NAME" bash -c \
+    "dpkg -l ros-jazzy-rmw-cyclonedds-cpp 2>/dev/null | grep -q '^ii'" 2>/dev/null; then
+    die "CycloneDDS package verification failed. Aborting to avoid running with wrong RMW."
+fi
+ok "CycloneDDS verified — rmw_cyclonedds_cpp ready."
+
+# Verify the benchmark script exists inside the container
+if ! sudo docker exec "$CONTAINER_NAME" test -f "$BENCHMARK_SCRIPT"; then
+    die "Benchmark script not found in container: ${BENCHMARK_SCRIPT}"
+fi
+
+# ── Build the in-container command ────────────────────────────────────────────
+CMD=(python3 "$BENCHMARK_SCRIPT" --inside-container --config "$CONFIG_CONTAINER")
+
+[[ -n "$SEQUENCE" ]]       && CMD+=(--sequence "$SEQUENCE")
+[[ -n "$MODE_OVERRIDE" ]]  && CMD+=(--mode "$MODE_OVERRIDE")
+[[ ${#EXTRA_ARGS[@]} -gt 0 ]] && CMD+=("${EXTRA_ARGS[@]}")
+
+# ── Run with CycloneDDS enforced ──────────────────────────────────────────────
+log "Launching ORB-SLAM2 benchmark inside '${CONTAINER_NAME}' ..."
+log "RMW: rmw_cyclonedds_cpp (enforced via docker exec -e)"
+log "Command: ${CMD[*]}"
+printf "%s\n" "$(printf '─%.0s' {1..70})"
+
+# Inject RMW_IMPLEMENTATION into the container process environment directly.
+# This overrides any existing env in the container, making it impossible for
+# the benchmark to accidentally use FastRTPS.
+DOCKER_EXEC_OPTS=(-e RMW_IMPLEMENTATION=rmw_cyclonedds_cpp)
+
+if [ -t 1 ]; then
+    sudo docker exec -it "${DOCKER_EXEC_OPTS[@]}" "$CONTAINER_NAME" "${CMD[@]}"
+else
+    sudo docker exec -i  "${DOCKER_EXEC_OPTS[@]}" "$CONTAINER_NAME" "${CMD[@]}"
+fi
+
+EXIT_CODE=$?
+printf "%s\n" "$(printf '─%.0s' {1..70})"
+
+if [[ $EXIT_CODE -eq 0 ]]; then
+    ok "ORB-SLAM2 benchmark finished successfully."
+else
+    warn "ORB-SLAM2 benchmark exited with code ${EXIT_CODE}."
+fi
+
+exit $EXIT_CODE

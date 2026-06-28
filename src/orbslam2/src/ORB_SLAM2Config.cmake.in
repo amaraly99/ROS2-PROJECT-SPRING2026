@@ -1,0 +1,10 @@
+# Compute paths
+get_filename_component( PROJECT_CMAKE_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH )
+SET( ORB_SLAM2_INCLUDE_DIRS "@EXPORT_LIB_INC_DIR@" )
+SET( ORB_SLAM2_INCLUDE_DIR  "@EXPORT_LIB_INC_DIR@" )
+
+# Prefer explicit installed library paths over exported targets so downstream
+# consumers do not need DBoW2/g2o in the same CMake export set.
+SET( ORB_SLAM2_LIBRARIES    "${PROJECT_CMAKE_DIR}/../../libORB_SLAM2.so" )
+SET( ORB_SLAM2_LIBRARY      "${PROJECT_CMAKE_DIR}/../../libORB_SLAM2.so" )
+SET( ORB_SLAM2_CMAKEMODULES @CMAKE_CURRENT_SOURCE_DIR@/../CMakeModules )

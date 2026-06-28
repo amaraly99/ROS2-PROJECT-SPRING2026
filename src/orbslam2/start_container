@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+CONTAINER_NAME="orbslam2_container"
+IMAGE_NAME="orbslam2_fixed:latest"
+WORKSPACE_DIR="/workspace"
+ROS_SETUP="/opt/ros/jazzy/setup.bash"
+ROS_WS_SETUP="/root/ws/install/setup.bash"
+LOCAL_OVERLAY_SETUP="/workspace/install_stereo/setup.bash"
+
+log() {
+  printf '[start_container] %s\n' "$*"
+}
+
+fail() {
+  printf '[start_container] ERROR: %s\n' "$*" >&2
+  exit 1
+}
+
+run_in_container() {
+  local label="$1"
+  local command="$2"
+  local log_file="/tmp/${label}.log"
+  local host_log="${TMPDIR:-/tmp}/${CONTAINER_NAME}_${label}.host.log"
+
+  log "Running ${label} ..."
+  if ! sudo docker exec "${CONTAINER_NAME}" /bin/bash -lc "${command}" >"${host_log}" 2>&1; then
+    printf '[start_container] ERROR: step "%s" failed.\n' "${label}" >&2
+    printf '[start_container] Command:\n%s\n' "${command}" >&2
+    printf '[start_container] Host-captured log (%s):\n' "${host_log}" >&2
+    cat "${host_log}" >&2 || true
+    printf '[start_container] In-container log (%s):\n' "${log_file}" >&2
+    sudo docker exec "${CONTAINER_NAME}" /bin/bash -lc "cat ${log_file} 2>/dev/null || true" >&2 || true
+    exit 1
+  fi
+  log "${label} finished."
+}
+
+SOURCE_SNIPPET='source_safe(){ if [ -f "$1" ]; then set +u; . "$1"; set -u; fi; }; source_safe /opt/ros/jazzy/setup.bash; source_safe /root/ws/install/setup.bash; source_safe /workspace/install_stereo/setup.bash;'
+
+sudo docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
+
+log "Starting container ${CONTAINER_NAME} from ${IMAGE_NAME} ..."
+sudo docker run --rm -dit \
+  --name "${CONTAINER_NAME}" \
+  -v "$PWD":/workspace \
+  -w "${WORKSPACE_DIR}" \
+  --entrypoint /bin/bash \
+  "${IMAGE_NAME}" \
+  -lc "while true; do sleep 3600; done" >/dev/null
+
+run_in_container \
+  "bootstrap_env" \
+  "set -euo pipefail; ${SOURCE_SNIPPET} python3 -m pip install --break-system-packages -q evo > /tmp/bootstrap_env.log 2>&1; command -v evo_ape >> /tmp/bootstrap_env.log; command -v evo_traj >> /tmp/bootstrap_env.log"
+
+run_in_container \
+  "build_orbslam2_core" \
+  "set -euo pipefail; ${SOURCE_SNIPPET} cd ${WORKSPACE_DIR}; if [ ! -f Vocabulary/ORBvoc.txt ] && [ -f Vocabulary/ORBvoc.txt.tar.gz ]; then tar -xf Vocabulary/ORBvoc.txt.tar.gz -C Vocabulary; fi; if [ ! -f Vocabulary/ORBvoc.txt ] && [ -f Vocabulary/ORBvoc.txt.tar ]; then tar -xf Vocabulary/ORBvoc.txt.tar -C Vocabulary; fi; cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DPYTHON_EXECUTABLE:FILEPATH=/usr/bin/python3 -DCMAKE_CXX_STANDARD_LIBRARIES='-lboost_system' > /tmp/build_orbslam2_core.log 2>&1; cmake --build build -j$(nproc) >> /tmp/build_orbslam2_core.log 2>&1; cmake --install build >> /tmp/build_orbslam2_core.log 2>&1"
+
+run_in_container \
+  "refresh_runtime_libs" \
+  "set -euo pipefail; cd ${WORKSPACE_DIR}; cp lib/libORB_SLAM2.so /usr/local/lib/; cp lib/libDBoW2.so /usr/local/lib/; cp Thirdparty/g2o/lib/libg2o.so /usr/local/lib/; ldconfig > /tmp/refresh_runtime_libs.log 2>&1"
+
+run_in_container \
+  "build_orbslam_ros2" \
+  "set -euo pipefail; ${SOURCE_SNIPPET} export LIBRARY_PATH=${WORKSPACE_DIR}/lib:/usr/local/lib:\${LIBRARY_PATH:-}; export LD_LIBRARY_PATH=${WORKSPACE_DIR}/lib:/usr/local/lib:\${LD_LIBRARY_PATH:-}; cd ${WORKSPACE_DIR}; colcon build --base-paths ${WORKSPACE_DIR}/ros2-ORB_SLAM2 --packages-select orbslam --build-base ${WORKSPACE_DIR}/build_stereo --install-base ${WORKSPACE_DIR}/install_stereo > /tmp/build_orbslam_ros2.log 2>&1"
+
+run_in_container \
+  "verify_runtime" \
+  "set -euo pipefail; ${SOURCE_SNIPPET} export LD_LIBRARY_PATH=${WORKSPACE_DIR}/lib:/usr/local/lib:\${LD_LIBRARY_PATH:-}; export LIBRARY_PATH=${WORKSPACE_DIR}/lib:/usr/local/lib:\${LIBRARY_PATH:-}; command -v evo_ape > /tmp/verify_runtime.log 2>&1; command -v evo_traj >> /tmp/verify_runtime.log 2>&1; ldd ${WORKSPACE_DIR}/install_stereo/orbslam/lib/orbslam/stereo | grep libORB_SLAM2 >> /tmp/verify_runtime.log 2>&1"
+
+log "Container ready."
+log "evo_ape/evo_traj installed, ORB-SLAM2 core rebuilt, runtime libraries refreshed, ROS2 wrapper rebuilt."

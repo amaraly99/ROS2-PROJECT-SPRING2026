@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+if [[ $# -ne 1 ]]; then
+  echo "Usage: $0 <bag name>" >&2
+  exit 1
+fi
+
+BAG_PATH="$1"
+
+if [[ ! -f "$BAG_PATH" ]]; then
+  echo "Bag file not found: $BAG_PATH" >&2
+  exit 1
+fi
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RECTIFIER_SCRIPT="$ROOT_DIR/tools/euroc_rectify.py"
+SHUTDOWN_REASON="normal exit"
+
+source_safe() {
+  local setup_file="$1"
+  if [[ -f "$setup_file" ]]; then
+    set +u
+    # shellcheck disable=SC1090
+    source "$setup_file"
+    set -u
+  fi
+}
+
+stop_pid() {
+  local pid="${1:-}"
+  if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+    echo "stream_sequence: stopping pid $pid" >&2
+    kill "$pid" 2>/dev/null || true
+    for _ in {1..20}; do
+      if ! kill -0 "$pid" 2>/dev/null; then
+        wait "$pid" 2>/dev/null || true
+        return
+      fi
+      sleep 0.1
+    done
+    echo "stream_sequence: pid $pid did not exit on SIGTERM, sending SIGKILL" >&2
+    kill -9 "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+  fi
+}
+
+cleanup() {
+  local exit_code=$?
+  trap - EXIT INT TERM
+
+  echo "stream_sequence: cleanup (${SHUTDOWN_REASON})" >&2
+
+  stop_pid "${BAG_PID:-}"
+  stop_pid "${RECTIFY_PID:-}"
+
+  exit "$exit_code"
+}
+
+on_interrupt() {
+  SHUTDOWN_REASON="interrupted by user"
+  cleanup
+}
+
+trap cleanup EXIT
+trap on_interrupt INT TERM
+
+source_safe /opt/ros/jazzy/setup.bash
+source_safe /root/ws/install/setup.bash
+source_safe "$ROOT_DIR/install_stereo/setup.bash"
+
+if ! command -v ros2 >/dev/null 2>&1; then
+  echo "ros2 is not in PATH. Run this inside the container or source ROS 2 first." >&2
+  exit 1
+fi
+
+# Run the rectifier in its own session so terminal SIGINT goes to the wrapper,
+# not directly to the background helper.
+setsid python3 "$RECTIFIER_SCRIPT" &
+RECTIFY_PID=$!
+
+# Give the rectifier a moment to register subscriptions before playback starts.
+sleep 1
+
+ros2 bag play "$BAG_PATH" --clock &
+BAG_PID=$!
+
+wait "$BAG_PID"
+SHUTDOWN_REASON="bag playback finished"
+echo "stream_sequence: bag player exited" >&2
+
+# When playback ends normally, stop the background rectifier immediately and exit cleanly.
+stop_pid "${RECTIFY_PID:-}"
+RECTIFY_PID=""
