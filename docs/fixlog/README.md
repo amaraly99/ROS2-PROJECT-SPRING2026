@@ -39,7 +39,9 @@ open_todos: [TODO-x, TODO-y]   # optional
 
 | ID | Date | Title | Status |
 |----|------|-------|--------|
-| [006](006-ibvs-breakdance.md) | 2026-06-27 | IBVS breakdances — saturates, oscillates around sign | **partial** |
+| [008](008-cpu-pinning-regression.md) | 2026-06-27 | CPU pinning regression — yolo_bridge co-located with controller | resolved |
+| [007](007-deployment-bugs.md) | 2026-06-27 | Sidecar deployment — taskset list prefix + missing --entrypoint | resolved |
+| [006](006-ibvs-breakdance.md) | 2026-06-27 | IBVS breakdances — saturates, oscillates (3 steps, partial) | **partial** |
 | [005](005-vx-unbounded.md) | 2026-06-27 | vx unbounded → overshoot; vy still diverges | **paused** |
 | [004](004-depth-from-bbox.md) | 2026-06-27 | Replace solvePnP with depth-from-bbox; drop ViSP | superseded by 005 |
 | [003](003-remove-rotation-feature.md) | 2026-06-26 | Remove ftu_, zero wz, reduce lambda | superseded by 004 |
@@ -48,8 +50,7 @@ open_todos: [TODO-x, TODO-y]   # optional
 
 ## Open TODOs across all fixes
 
-- **TODO-I** (006, active): Pi-test `lambda=0.3`; if oscillation persists apply `vpServo::MEAN`.
-- **TODO-J** (006): Verify desired feature Z_des is not defaulting to ViSP's Z=1.0.
+- **TODO-K** (006, active): Residual oscillation after decoupled fix — diagnose if lambda needs further tuning or if close-range detection dropout is the remaining driver.
 - **TODO-H** (005, active): re-enable wz to track bearing, OR diagnose why TS2 survives
   the same geometry without yaw.
 - TODO-A/B/C/D/E/F/G — see individual entries; most superseded by the depth-from-bbox

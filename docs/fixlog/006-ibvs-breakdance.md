@@ -2,7 +2,7 @@
 id: FIX-006
 title: IBVS (TS1) breakdances — saturates velocity commands, oscillates around sign
 date: 2026-06-27
-status: partial
+status: partial  # step 3 partially worked — centering fires, some residual oscillation remains
 component: visp_servo / config/hil/bench_ibvs.yaml
 critic_verdict: partial
 kiss_verdict: simplify-recommended
