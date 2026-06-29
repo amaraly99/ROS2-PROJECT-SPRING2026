@@ -71,6 +71,70 @@ def meta_val(rundir: Path, key: str) -> str:
     return ''
 
 
+def read_timing(rundir: Path):
+    """Parse timing_events.csv (written by ORB-SLAM2 ScopedBenchmarkTimer).
+    Columns: wall_ts,thread_role,category,duration_ms,frame_id,keyframe_id,tracking_state
+    Returns a dict of per-category {mean,std,n} in ms, or {} if absent.
+    The headline front-end latency is category 'frontend/full_tracking'."""
+    f = rundir / 'timing_events.csv'
+    if not f.exists():
+        return {}
+    by_cat = {}
+    with open(f, newline='') as fh:
+        for row in csv.DictReader(fh):
+            cat = row.get('category', '')
+            try:
+                dur = float(row['duration_ms'])
+            except (KeyError, ValueError):
+                continue
+            by_cat.setdefault(cat, []).append(dur)
+    out = {}
+    for cat, vals in by_cat.items():
+        a = np.array(vals)
+        out[cat] = {
+            'mean': float(a.mean()),
+            'std':  float(a.std(ddof=1)) if len(a) > 1 else 0.0,
+            'n':    int(len(a)),
+        }
+    return out
+
+
+def read_cpu(rundir: Path):
+    """Parse slam_process_cpu.csv (written by slam_cpu_sampler.sh).
+    Columns: elapsed_s,cpu_percent,mem_mb,threads
+    Returns {cpu_mean,cpu_std,cpu_max,mem_mb_mean,mem_mb_max,threads,n} or {}."""
+    f = rundir / 'slam_process_cpu.csv'
+    if not f.exists():
+        return {}
+    cpu, mem, thr = [], [], []
+    with open(f, newline='') as fh:
+        for row in csv.DictReader(fh):
+            try:
+                cpu.append(float(row['cpu_percent']))
+            except (KeyError, ValueError):
+                pass
+            try:
+                mem.append(float(row['mem_mb']))
+            except (KeyError, ValueError):
+                pass
+            try:
+                thr.append(int(float(row['threads'])))
+            except (KeyError, ValueError):
+                pass
+    if not cpu:
+        return {}
+    cpu_a = np.array(cpu)
+    return {
+        'cpu_mean':    float(cpu_a.mean()),
+        'cpu_std':     float(cpu_a.std(ddof=1)) if len(cpu_a) > 1 else 0.0,
+        'cpu_max':     float(cpu_a.max()),
+        'mem_mb_mean': float(np.mean(mem)) if mem else float('nan'),
+        'mem_mb_max':  float(np.max(mem))  if mem else float('nan'),
+        'threads':     int(max(thr))        if thr else 0,
+        'n':           int(len(cpu_a)),
+    }
+
+
 def read_bag(bagdir: Path):
     """Return (slam_poses, gt_poses).
     slam_poses: list of (t_s, x, y, z)   from /slam/pose PoseStamped
@@ -201,6 +265,30 @@ def main():
         'ATE_max_m':            round(ate_max,  6),
         'ATE_min_m':            round(ate_min,  6),
     }
+
+    # ── front-end latency (timing_events.csv, ORB-SLAM2 only) ────────
+    timing = read_timing(rundir)
+    fe = timing.get('frontend/full_tracking')
+    if fe:
+        metrics['FE_full_tracking_ms_mean'] = round(fe['mean'], 3)
+        metrics['FE_full_tracking_ms_std']  = round(fe['std'],  3)
+        metrics['FE_hz']                    = round(1000.0 / fe['mean'], 2) if fe['mean'] > 0 else 0.0
+        metrics['FE_n_frames']              = fe['n']
+    core = timing.get('frontend/core_track_call')
+    if core:
+        metrics['FE_core_track_ms_mean'] = round(core['mean'], 3)
+        metrics['FE_core_track_ms_std']  = round(core['std'],  3)
+
+    # ── on-board utilisation (slam_process_cpu.csv) ──────────────────
+    cpu = read_cpu(rundir)
+    if cpu:
+        metrics['CPU_percent_mean'] = round(cpu['cpu_mean'], 2)
+        metrics['CPU_percent_std']  = round(cpu['cpu_std'],  2)
+        metrics['CPU_percent_max']  = round(cpu['cpu_max'],  2)
+        metrics['MEM_mb_mean']      = round(cpu['mem_mb_mean'], 1)
+        metrics['MEM_mb_max']       = round(cpu['mem_mb_max'],  1)
+        metrics['threads']          = cpu['threads']
+        metrics['CPU_n_samples']    = cpu['n']
 
     with open(rundir / 'slam_metrics.csv', 'w', newline='') as f:
         w = csv.writer(f)

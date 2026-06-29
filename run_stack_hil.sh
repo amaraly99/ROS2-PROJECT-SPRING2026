@@ -190,6 +190,10 @@ if [[ "$OPT" == "stop" ]]; then
     # container whose name starts with 'slam_' (the schema mandates that prefix).
     _slam_cids=$(sudo docker ps -aq --filter 'name=^slam_' 2>/dev/null)
     [[ -n "$_slam_cids" ]] && sudo docker rm -f $_slam_cids 2>/dev/null || true
+    # Stop the SLAM CPU sampler (it also self-exits once the container is gone).
+    [[ -f /tmp/slam_cpu_sampler.pid ]] && kill "$(cat /tmp/slam_cpu_sampler.pid)" 2>/dev/null || true
+    rm -f /tmp/slam_cpu_sampler.pid 2>/dev/null || true
+    sudo pkill -f slam_cpu_sampler.sh 2>/dev/null || true
     sudo pkill -f yolo_producer 2>/dev/null || true
     sudo rm -f /dev/shm/ovcam_frames /dev/shm/yolo_shm \
                /dev/shm/sem.ovcam_ready /dev/shm/sem.yolo_ready 2>/dev/null || true
@@ -429,6 +433,31 @@ else
 fi
 
 # ── 4. SLAM sidecar — separate docker-run container, config-driven ───────────
+# ── Benchmark run dir (created early so SLAM timing/CPU artefacts land here) ──
+# The bag is recorded later (after the stack settles), but the run dir + meta are
+# created now so the SLAM sidecar's timing_events.csv and the CPU sampler can
+# write straight into it via the /workspace volume mount.
+BAG_HOST=""
+if [[ "$MODE" == "benchmark" ]]; then
+    STAMP=$(date +%Y%m%d_%H%M%S)
+    RUNREL="bags/run_${CONFIG_NAME:-nocfg}_${STAMP}"
+    BAG_HOST="${WS}/${RUNREL}"
+    mkdir -p "$BAG_HOST"
+    GIT_SHA=$(git -C "$WS" rev-parse --short HEAD 2>/dev/null || echo nogit)
+    {
+        echo "config=${CONFIG_NAME:-nocfg}"
+        echo "mode=benchmark"
+        echo "controller=${CONTROLLER}"
+        echo "detector=${DETECTOR}"
+        echo "slam_enabled=${SLAM_ENABLED}"
+        echo "slam_type=${SLAM_TYPE:-none}"
+        echo "git_sha=${GIT_SHA}"
+        echo "stamp=${STAMP}"
+        echo "matlab_host_ip=${MATLAB_HOST_IP}"
+        echo "dds=${DDS} domain=${ROS_DOMAIN_ID}"
+    } > "${BAG_HOST}/meta.txt"
+fi
+
 # Replaces the old bash watchdog: `docker run -d --restart` gives a named,
 # auto-restarting sidecar. The startup delay runs INSIDE the container so this
 # script returns immediately (the drone can start moving for parallax). All SLAM
@@ -451,6 +480,14 @@ if [[ "$SLAM_ENABLED" == "true" ]]; then
         && log "CycloneDDS libs extracted → ${SLAM_CYCL_DIR}" \
         || log "WARN: CycloneDDS extract failed — sidecar may use wrong RMW"
 
+    # Benchmark mode: tell the ORB-SLAM2 node where to write per-frame front-end
+    # timing (ScopedBenchmarkTimer flushes each event → docker stop-safe). OV2SLAM
+    # ignores this env var, so it is harmless to set unconditionally.
+    SLAM_TIMING_ENV=":"   # no-op for scout mode
+    if [[ "$MODE" == "benchmark" ]]; then
+        SLAM_TIMING_ENV="export ORB_BENCH_TIMING_CSV=/workspace/${RUNREL}/timing_events.csv"
+    fi
+
     sudo docker run -d \
         --entrypoint "" \
         --name "$SLAM_CONTAINER" \
@@ -466,10 +503,24 @@ if [[ "$SLAM_ENABLED" == "true" ]]; then
             export RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION}
             export ROS_DOMAIN_ID=${ROS_DOMAIN_ID}
             export ${DDS_ENV_VAR}
+            ${SLAM_TIMING_ENV}
             export LD_LIBRARY_PATH=${SLAM_CYCL_DIR}:${SLAM_LD_PREFIX:+${SLAM_LD_PREFIX}:}/workspace/opencv/build/lib:\${LD_LIBRARY_PATH:-}
             exec ${SLAM_CPU:+taskset -c ${SLAM_CPU}} ${SLAM_COMMAND} --ros-args ${SLAM_REMAPS}
         " || die "SLAM sidecar failed to start (is image '${SLAM_IMAGE}' present? name clash on '${SLAM_CONTAINER}'?)"
     log "SLAM sidecar started — log: docker logs ${SLAM_CONTAINER}"
+
+    # Benchmark mode: auto-start the host-side CPU/mem/thread sampler for the
+    # sidecar (the "while loop"). Detached so it survives this script exiting;
+    # self-terminates when stop removes the container. PID file lets stop kill it.
+    if [[ "$MODE" == "benchmark" ]]; then
+        SLAM_CPU_CSV="${WS}/${RUNREL}/slam_process_cpu.csv"
+        nohup bash "${WS}/benchmarks/slam_cpu_sampler.sh" \
+            "$SLAM_CONTAINER" "$SLAM_CPU_CSV" 2 \
+            > "${WS}/${RUNREL}/slam_cpu_sampler.log" 2>&1 &
+        echo $! > /tmp/slam_cpu_sampler.pid
+        disown 2>/dev/null || true
+        log "SLAM CPU sampler started (pid $(cat /tmp/slam_cpu_sampler.pid)) → ${RUNREL}/slam_process_cpu.csv"
+    fi
 else
     log "4/4  SLAM skipped (slam.enabled=false / --no-slam)"
 fi
@@ -477,27 +528,9 @@ fi
 # ── 4b. Benchmark recording — only in benchmark mode ─────────────────────────
 # Records the metric topics to a timestamped bag for offline RMSE analysis
 # (controller approach and/or SLAM-pose-vs-GT). Runs inside the main container so
-# the bag lands on the host via the /workspace volume mount.
-BAG_HOST=""
+# the bag lands on the host via the /workspace volume mount. The run dir + meta
+# were created earlier (before the SLAM block) so timing/CPU artefacts share it.
 if [[ "$MODE" == "benchmark" ]]; then
-    STAMP=$(date +%Y%m%d_%H%M%S)
-    RUNREL="bags/run_${CONFIG_NAME:-nocfg}_${STAMP}"
-    BAG_HOST="${WS}/${RUNREL}"
-    mkdir -p "$BAG_HOST"
-    GIT_SHA=$(git -C "$WS" rev-parse --short HEAD 2>/dev/null || echo nogit)
-    {
-        echo "config=${CONFIG_NAME:-nocfg}"
-        echo "mode=benchmark"
-        echo "controller=${CONTROLLER}"
-        echo "detector=${DETECTOR}"
-        echo "slam_enabled=${SLAM_ENABLED}"
-        echo "slam_type=${SLAM_TYPE:-none}"
-        echo "git_sha=${GIT_SHA}"
-        echo "stamp=${STAMP}"
-        echo "matlab_host_ip=${MATLAB_HOST_IP}"
-        echo "dds=${DDS} domain=${ROS_DOMAIN_ID}"
-    } > "${BAG_HOST}/meta.txt"
-
     # Base metric topics (controller RMSE); add SLAM pose + TF when SLAM is on.
     BAG_TOPICS="/cmd_vel /sim/drone_pose /sim/target_pose /sim/heartbeat /bench/state /yolo/detections"
     [[ "$SLAM_ENABLED" == "true" ]] && BAG_TOPICS+=" ${SLAM_POSE_OUT:-/slam/pose} /tf /tf_static"
