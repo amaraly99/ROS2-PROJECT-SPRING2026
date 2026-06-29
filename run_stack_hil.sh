@@ -438,14 +438,26 @@ if [[ "$SLAM_ENABLED" == "true" ]]; then
     : "${SLAM_IMAGE:?slam.image missing from config}"
     : "${SLAM_COMMAND:?slam.command missing from config}"
     log "4/4  SLAM sidecar: ${SLAM_TYPE} → '${SLAM_CONTAINER}' on cores ${SLAM_CPU:-all} (delay ${SLAM_DELAY:-0}s)"
-    # docker run -d prints the container ID (or an error) to the terminal; the SLAM
-    # node's own stdout/stderr is reachable via `docker logs ${SLAM_CONTAINER}`.
+
+    # orbslam2_fixed only ships FastRTPS; the main stack uses CycloneDDS.
+    # Copy CycloneDDS libs from the running ros2_perception_stack container to a
+    # host temp dir and bind-mount them into the sidecar so both use the same RMW.
+    SLAM_CYCL_DIR=/tmp/slam_cyclone_libs
+    sudo rm -rf "${SLAM_CYCL_DIR}" && sudo mkdir -p "${SLAM_CYCL_DIR}"
+    sudo docker cp ros2_perception_stack:/opt/ros/jazzy/lib/librmw_cyclonedds_cpp.so \
+        "${SLAM_CYCL_DIR}/" 2>/dev/null \
+        && sudo docker cp ros2_perception_stack:/opt/ros/jazzy/lib/aarch64-linux-gnu/. \
+        "${SLAM_CYCL_DIR}/" 2>/dev/null \
+        && log "CycloneDDS libs extracted → ${SLAM_CYCL_DIR}" \
+        || log "WARN: CycloneDDS extract failed — sidecar may use wrong RMW"
+
     sudo docker run -d \
         --entrypoint "" \
         --name "$SLAM_CONTAINER" \
         --restart "${SLAM_RESTART:-no}" \
         --net=host --ipc=host --privileged \
         -v "${WS}:/workspace" -v /tmp:/tmp \
+        -v "${SLAM_CYCL_DIR}:${SLAM_CYCL_DIR}" \
         "$SLAM_IMAGE" bash -lc "
             sleep ${SLAM_DELAY:-0}
             source /opt/ros/jazzy/setup.bash
@@ -454,7 +466,7 @@ if [[ "$SLAM_ENABLED" == "true" ]]; then
             export RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION}
             export ROS_DOMAIN_ID=${ROS_DOMAIN_ID}
             export ${DDS_ENV_VAR}
-            export LD_LIBRARY_PATH=${SLAM_LD_PREFIX:+${SLAM_LD_PREFIX}:}/workspace/opencv/build/lib:\${LD_LIBRARY_PATH:-}
+            export LD_LIBRARY_PATH=${SLAM_CYCL_DIR}:${SLAM_LD_PREFIX:+${SLAM_LD_PREFIX}:}/workspace/opencv/build/lib:\${LD_LIBRARY_PATH:-}
             exec ${SLAM_CPU:+taskset -c ${SLAM_CPU}} ${SLAM_COMMAND} --ros-args ${SLAM_REMAPS}
         " || die "SLAM sidecar failed to start (is image '${SLAM_IMAGE}' present? name clash on '${SLAM_CONTAINER}'?)"
     log "SLAM sidecar started — log: docker logs ${SLAM_CONTAINER}"
