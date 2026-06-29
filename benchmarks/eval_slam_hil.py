@@ -15,12 +15,17 @@
 #
 # Writes into the run dir:
 #   slam_metrics.csv        scalar results (ATE RMSE, scale, n_samples, …)
+#   slam_traj.tum           Umeyama-aligned SLAM trajectory (TUM format)
+#   gt_traj.tum             GT trajectory resampled at SLAM timestamps (TUM format)
+#   traj_xy.png             evo_traj XY overlay (evo-style, same as EuRoC benchmark)
 #   fig_slam_ate.png        ATE vs time
-#   fig_slam_trajectory.png GT vs aligned SLAM, top-down (XY)
+#   fig_slam_trajectory.png GT vs aligned SLAM, full flight path, colored by ATE
 #   fig_slam_error_xyz.png  per-axis translation error vs time
 #
 # Deps:  pip install rosbags matplotlib numpy
+# evo_traj (optional, for traj_xy.png): SLAM-Former/venv/bin/evo_traj
 # ─────────────────────────────────────────────────────────────────
+import subprocess
 import sys
 import csv
 import math
@@ -260,7 +265,43 @@ def main():
     fig.savefig(rundir / 'fig_slam_error_xyz.png', dpi=130)
     plt.close(fig)
 
-    print(f"\nwrote slam_metrics.csv + fig_slam_*.png to {rundir}\n")
+    # ── TUM files + evo_traj XY plot ─────────────────────────────
+    # Write Umeyama-aligned SLAM and GT as TUM so evo_traj can read them.
+    # TUM format: timestamp tx ty tz qx qy qz qw  (identity quaternion for GT/aligned)
+    slam_tum = rundir / 'slam_traj.tum'
+    gt_tum   = rundir / 'gt_traj.tum'
+    with open(slam_tum, 'w') as f:
+        for i, t in enumerate(slam_t):
+            x, y, z = slam_aligned[i]
+            f.write(f"{t:.9f} {x:.9f} {y:.9f} {z:.9f} 0 0 0 1\n")
+    with open(gt_tum, 'w') as f:
+        for i, t in enumerate(slam_t):
+            x, y, z = gt_interp[i]
+            f.write(f"{t:.9f} {x:.9f} {y:.9f} {z:.9f} 0 0 0 1\n")
+
+    # Try to run evo_traj from the SLAM-Former venv (same venv used by benchmark_euroc.py).
+    script_dir = Path(__file__).resolve().parent
+    evo_bin = script_dir.parent / 'SLAM-Former' / 'venv' / 'bin' / 'evo_traj'
+    traj_xy = rundir / 'traj_xy.png'
+    if evo_bin.exists():
+        cmd = (
+            f"{evo_bin} tum {slam_tum} --ref {gt_tum} "
+            f"--plot_mode xy --save_plot {traj_xy} --no_warnings -s"
+        )
+        result = subprocess.run(['bash', '-lc', cmd], capture_output=True, text=True)
+        # evo sometimes appends suffixes; find what was actually written.
+        if not traj_xy.exists():
+            for candidate in sorted(rundir.glob('traj_xy*.png')):
+                traj_xy = candidate
+                break
+        if traj_xy.exists():
+            print(f"  evo_traj → {traj_xy.name}")
+        else:
+            print(f"  evo_traj ran but no PNG found ({result.stderr.strip()[:120]})")
+    else:
+        print(f"  evo_traj not found at {evo_bin} — skipping traj_xy.png")
+
+    print(f"\nwrote slam_metrics.csv + fig_slam_*.png + traj_xy.png to {rundir}\n")
 
 
 if __name__ == '__main__':
