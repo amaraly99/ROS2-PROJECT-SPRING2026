@@ -59,6 +59,7 @@ def launch_setup(context, *args, **kwargs):
     controller_cpu = s('controller_cpu').strip()
     detector_cpu   = s('detector_cpu').strip()
     use_slam_depth = s('use_slam_depth').lower() in ('true', '1', 'yes')
+    use_slam_pose  = s('use_slam_pose').lower()  in ('true', '1', 'yes')
 
     cfg = lambda name: f'{workspace}/config/hil/{name}'
     # taskset prefix for a node, or None when the cpu arg is empty (no pinning).
@@ -139,7 +140,8 @@ def launch_setup(context, *args, **kwargs):
         parameters=[cfg('bench_fsm.yaml'), cfg(ctrl_cfg),
                     {'target_class': target_class,
                      'benchmark_mode': benchmark_mode,
-                     'use_slam_depth': use_slam_depth}],
+                     'use_slam_depth': use_slam_depth,
+                     'use_slam_pose':  use_slam_pose}],
     ))
 
     return nodes
@@ -169,6 +171,8 @@ def generate_launch_description():
             description='taskset core(s) for yolo_bridge/oracle_detector node; empty = no pin'),
         DeclareLaunchArgument('use_slam_depth', default_value='false',
             description='IBVS only: feed SLAM map-point depth into the interaction matrix (vs bbox depth)'),
+        DeclareLaunchArgument('use_slam_pose', default_value='false',
+            description='IBVS only: gate vx on SLAM pose freshness+confidence; use SLAM range for approach'),
         DeclareLaunchArgument('calib_yaml',
             default_value=PathJoinSubstitution(
                 [EnvironmentVariable('WORKSPACE_DIR', default_value='/workspace'),

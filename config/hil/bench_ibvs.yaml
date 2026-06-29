@@ -14,3 +14,11 @@
     # Monocular SLAM is up-to-scale; calibrate this once so SLAM depth matches metric
     # bbox depth (1.0 = raw). Only scales the SLAM median, never the bbox fallback.
     slam_depth_scale: 1.0
+
+    # SLAM pose gate for vx switching (use_slam_pose is set per-stack-config).
+    # When true + SLAM fresh (+OK tracking state for ORB-SLAM2):
+    #   vx = k_fwd * max(0, Z_slam - standoff_m)   [SLAM range approach]
+    # When false or SLAM stale/lost:
+    #   vx = k_fwd * max(0, target_ratio - bbox_ratio)   [bbox-ratio fallback]
+    # Requires use_slam_depth:=true so Z_slam is the SLAM-estimated range, not bbox.
+    standoff_m: 3.0    # desired hover range (metres) for SLAM-range approach

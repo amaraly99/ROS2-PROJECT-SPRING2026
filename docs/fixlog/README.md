@@ -39,6 +39,7 @@ open_todos: [TODO-x, TODO-y]   # optional
 
 | ID | Date | Title | Status |
 |----|------|-------|--------|
+| [010](010-slam-pose-integration.md) | 2026-06-29 | SLAM pose → IBVS controller (staleness gate + ORB-SLAM2 confidence + bag stop fix) | **done** |
 | [009](009-slam-depth-ibvs.md) | 2026-06-28 | Wire any SLAM pose+map-points into ViSP IBVS depth (dead path revived) | **partial** |
 | [008](008-cpu-pinning-regression.md) | 2026-06-27 | CPU pinning regression — yolo_bridge co-located with controller | resolved |
 | [007](007-deployment-bugs.md) | 2026-06-27 | Sidecar deployment — taskset list prefix + missing --entrypoint | resolved |
@@ -51,9 +52,11 @@ open_todos: [TODO-x, TODO-y]   # optional
 
 ## Open TODOs across all fixes
 
-- **TODO-L/M/N/O** (009, active): SLAM-depth IBVS caveats — mono scale (depth_scale can't model drift),
-  background-vs-target bias in bbox-median depth, warmup Z-step + tracking-lost staleness, and A/B
-  cloud-load fairness. Run the bbox-vs-SLAM-depth A/B and resolve scale before trusting numbers.
+- **TODO-P** (010, deferred): Option 3 weighted fusion — monocular scale drift makes raw translation
+  blending unreliable. Revisit after GT-anchored scale correction (TODO-L). Only yaw is safe to blend.
+- **TODO-L/M/O** (009, active): SLAM-depth IBVS caveats — mono scale (depth_scale can't model drift),
+  background-vs-target bias in bbox-median depth, and A/B cloud-load fairness.
+  TODO-N (staleness) is closed by FIX-010.
 - **TODO-K** (006, active): Residual oscillation after decoupled fix — diagnose if lambda needs further tuning or if close-range detection dropout is the remaining driver.
 - **TODO-H** (005, active): re-enable wz to track bearing, OR diagnose why TS2 survives
   the same geometry without yaw.

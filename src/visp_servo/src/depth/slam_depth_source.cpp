@@ -38,6 +38,7 @@ void SlamDepthSource::on_pose(const geometry_msgs::msg::PoseStamped::SharedPtr m
     Eigen::Vector3d twc(p.x, p.y, p.z);
     Rcw_ = Rwc.transpose();
     tcw_ = -Rcw_ * twc;
+    last_pose_time_ = node_->now();
     has_pose_ = true;
 }
 
@@ -47,9 +48,14 @@ void SlamDepthSource::on_cloud(const sensor_msgs::msg::PointCloud2::SharedPtr ms
 }
 
 double SlamDepthSource::depth(const servo_core::ServoInputs& in) {
-    // No SLAM yet → bbox fallback.
-    if (!has_cloud_ || !has_pose_ || !cloud_ ||
+    // No SLAM data, or pose went stale (tracking lost) → bbox fallback.
+    const bool stale = has_pose_ &&
+        (node_->now() - last_pose_time_).seconds() > kStalenessSec;
+    if (!has_cloud_ || !has_pose_ || !cloud_ || stale ||
         cloud_->width * cloud_->height == 0) {
+        if (stale)
+            RCLCPP_WARN_THROTTLE(node_->get_logger(), *node_->get_clock(), 5000,
+                "SlamDepthSource: pose stale (>%.1fs) — bbox fallback", kStalenessSec);
         return in.Z;
     }
 

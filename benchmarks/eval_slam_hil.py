@@ -38,16 +38,22 @@ except ImportError as e:
 
 # ── helpers ──────────────────────────────────────────────────────
 
-def find_bag(rundir: Path) -> Path:
+def find_bag(rundir: Path):
+    """Return a path list suitable for AnyReader: a directory with metadata.yaml
+    or a list of .mcap files (Jazzy bags skip metadata.yaml)."""
     if (rundir / 'metadata.yaml').exists():
-        return rundir
+        return [rundir]
     bag = rundir / 'bag'
     if (bag / 'metadata.yaml').exists():
-        return bag
+        return [bag]
     cands = list(rundir.glob('**/metadata.yaml'))
     if cands:
-        return cands[0].parent
-    sys.exit(f"no rosbag (metadata.yaml) found under {rundir}")
+        return [cands[0].parent]
+    # MCAP-only (no metadata.yaml) — pass .mcap files directly.
+    mcaps = sorted(rundir.glob('**/*.mcap'))
+    if mcaps:
+        return mcaps
+    sys.exit(f"no rosbag (metadata.yaml or .mcap) found under {rundir}")
 
 
 def meta_val(rundir: Path, key: str) -> str:
@@ -67,7 +73,7 @@ def read_bag(bagdir: Path):
     """
     slam, gt = [], []
     topics = {'/slam/pose', '/sim/drone_pose'}
-    with AnyReader([bagdir]) as reader:
+    with AnyReader(bagdir) as reader:
         conns = [c for c in reader.connections if c.topic in topics]
         if not conns:
             sys.exit("bag has neither /slam/pose nor /sim/drone_pose — wrong bag?")
@@ -117,9 +123,8 @@ def main():
     if len(sys.argv) < 2:
         sys.exit("usage: eval_slam_hil.py <run_dir>")
     rundir = Path(sys.argv[1])
-    bagdir = find_bag(rundir)
-
-    slam_raw, gt_raw = read_bag(bagdir)
+    bagpaths = find_bag(rundir)
+    slam_raw, gt_raw = read_bag(bagpaths)
 
     if not slam_raw:
         sys.exit("no /slam/pose messages in bag — SLAM never published poses (tracking failure?)")

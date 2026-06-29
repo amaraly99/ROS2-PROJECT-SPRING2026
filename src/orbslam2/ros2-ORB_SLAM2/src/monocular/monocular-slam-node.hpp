@@ -10,6 +10,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/image.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
+#include "std_msgs/msg/int32.hpp"
 #include "visualization_msgs/msg/marker.hpp"
 
 #include <cv_bridge/cv_bridge.hpp>
@@ -101,6 +102,10 @@ private:
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr m_annotated_image_publisher;
     rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr m_map_publisher;
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_pub_;
+    // Publishes eTrackingState as Int32 on slam_tracking_state → /slam/tracking_state.
+    // Values: OK=2, LOST=3 (see Tracking.h eTrackingState).
+    // SlamPoseSource in visp_servo subscribes this for Option 2 confidence gating.
+    rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr tracking_state_pub_;
 
 };
 

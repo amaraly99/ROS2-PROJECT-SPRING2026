@@ -50,3 +50,4 @@ slam:
   remap:
     - "camera:=/ovcam/image_raw"
     - "slam_pose:=/slam/pose"
+    - "slam_tracking_state:=/slam/tracking_state"

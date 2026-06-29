@@ -179,7 +179,12 @@ fi
 # ── stop ──────────────────────────────────────────────────────────────────────
 if [[ "$OPT" == "stop" ]]; then
     log "Stopping HIL stack..."
-    sudo docker kill ros2_perception_stack 2>/dev/null || true
+    # Send SIGINT to ros2 bag record FIRST so it can write the MCAP footer cleanly.
+    # docker kill sends SIGKILL which truncates the file and leaves it unreadable.
+    sudo docker exec ros2_perception_stack \
+        bash -c "pkill -INT -f 'ros2 bag record' || true" 2>/dev/null || true
+    sleep 2   # ros2 bag record typically flushes footer in <1 s
+    sudo docker stop --time 5 ros2_perception_stack 2>/dev/null || true
     sudo docker rm  ros2_perception_stack 2>/dev/null || true
     # SLAM sidecars use --restart, so a plain kill is not enough: force-remove any
     # container whose name starts with 'slam_' (the schema mandates that prefix).
@@ -314,7 +319,11 @@ fi
 
 # ── clean stale state ─────────────────────────────────────────────────────────
 log "Cleaning up any stale processes / shm..."
-sudo docker kill ros2_perception_stack 2>/dev/null || true
+# Graceful bag finalization before killing stale container.
+sudo docker exec ros2_perception_stack \
+    bash -c "pkill -INT -f 'ros2 bag record' || true" 2>/dev/null || true
+sleep 1
+sudo docker stop --time 3 ros2_perception_stack 2>/dev/null || true
 sudo docker rm  ros2_perception_stack 2>/dev/null || true
 # Force-remove stale SLAM sidecars (they use --restart; a kill alone respawns them).
 _slam_cids=$(sudo docker ps -aq --filter 'name=^slam_' 2>/dev/null)
@@ -358,6 +367,7 @@ BENCH_FLAG=false
 LAUNCH_ARGS+=" controller:=${CONTROLLER} detector:=${DETECTOR} benchmark_mode:=${BENCH_FLAG}"
 LAUNCH_ARGS+=" controller_cpu:=${CONTROLLER_CPU:-} detector_cpu:=${DETECTOR_CPU:-}"
 LAUNCH_ARGS+=" use_slam_depth:=${CONTROLLER_USE_SLAM_DEPTH:-false}"
+LAUNCH_ARGS+=" use_slam_pose:=${CONTROLLER_USE_SLAM_POSE:-false}"
 if [[ "$DETECTOR" == "oracle" ]]; then
     log "Detector: oracle (yolo_bridge skipped, oracle_detector_node starts in Docker)"
 else

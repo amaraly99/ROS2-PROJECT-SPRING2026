@@ -44,11 +44,15 @@ private:
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr sub_pose_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr   sub_cloud_;
 
+    // Pose older than this is treated as stale → bbox fallback (TODO-N).
+    static constexpr double kStalenessSec = 2.0;
+
     double depth_scale_{1.0};   // monocular up-to-scale correction (1.0 = raw)
     double fx_{554.0}, fy_{554.0}, u0_{320.0}, v0_{240.0};
     Eigen::Matrix3d Rcw_ = Eigen::Matrix3d::Identity();
     Eigen::Vector3d tcw_ = Eigen::Vector3d::Zero();
     bool has_pose_ = false;
+    rclcpp::Time last_pose_time_{0, 0, RCL_ROS_TIME};
 
     sensor_msgs::msg::PointCloud2::SharedPtr cloud_;
     bool has_cloud_ = false;

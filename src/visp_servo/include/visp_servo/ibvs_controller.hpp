@@ -21,6 +21,7 @@
 
 #include "servo_core/servo_controller.hpp"
 #include "visp_servo/depth/depth_source.hpp"
+#include "visp_servo/slam_pose_source.hpp"
 
 namespace visp_servo {
 
@@ -37,8 +38,11 @@ private:
     double lambda_;
     bool   use_slam_depth_;
     double slam_depth_scale_ = 1.0;
+    bool   use_slam_pose_ = false;
+    double standoff_m_    = 3.0;   // desired range when SLAM pose gates vx
 
-    std::unique_ptr<IDepthSource> depth_;     // swappable: bbox | slam
+    std::unique_ptr<IDepthSource>  depth_;      // swappable: bbox | slam
+    std::unique_ptr<SlamPoseSource> slam_pose_; // nullptr when use_slam_pose=false
 
     vpCameraParameters cam_;
     vpServo            servo_;

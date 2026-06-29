@@ -21,6 +21,7 @@ add_executable(visp_servo_node
   src/ibvs_controller.cpp
   src/ibvs_law.cpp
   src/depth/slam_depth_source.cpp
+  src/slam_pose_source.cpp
 )
 target_include_directories(visp_servo_node PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/include
