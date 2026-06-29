@@ -450,10 +450,11 @@ if [[ "$SLAM_ENABLED" == "true" ]]; then
             sleep ${SLAM_DELAY:-0}
             source /opt/ros/jazzy/setup.bash
             source /workspace/install/setup.bash
+            [[ -n ${SLAM_SETUP_OVERLAY:-} ]] && source ${SLAM_SETUP_OVERLAY}
             export RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION}
             export ROS_DOMAIN_ID=${ROS_DOMAIN_ID}
             export ${DDS_ENV_VAR}
-            export LD_LIBRARY_PATH=/workspace/opencv/build/lib:\${LD_LIBRARY_PATH:-}
+            export LD_LIBRARY_PATH=${SLAM_LD_PREFIX:+${SLAM_LD_PREFIX}:}/workspace/opencv/build/lib:\${LD_LIBRARY_PATH:-}
             exec ${SLAM_CPU:+taskset -c ${SLAM_CPU}} ${SLAM_COMMAND} --ros-args ${SLAM_REMAPS}
         " || die "SLAM sidecar failed to start (is image '${SLAM_IMAGE}' present? name clash on '${SLAM_CONTAINER}'?)"
     log "SLAM sidecar started — log: docker logs ${SLAM_CONTAINER}"
