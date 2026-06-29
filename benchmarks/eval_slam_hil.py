@@ -168,20 +168,26 @@ def main():
     duration = float(slam_t[-1] - slam_t[0])
     slam_hz  = len(slam_t) / max(duration, 1e-6)
 
+    # Path length from interpolated GT within the eval window.
+    path_length = float(np.sum(np.linalg.norm(np.diff(gt_interp, axis=0), axis=1)))
+    ate_rmse_rel_pct = ate_rmse / max(path_length, 1e-6) * 100.0
+
     t_rel = slam_t - slam_t[0]
 
     # ── metrics ──────────────────────────────────────────────────
-    slam_type = meta_val(rundir, 'slam_type') or bagdir.parent.name
+    slam_type = meta_val(rundir, 'slam_type') or rundir.name
     metrics = {
-        'slam_type':     slam_type,
-        'n_samples':     len(slam_t),
-        'duration_s':    round(duration, 2),
-        'slam_hz':       round(slam_hz, 2),
-        'umeyama_scale': round(s, 6),
-        'ATE_RMSE_m':    round(ate_rmse, 6),
-        'ATE_mean_m':    round(ate_mean, 6),
-        'ATE_max_m':     round(ate_max,  6),
-        'ATE_min_m':     round(ate_min,  6),
+        'slam_type':        slam_type,
+        'n_samples':        len(slam_t),
+        'duration_s':       round(duration, 2),
+        'slam_hz':          round(slam_hz, 2),
+        'path_length_m':    round(path_length, 3),
+        'umeyama_scale':    round(s, 6),
+        'ATE_RMSE_m':       round(ate_rmse, 6),
+        'ATE_RMSE_pct':     round(ate_rmse_rel_pct, 4),
+        'ATE_mean_m':       round(ate_mean, 6),
+        'ATE_max_m':        round(ate_max,  6),
+        'ATE_min_m':        round(ate_min,  6),
     }
 
     with open(rundir / 'slam_metrics.csv', 'w', newline='') as f:
