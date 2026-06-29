@@ -168,26 +168,33 @@ def main():
     duration = float(slam_t[-1] - slam_t[0])
     slam_hz  = len(slam_t) / max(duration, 1e-6)
 
-    # Path length from interpolated GT within the eval window.
+    # Path length — eval window (GT interpolated at SLAM timestamps).
     path_length = float(np.sum(np.linalg.norm(np.diff(gt_interp, axis=0), axis=1)))
-    ate_rmse_rel_pct = ate_rmse / max(path_length, 1e-6) * 100.0
+    ate_rmse_eval_pct = ate_rmse / max(path_length, 1e-6) * 100.0
+
+    # Path length — full flight (all GT samples in the bag).
+    gt_full = np.array(gt_raw)[:, 1:4]   # (M, 3)
+    full_path_length = float(np.sum(np.linalg.norm(np.diff(gt_full, axis=0), axis=1)))
+    ate_rmse_full_pct = ate_rmse / max(full_path_length, 1e-6) * 100.0
 
     t_rel = slam_t - slam_t[0]
 
     # ── metrics ──────────────────────────────────────────────────
     slam_type = meta_val(rundir, 'slam_type') or rundir.name
     metrics = {
-        'slam_type':        slam_type,
-        'n_samples':        len(slam_t),
-        'duration_s':       round(duration, 2),
-        'slam_hz':          round(slam_hz, 2),
-        'path_length_m':    round(path_length, 3),
-        'umeyama_scale':    round(s, 6),
-        'ATE_RMSE_m':       round(ate_rmse, 6),
-        'ATE_RMSE_pct':     round(ate_rmse_rel_pct, 4),
-        'ATE_mean_m':       round(ate_mean, 6),
-        'ATE_max_m':        round(ate_max,  6),
-        'ATE_min_m':        round(ate_min,  6),
+        'slam_type':            slam_type,
+        'n_samples':            len(slam_t),
+        'duration_s':           round(duration, 2),
+        'slam_hz':              round(slam_hz, 2),
+        'full_path_length_m':   round(full_path_length, 3),
+        'eval_path_length_m':   round(path_length, 3),
+        'umeyama_scale':        round(s, 6),
+        'ATE_RMSE_m':           round(ate_rmse, 6),
+        'ATE_RMSE_full_pct':    round(ate_rmse_full_pct, 4),
+        'ATE_RMSE_eval_pct':    round(ate_rmse_eval_pct, 4),
+        'ATE_mean_m':           round(ate_mean, 6),
+        'ATE_max_m':            round(ate_max,  6),
+        'ATE_min_m':            round(ate_min,  6),
     }
 
     with open(rundir / 'slam_metrics.csv', 'w', newline='') as f:
@@ -213,13 +220,28 @@ def main():
     plt.close(fig)
 
     # ── fig 2: top-down trajectory ───────────────────────────────
-    fig, ax = plt.subplots(figsize=(7, 7))
-    ax.plot(gt_interp[:, 0],   gt_interp[:, 1],   'b-',  lw=1.8, label='GT')
-    ax.plot(slam_aligned[:, 0], slam_aligned[:, 1], 'r--', lw=1.4, label=f'SLAM aligned (s={s:.3f})')
-    ax.plot(gt_interp[0, 0],   gt_interp[0, 1],   'go', ms=8, label='start')
+    fig, ax = plt.subplots(figsize=(8, 8))
+    # Full flight GT in light gray so you can see how much of the flight SLAM covered.
+    gt_full_arr = np.array(gt_raw)
+    ax.plot(gt_full_arr[:, 1], gt_full_arr[:, 2], color='#cccccc', lw=1.5,
+            label=f'GT full flight ({full_path_length:.1f} m)', zorder=1)
+    # Eval-window GT in blue.
+    ax.plot(gt_interp[:, 0], gt_interp[:, 1], 'b-', lw=2.0,
+            label=f'GT eval window ({path_length:.1f} m)', zorder=2)
+    # SLAM estimated path, scatter-colored by ATE error for instant hot-spot reading.
+    sc = ax.scatter(slam_aligned[:, 0], slam_aligned[:, 1],
+                    c=err_mag * 100, cmap='plasma', s=10, zorder=3,
+                    label=f'SLAM aligned (s={s:.3f})')
+    cbar = fig.colorbar(sc, ax=ax, fraction=0.035, pad=0.04)
+    cbar.set_label('ATE error (cm)')
+    # Start / end markers.
+    ax.plot(gt_interp[0, 0],  gt_interp[0, 1],  'go', ms=10, zorder=4, label='SLAM start')
+    ax.plot(gt_interp[-1, 0], gt_interp[-1, 1], 'rs', ms=10, zorder=4, label='SLAM end')
     ax.set_xlabel('world x (m)'); ax.set_ylabel('world y (m)')
-    ax.set_title(f'{slam_type} — GT vs SLAM (Umeyama-aligned, top-down)')
-    ax.axis('equal'); ax.legend(); ax.grid(True, alpha=0.3)
+    ax.set_title(f'{slam_type} — trajectory\n'
+                 f'ATE RMSE {ate_rmse * 100:.1f} cm  '
+                 f'({ate_rmse_full_pct:.2f}% of full path, {ate_rmse_eval_pct:.2f}% of eval path)')
+    ax.axis('equal'); ax.legend(loc='best', fontsize=8); ax.grid(True, alpha=0.3)
     fig.tight_layout()
     fig.savefig(rundir / 'fig_slam_trajectory.png', dpi=130)
     plt.close(fig)
