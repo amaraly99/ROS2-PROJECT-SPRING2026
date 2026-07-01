@@ -30,6 +30,8 @@
 #
 #   --config <name>   read config/hil/stack/<name>.yaml via scripts/parse_stack.py
 #   --mode <m>        override config mode: benchmark | scout
+#   --run-tag <name>  benchmark mode: label the run dir (bags/run_<cfg>_<tag>_<stamp>)
+#                      e.g. --run-tag run3  or  --run-tag ab_baseline
 #   --build           colcon build all HIL stack packages first, then launch
 #   --no-slam         override: skip the SLAM sidecar even if config enables it
 #   --debug-image     override: publish /visp/debug_image (921 KB/frame extra)
@@ -108,6 +110,7 @@ CONFIG_NAME=""
 _NO_SLAM_FLAG=false
 _DEBUG_FLAG=false
 _MODE_OVERRIDE=""
+RUN_TAG=""
 
 _BUILD_FIRST=false
 
@@ -125,6 +128,10 @@ while [[ $_i -le $# ]]; do
             _i=$((_i + 1))
             [[ $_i -le $# ]] || die "--config requires a name argument"
             CONFIG_NAME="${!_i}" ;;
+        --run-tag)
+            _i=$((_i + 1))
+            [[ $_i -le $# ]] || die "--run-tag requires a name argument (e.g. run3, ab_baseline)"
+            RUN_TAG="${!_i}" ;;
     esac
     _i=$((_i + 1))
 done
@@ -194,6 +201,10 @@ if [[ "$OPT" == "stop" ]]; then
     [[ -f /tmp/slam_cpu_sampler.pid ]] && kill "$(cat /tmp/slam_cpu_sampler.pid)" 2>/dev/null || true
     rm -f /tmp/slam_cpu_sampler.pid 2>/dev/null || true
     sudo pkill -f slam_cpu_sampler.sh 2>/dev/null || true
+    # Stop the per-thread CPU sampler.
+    [[ -f /tmp/slam_thread_sampler.pid ]] && kill "$(cat /tmp/slam_thread_sampler.pid)" 2>/dev/null || true
+    rm -f /tmp/slam_thread_sampler.pid 2>/dev/null || true
+    sudo pkill -f slam_thread_sampler.py 2>/dev/null || true
     sudo pkill -f yolo_producer 2>/dev/null || true
     sudo rm -f /dev/shm/ovcam_frames /dev/shm/yolo_shm \
                /dev/shm/sem.ovcam_ready /dev/shm/sem.yolo_ready 2>/dev/null || true
@@ -440,7 +451,7 @@ fi
 BAG_HOST=""
 if [[ "$MODE" == "benchmark" ]]; then
     STAMP=$(date +%Y%m%d_%H%M%S)
-    RUNREL="bags/run_${CONFIG_NAME:-nocfg}_${STAMP}"
+    RUNREL="bags/run_${CONFIG_NAME:-nocfg}_${RUN_TAG:+${RUN_TAG}_}${STAMP}"
     BAG_HOST="${WS}/${RUNREL}"
     mkdir -p "$BAG_HOST"
     GIT_SHA=$(git -C "$WS" rev-parse --short HEAD 2>/dev/null || echo nogit)
@@ -453,6 +464,7 @@ if [[ "$MODE" == "benchmark" ]]; then
         echo "slam_type=${SLAM_TYPE:-none}"
         echo "git_sha=${GIT_SHA}"
         echo "stamp=${STAMP}"
+        echo "run_tag=${RUN_TAG}"
         echo "matlab_host_ip=${MATLAB_HOST_IP}"
         echo "dds=${DDS} domain=${ROS_DOMAIN_ID}"
     } > "${BAG_HOST}/meta.txt"
@@ -520,6 +532,16 @@ if [[ "$SLAM_ENABLED" == "true" ]]; then
         echo $! > /tmp/slam_cpu_sampler.pid
         disown 2>/dev/null || true
         log "SLAM CPU sampler started (pid $(cat /tmp/slam_cpu_sampler.pid)) → ${RUNREL}/slam_process_cpu.csv"
+
+        # Per-thread CPU sampler: reads /proc/1/task/ inside the container via docker exec.
+        # Writes slam_thread_cpu.csv for the per-thread bar chart (eval_slam_hil.py).
+        SLAM_THREAD_CSV="${WS}/${RUNREL}/slam_thread_cpu.csv"
+        nohup python3 "${WS}/benchmarks/slam_thread_sampler.py" \
+            "$SLAM_CONTAINER" "$SLAM_THREAD_CSV" 2 \
+            > "${WS}/${RUNREL}/slam_thread_sampler.log" 2>&1 &
+        echo $! > /tmp/slam_thread_sampler.pid
+        disown 2>/dev/null || true
+        log "SLAM thread sampler started (pid $(cat /tmp/slam_thread_sampler.pid)) → ${RUNREL}/slam_thread_cpu.csv"
     fi
 else
     log "4/4  SLAM skipped (slam.enabled=false / --no-slam)"

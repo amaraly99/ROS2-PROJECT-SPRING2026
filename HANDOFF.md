@@ -51,6 +51,10 @@ Entry point: `./run_stack_hil.sh --config <name>` reads `config/hil/stack/<name>
 ./run_stack_hil.sh --config orbslam2_eval          # Oracle + Proportional + ORB-SLAM2 → SLAM ATE bag
 ./run_stack_hil.sh --config ov2slam_oracle         # Oracle + Proportional + OV2SLAM → SLAM ATE bag
 
+# Control the run dir label (added 2026-07-01): bags/run_<cfg>_<tag>_<stamp>/
+./run_stack_hil.sh --config orbslam2_eval --run-tag run3
+./run_stack_hil.sh --config orbslam2_eval --run-tag unpinned_cpu
+
 # SLAM depth A/B pair
 ./run_stack_hil.sh --config ov2slam_ibvs           # baseline: bbox depth
 ./run_stack_hil.sh --config ov2slam_ibvs_slamdepth # SLAM depth via /slam/cloud
@@ -286,7 +290,9 @@ datasets/euroc/                              — EuRoC bags (for ORB-SLAM2 offli
 
 ## 11. Known gotchas / Pi environment
 
-- **Interface:** `wlan0` has no IPv4 on the Pi. All configs use `interface: wlan0` but DDS goes over eth0. The actual network binding is via `MATLAB_HOST_IP` unicast. If Pi can't reach MATLAB: check eth0 IP.
+- **Interface:** `wlan0` is the real DDS interface (confirmed via SSH 2026-07-01: `inet 192.168.1.60/24` on wlan0). The earlier note claiming "wlan0 has no IPv4, DDS goes over eth0" was stale/wrong — corrected.
+- **`run_stack_hil.sh` wlan0 startup race**: the interface-IP check (`ip -4 addr show wlan0 | grep -oP 'inet \K...'`) runs once with no retry. If the script launches right after a Pi reboot/WiFi reconnect, wlan0 may still be mid-DHCP and the script dies with `Interface 'wlan0' has no IPv4 address` even though the IP appears a few seconds later. Fix: just re-run — no code retry loop added yet (declined, logged here instead of TODO).
+- **`ip` (iproute2) missing** was the root cause of a related failure — installing it fixed the issue. `iproute2` is now installed automatically in `start_container.sh` step 2/3 (added 2026-07-01) alongside `gettext-base`/`figlet`.
 - **Bare `colcon build` crashes** on vendored OpenCV in `/workspace/opencv/`. Always use `--base-paths src --packages-up-to <pkgs>`.
 - **`yolo_producer`** hardcoded to `/usr/bin/python3` — pyenv shim at `~/.pyenv/shims/python3` does NOT have hailo_platform.
 - **Bags created root inside Docker**: `sudo chmod -R 777 bags/run_*` if PermissionError on host.

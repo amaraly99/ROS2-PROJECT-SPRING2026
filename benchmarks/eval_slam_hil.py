@@ -135,6 +135,35 @@ def read_cpu(rundir: Path):
     }
 
 
+def read_thread_cpu(rundir: Path):
+    """Parse slam_thread_cpu.csv (written by slam_thread_sampler.py).
+    Columns: elapsed_s, thread_name, cpu_percent
+    Returns {thread_name: {mean, std, n}} or {}."""
+    f = rundir / 'slam_thread_cpu.csv'
+    if not f.exists():
+        return {}
+    by_thread: dict = {}
+    with open(f, newline='') as fh:
+        for row in csv.DictReader(fh):
+            name = row.get('thread_name', '').strip()
+            if not name:
+                continue
+            try:
+                pct = float(row['cpu_percent'])
+            except (KeyError, ValueError):
+                continue
+            by_thread.setdefault(name, []).append(pct)
+    out = {}
+    for name, vals in by_thread.items():
+        a = np.array(vals)
+        out[name] = {
+            'mean': float(a.mean()),
+            'std':  float(a.std(ddof=1)) if len(a) > 1 else 0.0,
+            'n':    int(len(a)),
+        }
+    return out
+
+
 def read_bag(bagdir: Path):
     """Return (slam_poses, gt_poses).
     slam_poses: list of (t_s, x, y, z)   from /slam/pose PoseStamped
@@ -352,6 +381,38 @@ def main():
     fig.tight_layout()
     fig.savefig(rundir / 'fig_slam_error_xyz.png', dpi=130)
     plt.close(fig)
+
+    # ── fig 4: per-thread CPU bar chart ─────────────────────────
+    # Matches orbslam2_cpu_per_thread.png in the EuRoC benchmark report.
+    # Skip startup-phase threads (bash/sleep) and sub-1% noise.
+    _SKIP_THREADS = {'bash', 'sh', 'sleep', 'python3'}
+    thread_cpu = read_thread_cpu(rundir)
+    if thread_cpu:
+        items = [
+            (n, v) for n, v in thread_cpu.items()
+            if v['mean'] >= 1.0 and n not in _SKIP_THREADS
+        ]
+        items.sort(key=lambda x: x[1]['mean'], reverse=True)
+        if items:
+            names = [n for n, _ in items]
+            means = [v['mean'] for _, v in items]
+            stds  = [v['std']  for _, v in items]
+            fig, ax = plt.subplots(figsize=(8, max(3, len(names) * 0.45 + 1.5)))
+            y = np.arange(len(names))
+            ax.barh(y, means, xerr=stds, color='#1f77b4', ecolor='#333333',
+                    capsize=4, align='center', alpha=0.85)
+            ax.set_yticks(y)
+            ax.set_yticklabels(names)
+            ax.set_xlabel('CPU utilization (% of one core)')
+            ax.axvline(100, color='gray', ls='--', lw=1, label='1 core (100%)')
+            ax.axvline(200, color='orange', ls='--', lw=1, label='2 cores (200%)')
+            ax.set_title(f'{slam_type} — per-thread CPU (mean ± std, all cores)')
+            ax.legend(fontsize=8)
+            ax.grid(True, axis='x', alpha=0.3)
+            fig.tight_layout()
+            fig.savefig(rundir / 'fig_slam_thread_cpu.png', dpi=130)
+            plt.close(fig)
+            print(f"  thread CPU plot → fig_slam_thread_cpu.png")
 
     # ── TUM files + evo_traj XY plot ─────────────────────────────
     # Write Umeyama-aligned SLAM and GT as TUM so evo_traj can read them.

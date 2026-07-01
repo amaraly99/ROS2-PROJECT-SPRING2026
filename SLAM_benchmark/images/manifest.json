@@ -1,0 +1,107 @@
+{
+  "source_results_root": "/home/amaraly/ORB_SLAM2/results/20260530_232822",
+  "orbslam2_sequences": [
+    {
+      "sequence": "MH_01_easy",
+      "rmse_avg_clean": 0.045619999999999994,
+      "frontend_full_tracking_avg_clean_ms": 46.128693999999996,
+      "cpu_total_avg_pct": 161.44582448228368
+    },
+    {
+      "sequence": "MH_02_easy",
+      "rmse_avg_clean": 0.05416233333333333,
+      "frontend_full_tracking_avg_clean_ms": 45.380426666666665,
+      "cpu_total_avg_pct": 162.5413712385828
+    },
+    {
+      "sequence": "MH_03_medium",
+      "rmse_avg_clean": 0.04608366666666667,
+      "frontend_full_tracking_avg_clean_ms": 47.648192333333334,
+      "cpu_total_avg_pct": 162.79779818403864
+    },
+    {
+      "sequence": "MH_04_difficult",
+      "rmse_avg_clean": 0.07720700000000001,
+      "frontend_full_tracking_avg_clean_ms": 40.58843433333333,
+      "cpu_total_avg_pct": 144.28683602735418
+    },
+    {
+      "sequence": "MH_05_difficult",
+      "rmse_avg_clean": 0.06605033333333334,
+      "frontend_full_tracking_avg_clean_ms": 39.157267,
+      "cpu_total_avg_pct": 139.2789453107823
+    },
+    {
+      "sequence": "V1_01_easy",
+      "rmse_avg_clean": 0.05795866666666666,
+      "frontend_full_tracking_avg_clean_ms": 59.55976166666667,
+      "cpu_total_avg_pct": 198.90665887276168
+    },
+    {
+      "sequence": "V1_02_medium",
+      "rmse_avg_clean": 0.090862,
+      "frontend_full_tracking_avg_clean_ms": 50.761864333333335,
+      "cpu_total_avg_pct": 171.74392837700267
+    },
+    {
+      "sequence": "V1_03_difficult",
+      "rmse_avg_clean": 0.12806466666666666,
+      "frontend_full_tracking_avg_clean_ms": 47.74581633333333,
+      "cpu_total_avg_pct": 184.3860104768471
+    },
+    {
+      "sequence": "V2_01_easy",
+      "rmse_avg_clean": 0.06100866666666666,
+      "frontend_full_tracking_avg_clean_ms": 49.92551866666667,
+      "cpu_total_avg_pct": 190.3407272313783
+    },
+    {
+      "sequence": "V2_02_medium",
+      "rmse_avg_clean": 0.093234,
+      "frontend_full_tracking_avg_clean_ms": 55.174903666666665,
+      "cpu_total_avg_pct": 205.43830755920592
+    }
+  ],
+  "copied_trajectory_examples": [
+    {
+      "sequence": "MH_01_easy",
+      "file": "orbslam2_MH_01_easy_trajectory_xy.png"
+    },
+    {
+      "sequence": "MH_02_easy",
+      "file": "orbslam2_MH_02_easy_trajectory_xy.png"
+    },
+    {
+      "sequence": "MH_03_medium",
+      "file": "orbslam2_MH_03_medium_trajectory_xy.png"
+    },
+    {
+      "sequence": "MH_04_difficult",
+      "file": "orbslam2_MH_04_difficult_trajectory_xy.png"
+    },
+    {
+      "sequence": "MH_05_difficult",
+      "file": "orbslam2_MH_05_difficult_trajectory_xy.png"
+    },
+    {
+      "sequence": "V1_01_easy",
+      "file": "orbslam2_V1_01_easy_trajectory_xy.png"
+    },
+    {
+      "sequence": "V1_02_medium",
+      "file": "orbslam2_V1_02_medium_trajectory_xy.png"
+    },
+    {
+      "sequence": "V1_03_difficult",
+      "file": "orbslam2_V1_03_difficult_trajectory_xy.png"
+    },
+    {
+      "sequence": "V2_01_easy",
+      "file": "orbslam2_V2_01_easy_trajectory_xy.png"
+    },
+    {
+      "sequence": "V2_02_medium",
+      "file": "orbslam2_V2_02_medium_trajectory_xy.png"
+    }
+  ]
+}

@@ -25,10 +25,10 @@ sudo docker run -d \
   ros2_perception_stack sleep infinity
 
 # ── 3. Install system packages ─────────────────────────────────────────────────
-echo "[2/3] Installing system packages (gettext-base, figlet)..."
+echo "[2/3] Installing system packages (gettext-base, figlet, iproute2)..."
 sudo docker exec ros2_perception_stack bash -c "
     apt-get update -qq && \
-    apt-get install -y --no-install-recommends gettext-base figlet 2>&1 | tail -5
+    apt-get install -y --no-install-recommends gettext-base figlet iproute2 2>&1 | tail -5
 "
 
 # ── 4. Build all stack packages (no ov2slam) ───────────────────────────────────

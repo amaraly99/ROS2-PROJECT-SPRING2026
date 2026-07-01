@@ -30,7 +30,7 @@ slam:
   type:              orbslam2
   image:             orbslam2_fixed
   container_name:    slam_orbslam2
-  cpu:               "2,3"
+  cpu:               ""
   startup_delay_sec: 15
   restart:           unless-stopped
 
