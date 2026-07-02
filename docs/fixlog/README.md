@@ -39,6 +39,8 @@ open_todos: [TODO-x, TODO-y]   # optional
 
 | ID | Date | Title | Status |
 |----|------|-------|--------|
+| [012](012-stale-orbslam2-wrapper-binary.md) | 2026-07-02 | Stale ORB-SLAM2 ROS2 wrapper binary — /slam/tracking_state was never published | **resolved** |
+| [011](011-slam-init-gate.md) | 2026-07-02 | SLAM-init gate — blind search until ORB-SLAM2 initializes (opt-in) | **resolved** |
 | [010](010-slam-pose-integration.md) | 2026-06-29 | SLAM pose → IBVS controller (staleness gate + ORB-SLAM2 confidence + bag stop fix) | **done** |
 | [009](009-slam-depth-ibvs.md) | 2026-06-28 | Wire any SLAM pose+map-points into ViSP IBVS depth (dead path revived) | **partial** |
 | [008](008-cpu-pinning-regression.md) | 2026-06-27 | CPU pinning regression — yolo_bridge co-located with controller | resolved |
@@ -52,6 +54,9 @@ open_todos: [TODO-x, TODO-y]   # optional
 
 ## Open TODOs across all fixes
 
+- **TODO-S/T/U** (011, active): SLAM-init gate follow-ups — verify 3-strafe budget vs
+  15s startup on the Pi (S), evaluate the RELOCATE full-rotate cost / mono-map stability (T),
+  distinguish "SLAM never up" from "SLAM up but failed to init" in the FAILED marker (U).
 - **TODO-P** (010, deferred): Option 3 weighted fusion — monocular scale drift makes raw translation
   blending unreliable. Revisit after GT-anchored scale correction (TODO-L). Only yaw is safe to blend.
 - **TODO-L/M/O** (009, active): SLAM-depth IBVS caveats — mono scale (depth_scale can't model drift),
