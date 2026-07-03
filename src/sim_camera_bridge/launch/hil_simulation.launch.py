@@ -60,8 +60,6 @@ def launch_setup(context, *args, **kwargs):
     detector_cpu   = s('detector_cpu').strip()
     use_slam_depth = s('use_slam_depth').lower() in ('true', '1', 'yes')
     use_slam_pose  = s('use_slam_pose').lower()  in ('true', '1', 'yes')
-    blind_until_slam_ready = s('blind_until_slam_ready').lower() in ('true', '1', 'yes')
-    max_blind_strafes      = int(s('max_blind_strafes'))
 
     cfg = lambda name: f'{workspace}/config/hil/{name}'
     # taskset prefix for a node, or None when the cpu arg is empty (no pinning).
@@ -143,9 +141,7 @@ def launch_setup(context, *args, **kwargs):
                     {'target_class': target_class,
                      'benchmark_mode': benchmark_mode,
                      'use_slam_depth': use_slam_depth,
-                     'use_slam_pose':  use_slam_pose,
-                     'blind_until_slam_ready': blind_until_slam_ready,
-                     'max_blind_strafes':      max_blind_strafes}],
+                     'use_slam_pose':  use_slam_pose}],
     ))
 
     return nodes
@@ -177,10 +173,6 @@ def generate_launch_description():
             description='IBVS only: feed SLAM map-point depth into the interaction matrix (vs bbox depth)'),
         DeclareLaunchArgument('use_slam_pose', default_value='false',
             description='IBVS only: gate vx on SLAM pose freshness+confidence; use SLAM range for approach'),
-        DeclareLaunchArgument('blind_until_slam_ready', default_value='false',
-            description='SLAM benchmark: hold FSM in blind search (ignore target) until /slam/tracking_state==OK, so monocular SLAM gets a translational baseline before the approach'),
-        DeclareLaunchArgument('max_blind_strafes', default_value='3',
-            description='SLAM-init gate: fail (hold zero) if SLAM still not OK after this many blind strafe legs'),
         DeclareLaunchArgument('calib_yaml',
             default_value=PathJoinSubstitution(
                 [EnvironmentVariable('WORKSPACE_DIR', default_value='/workspace'),

@@ -87,9 +87,6 @@ def emit_env(cfg):
         ("CONTROLLER_CMD_OUT",    get(cfg, "controller.topics.cmd_out", "/cmd_vel")),
         ("CONTROLLER_USE_SLAM_DEPTH", as_bool(get(cfg, "controller.use_slam_depth"), False)),
         ("CONTROLLER_USE_SLAM_POSE",  as_bool(get(cfg, "controller.use_slam_pose"),  False)),
-        # SLAM-init gate: hold the FSM in blind search until SLAM reports OK.
-        ("CONTROLLER_BLIND_UNTIL_SLAM_READY", as_bool(get(cfg, "controller.blind_until_slam_ready"), False)),
-        ("CONTROLLER_MAX_BLIND_STRAFES",      get(cfg, "controller.max_blind_strafes", 3)),
 
         # ── slam (separate sidecar container) ──
         ("SLAM_ENABLED",   as_bool(get(cfg, "slam.enabled"), False)),

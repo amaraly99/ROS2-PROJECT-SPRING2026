@@ -21,16 +21,6 @@ controller:
   type:       proportional
   cpu:        ""
   gains_file: bench_proportional.yaml
-  # SLAM-init gate: monocular ORB-SLAM2 needs a lateral baseline to initialize.
-  # Hold the FSM in blind search (ignoring the oracle target) until the SLAM
-  # sidecar reports tracking OK, so the drone strafes for parallax BEFORE it
-  # commits to the forward-dominant approach. Then one full re-sweep re-finds the
-  # target and the run proceeds normally, with SLAM tracking the whole approach.
-  # max_blind_strafes=2 with the 8s slam.startup_delay_sec below (see docs/fixlog/011
-  # TODO-S): shorter delay buys SLAM more alive/warm-up time before the first
-  # strafe, so 2 attempts is enough without wasting extra lateral drift.
-  blind_until_slam_ready: true
-  max_blind_strafes:      2
   topics:
     detections_in: /yolo/detections
     cmd_out:       /cmd_vel
