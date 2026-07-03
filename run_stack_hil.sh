@@ -210,6 +210,32 @@ launch_stack() {
     "
 }
 
+# ── start_bag_recording — benchmark-mode topic recording ──────────────────────
+# Defined as a function (not inline) so it can be started right after
+# start_slam_sidecar() sets RUNREL, BEFORE anything that could fail/exit early
+# (e.g. INITIALIZER_GATE timing out). A failed gate run must still leave a real
+# bag behind to inspect -- not just meta.txt -- since "hold and log, don't
+# tear down" is meaningless if nothing was ever recorded to look at.
+start_bag_recording() {
+    [[ "$MODE" == "benchmark" ]] || return 0
+
+    BAG_TOPICS="/cmd_vel /sim/drone_pose /sim/target_pose /sim/heartbeat /bench/state /yolo/detections"
+    [[ "$SLAM_ENABLED" == "true" ]] && BAG_TOPICS+=" ${SLAM_POSE_OUT:-/slam/pose} /tf /tf_static"
+
+    log "Benchmark mode: recording → ${RUNREL}/bag"
+    log "  topics: ${BAG_TOPICS}"
+    sudo docker exec -d ros2_perception_stack bash -lc "
+        source /opt/ros/jazzy/setup.bash
+        source /workspace/install/setup.bash
+        export RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION}
+        export ROS_DOMAIN_ID=${ROS_DOMAIN_ID}
+        export ${DDS_ENV_VAR}
+        ros2 bag record -o /workspace/${RUNREL}/bag \
+            --qos-profile-overrides-path /workspace/config/hil/bench_bag_qos.yaml \
+            ${BAG_TOPICS} > /workspace/${RUNREL}/bag_record.log 2>&1
+    "
+}
+
 # ── load_config: parse NESTED config/hil/stack/<name>.yaml via parse_stack.py ─
 # The Python parser flattens the nested schema to shell-safe KEY=value lines
 # (MODE, MATLAB_HOST_IP, DDS, CONTROLLER[_CPU], DETECTOR[_CPU/_HOST_CPU],
@@ -576,9 +602,12 @@ else
 fi
 
 # ── 4. SLAM sidecar — deferred to its normal position UNLESS init_gate needs
-# it started early (right after the bridge nodes came up, below). ────────────
+# it started early (right after the bridge nodes came up, below). Bag
+# recording (4b) now starts right alongside it, BEFORE the gate check, so a
+# failed gate still leaves a real bag behind — not just meta.txt. ────────────
 if [[ "$INIT_GATE_ENABLED" != "true" ]]; then
     start_slam_sidecar
+    start_bag_recording
 fi
 
 # ── INITIALIZER_GATE — SLAM warmup, runs before detector+controller launch ───
@@ -587,6 +616,7 @@ if [[ "$INIT_GATE_ENABLED" == "true" ]]; then
     sep
     log "3.5/5  Starting SLAM sidecar early (INITIALIZER_GATE needs it)..."
     start_slam_sidecar
+    start_bag_recording
 
     log "4/5  INITIALIZER_GATE running (timeout enforced internally — see src/init_gate/init_gate/params.py)"
     sudo docker exec ros2_perception_stack bash -lc "
@@ -599,36 +629,12 @@ if [[ "$INIT_GATE_ENABLED" == "true" ]]; then
     "
     GATE_EXIT=$?
     if [[ $GATE_EXIT -ne 0 ]]; then
-        die "INITIALIZER_GATE: SLAM_INIT_FAILED (timed out waiting for /slam/tracking_state==OK) — bag and SLAM sidecar left running for inspection; run './run_stack_hil.sh stop' manually when ready."
+        die "INITIALIZER_GATE: SLAM_INIT_FAILED (timed out waiting for /slam/tracking_state==OK) — bag (${RUNREL}/bag) and SLAM sidecar left running for inspection; run './run_stack_hil.sh stop' manually when ready."
     fi
     log "INITIALIZER_GATE: SLAM_READY — launching detector+controller stack"
 
     log "5/5  ros2 launch hil_simulation (stack nodes only — bridge already running)"
     launch_stack "bridge_nodes:=false stack_nodes:=true"
-fi
-
-# ── 4b. Benchmark recording — only in benchmark mode ─────────────────────────
-# Records the metric topics to a timestamped bag for offline RMSE analysis
-# (controller approach and/or SLAM-pose-vs-GT). Runs inside the main container so
-# the bag lands on the host via the /workspace volume mount. The run dir + meta
-# were created earlier (before the SLAM block) so timing/CPU artefacts share it.
-if [[ "$MODE" == "benchmark" ]]; then
-    # Base metric topics (controller RMSE); add SLAM pose + TF when SLAM is on.
-    BAG_TOPICS="/cmd_vel /sim/drone_pose /sim/target_pose /sim/heartbeat /bench/state /yolo/detections"
-    [[ "$SLAM_ENABLED" == "true" ]] && BAG_TOPICS+=" ${SLAM_POSE_OUT:-/slam/pose} /tf /tf_static"
-
-    log "Benchmark mode: recording → ${RUNREL}/bag"
-    log "  topics: ${BAG_TOPICS}"
-    sudo docker exec -d ros2_perception_stack bash -lc "
-        source /opt/ros/jazzy/setup.bash
-        source /workspace/install/setup.bash
-        export RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION}
-        export ROS_DOMAIN_ID=${ROS_DOMAIN_ID}
-        export ${DDS_ENV_VAR}
-        ros2 bag record -o /workspace/${RUNREL}/bag \
-            --qos-profile-overrides-path /workspace/config/hil/bench_bag_qos.yaml \
-            ${BAG_TOPICS} > /workspace/${RUNREL}/bag_record.log 2>&1
-    "
 fi
 
 # ── 5. summary ────────────────────────────────────────────────────────────────
