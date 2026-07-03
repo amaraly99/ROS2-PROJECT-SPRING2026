@@ -1,6 +1,5 @@
-# init_gate_node.py -- thin ROS2 wiring only. All policy lives in cycle.py;
-# all sensing lives in pose_tracker.py/slam_readiness.py; all actuation lives
-# in motion.py. This file just connects them.
+# init_gate_node.py -- thin ROS2 wiring only. Policy is in cycle.py, SLAM
+# readiness in slam_readiness.py, actuation in motion.py.
 
 import rclpy
 from rclpy.node import Node
@@ -8,7 +7,6 @@ from geometry_msgs.msg import Twist
 from std_msgs.msg import String
 
 from init_gate.params import READY_DEBOUNCE
-from init_gate.pose_tracker import PoseTracker
 from init_gate.slam_readiness import SlamReadiness
 from init_gate.motion import MotionCommander
 from init_gate.cycle import run_cycle
@@ -20,7 +18,6 @@ class InitGateNode(Node):
         pub_cmd = self.create_publisher(Twist, '/cmd_vel', 10)
         self.pub_bench = self.create_publisher(String, '/bench/state', 10)
 
-        self.pose = PoseTracker(self)
         self.readiness = SlamReadiness(self, READY_DEBOUNCE)
         self.motion = MotionCommander(self, pub_cmd)
 
@@ -31,7 +28,7 @@ class InitGateNode(Node):
         self.get_logger().info(f'[init_gate] {s}')
 
     def run(self):
-        return run_cycle(self.motion, self.pose, self.readiness, self.log_state)
+        return run_cycle(self.motion, self.readiness, self.log_state)
 
 
 def main():

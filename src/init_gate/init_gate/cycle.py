@@ -1,58 +1,48 @@
-# cycle.py -- the step SEQUENCE + the run loop. Pure policy, no ROS wiring.
+# cycle.py -- the warmup sequence. Pure policy, no ROS wiring.
 #
-# center -> left -> center -> right -> center -> up -> center, looped, until
-# readiness.ready() or TIMEOUT_SEC. Readiness is checked only at "center"
-# checkpoints -- a deliberate, bounded-latency simplification (at most one
-# leg's duration before reacting).
+# Open-loop mirror: each leg goes OUT for a fixed time, then its exact MIRROR
+# (same body-frame command, sign flipped, same duration) brings it back. Looped
+# until SLAM reports ready or TIMEOUT_SEC.
 #
-# On timeout: zero-hold, log SLAM_INIT_FAILED, return False. Do NOT try to
-# tear anything down from in here -- run_stack_hil.sh's `stop` subcommand is
-# host-only (sudo docker stop/rm), unreachable from inside this container, and
-# asking to kill the very container this node runs in is not a safe pattern.
-# Leave the bag/sidecar running for inspection; the operator runs
-# `./run_stack_hil.sh stop` manually.
+#   left 1s  -> right 1s   (go back)
+#   right 1s -> left 1s    (go back)
+#   up 1s    -> down 1s    (go back)
+#
+# Why mirror the COMMAND instead of computing a return from /sim/drone_pose:
+# /cmd_vel is BODY frame, /sim/drone_pose is WORLD frame, and the drone starts
+# at yaw=pi. The old pose-based return computed the correction in world frame
+# but sent it as a body command -> at yaw=pi the sign inverted into positive
+# feedback -> the drone strafed one direction forever. Mirroring the command
+# itself cannot invert: whatever "left 1s" did, "right 1s" at the same speed
+# undoes it, at any yaw. No pose, no frame math, no runaway.
+#
+# Readiness is only checked at "center" (after each mirror-back), so handoff to
+# the normal stack always happens from ~the start position, never mid-leg.
+#
+# On timeout: zero-hold, log SLAM_INIT_FAILED, return False. Do NOT tear
+# anything down from here (run_stack_hil.sh's `stop` is host-only). Leave the
+# bag/sidecar running; the operator runs `./run_stack_hil.sh stop`.
 
 import time
-import rclpy
 
 from init_gate.params import LEG_SPEED, LEG_DURATION_SEC, TIMEOUT_SEC
 
 
-def run_cycle(motion, pose, readiness, log_state):
-    # Clock starts BEFORE the pose wait, not after -- otherwise a simulator
-    # that never starts publishing /sim/drone_pose hangs this node forever
-    # with no timeout and no error, defeating the whole point of TIMEOUT_SEC.
-    #
-    # MUST spin here, not time.sleep() -- subscription callbacks (PoseTracker's
-    # _on_pose) only ever fire when the node is spun. A plain sleep loop leaves
-    # incoming /sim/drone_pose messages completely unprocessed, so has_pose()
-    # can never become True even with the simulator running and publishing --
-    # this is exactly what happened in the first real test (808 pose messages
-    # arrived, none were ever seen, hit the 30s timeout every time).
+def run_cycle(motion, readiness, log_state):
     t_start = time.monotonic()
-    while not pose.has_pose():
-        if time.monotonic() - t_start >= TIMEOUT_SEC:
-            motion.zero_hold()
-            log_state('SLAM_INIT_FAILED')
-            return False
-        rclpy.spin_once(motion.node, timeout_sec=0.1)
-
     legs = [
-        (0.0, +LEG_SPEED, 0.0, 'y'),   # left,  return axis 'y'
-        (0.0, -LEG_SPEED, 0.0, 'y'),   # right, return axis 'y'
-        (0.0, 0.0, +LEG_SPEED, 'z'),   # up,    return axis 'z'
+        ('left',  0.0, +LEG_SPEED, 0.0),
+        ('right', 0.0, -LEG_SPEED, 0.0),
+        ('up',    0.0, 0.0, +LEG_SPEED),
     ]
     while time.monotonic() - t_start < TIMEOUT_SEC:
         if readiness.ready():
             log_state('SLAM_READY')
             return True
-        for vx, vy, vz, axis in legs:
-            motion.run_leg(vx, vy, vz, LEG_DURATION_SEC)
-            # ALWAYS return before the next readiness check -- handing off to
-            # the normal stack mid-displacement (if SLAM went ready right
-            # after an outward leg) was the bug: the drone would start the
-            # normal approach from wherever that leg left it, never undone.
-            motion.return_to_center(pose, axis)
+        for name, vx, vy, vz in legs:
+            motion.log(f'warmup: {name} (out + back)')
+            motion.run_leg(vx, vy, vz, LEG_DURATION_SEC)         # go out
+            motion.run_leg(-vx, -vy, -vz, LEG_DURATION_SEC)      # go back (mirror)
             if readiness.ready():
                 log_state('SLAM_READY')
                 return True
