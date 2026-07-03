@@ -48,14 +48,14 @@ def run_cycle(motion, pose, readiness, log_state):
             return True
         for vx, vy, vz, axis in legs:
             motion.run_leg(vx, vy, vz, LEG_DURATION_SEC)
-            if readiness.ready():
-                break
+            # ALWAYS return before the next readiness check -- handing off to
+            # the normal stack mid-displacement (if SLAM went ready right
+            # after an outward leg) was the bug: the drone would start the
+            # normal approach from wherever that leg left it, never undone.
             motion.return_to_center(pose, axis)
             if readiness.ready():
-                break
-        if readiness.ready():
-            log_state('SLAM_READY')
-            return True
+                log_state('SLAM_READY')
+                return True
 
     motion.zero_hold()
     log_state('SLAM_INIT_FAILED')
