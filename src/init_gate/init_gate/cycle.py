@@ -13,6 +13,7 @@
 # `./run_stack_hil.sh stop` manually.
 
 import time
+import rclpy
 
 from init_gate.params import LEG_SPEED, LEG_DURATION_SEC, TIMEOUT_SEC
 
@@ -21,13 +22,20 @@ def run_cycle(motion, pose, readiness, log_state):
     # Clock starts BEFORE the pose wait, not after -- otherwise a simulator
     # that never starts publishing /sim/drone_pose hangs this node forever
     # with no timeout and no error, defeating the whole point of TIMEOUT_SEC.
+    #
+    # MUST spin here, not time.sleep() -- subscription callbacks (PoseTracker's
+    # _on_pose) only ever fire when the node is spun. A plain sleep loop leaves
+    # incoming /sim/drone_pose messages completely unprocessed, so has_pose()
+    # can never become True even with the simulator running and publishing --
+    # this is exactly what happened in the first real test (808 pose messages
+    # arrived, none were ever seen, hit the 30s timeout every time).
     t_start = time.monotonic()
     while not pose.has_pose():
         if time.monotonic() - t_start >= TIMEOUT_SEC:
             motion.zero_hold()
             log_state('SLAM_INIT_FAILED')
             return False
-        time.sleep(0.1)
+        rclpy.spin_once(motion.node, timeout_sec=0.1)
 
     legs = [
         (0.0, +LEG_SPEED, 0.0, 'y'),   # left,  return axis 'y'
