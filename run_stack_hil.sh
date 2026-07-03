@@ -541,6 +541,13 @@ fi
 # benchmark mode → FSM waits for a clean sim reset (t=0); scout → engage on boot.
 BENCH_FLAG=false
 [[ "$MODE" == "benchmark" ]] && BENCH_FLAG=true
+# init_gate runs MUST engage in scout mode: the benchmark fresh-sim guard needs a
+# MATLAB Stop→Run to reset the sim to t=0, but that teleports the drone to home ICs
+# and destroys the SLAM tracking the gate just spent ~20s establishing. So the FSM
+# would sit frozen in SEARCHING forever (detecting + centered, but never locking on)
+# because it never sees sim_t<2.0. Scout mode (have_fresh_sim_=true at boot) engages
+# on the first detection with no reset — the only mode compatible with continuous SLAM.
+[[ "$INIT_GATE_ENABLED" == "true" ]] && BENCH_FLAG=false
 # Controller / detector selection + per-module CPU pinning (applied as Node taskset).
 LAUNCH_ARGS+=" controller:=${CONTROLLER} detector:=${DETECTOR} benchmark_mode:=${BENCH_FLAG}"
 LAUNCH_ARGS+=" controller_cpu:=${CONTROLLER_CPU:-} detector_cpu:=${DETECTOR_CPU:-}"
