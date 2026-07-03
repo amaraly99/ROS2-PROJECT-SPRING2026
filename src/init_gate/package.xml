@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>init_gate</name>
+  <version>1.0.0</version>
+  <description>SLAM-init warmup gate. Runs before the FSM/detector/controller stack
+  launches, gives monocular SLAM a translation-only warmup so it can initialize
+  before the drone commits to the normal approach. Experiment-specific — opt-in
+  via config, safe to delete later.</description>
+  <maintainer email="amaraly304@gmail.com">team</maintainer>
+  <license>MIT</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+
+  <export><build_type>ament_python</build_type></export>
+</package>

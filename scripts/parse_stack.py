@@ -102,6 +102,9 @@ def emit_env(cfg):
         ("SLAM_IMAGE_IN",  get(cfg, "slam.topics.image_in", "/ovcam/image_raw")),
         ("SLAM_POSE_OUT",  get(cfg, "slam.topics.pose_out", "/slam/pose")),
         ("SLAM_REMAPS",    build_remaps(get(cfg, "slam.remap", []))),
+
+        # ── init_gate (SLAM-warmup gate, opt-in, ORB-SLAM2 only) ──
+        ("INIT_GATE_ENABLED", as_bool(get(cfg, "init_gate.enabled"), False)),
     ]
     emit(pairs)
 

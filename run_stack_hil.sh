@@ -82,7 +82,133 @@ sep()  { echo "━━━━━━━━━━━━━━━━━━━━━�
 # OpenCV source tree (/workspace/opencv) which is NOT a colcon package; building
 # it standalone dies with "Unknown CMake command ocv_define_module". We restrict
 # discovery to src/ (--base-paths src) and select only these leaves.
-STACK_PKGS="sim_camera_bridge ovcam_bridge yolo_bridge oracle_detector hil_servo visp_servo h_vs_servo ov2slam visp_pbvs_servo"
+STACK_PKGS="sim_camera_bridge ovcam_bridge yolo_bridge oracle_detector hil_servo visp_servo h_vs_servo ov2slam visp_pbvs_servo init_gate"
+
+# ── start_slam_sidecar — separate docker-run container, config-driven ────────
+# Defined as a function (not inline) so it can be called either early, right
+# after the container comes up (init_gate.enabled=true — SLAM needs to start
+# receiving images before INITIALIZER_GATE can warm it up), or at its normal
+# late position (default path, unchanged behavior/timing).
+start_slam_sidecar() {
+    # Benchmark run dir (created here so SLAM timing/CPU artefacts land here,
+    # regardless of which position this function is called from).
+    BAG_HOST=""
+    if [[ "$MODE" == "benchmark" ]]; then
+        STAMP=$(date +%Y%m%d_%H%M%S)
+        RUNREL="bags/run_${CONFIG_NAME:-nocfg}_${RUN_TAG:+${RUN_TAG}_}${STAMP}"
+        BAG_HOST="${WS}/${RUNREL}"
+        mkdir -p "$BAG_HOST"
+        GIT_SHA=$(git -C "$WS" rev-parse --short HEAD 2>/dev/null || echo nogit)
+        {
+            echo "config=${CONFIG_NAME:-nocfg}"
+            echo "mode=benchmark"
+            echo "controller=${CONTROLLER}"
+            echo "detector=${DETECTOR}"
+            echo "slam_enabled=${SLAM_ENABLED}"
+            echo "slam_type=${SLAM_TYPE:-none}"
+            echo "git_sha=${GIT_SHA}"
+            echo "stamp=${STAMP}"
+            echo "run_tag=${RUN_TAG}"
+            echo "matlab_host_ip=${MATLAB_HOST_IP}"
+            echo "dds=${DDS} domain=${ROS_DOMAIN_ID}"
+        } > "${BAG_HOST}/meta.txt"
+    fi
+
+    # Replaces the old bash watchdog: `docker run -d --restart` gives a named,
+    # auto-restarting sidecar. The startup delay runs INSIDE the container so this
+    # script returns immediately (the drone can start moving for parallax). All SLAM
+    # wiring (image/cpu/command/remaps) comes from the config via parse_stack.py.
+    if [[ "$SLAM_ENABLED" == "true" ]]; then
+        : "${SLAM_CONTAINER:?slam.container_name missing from config}"
+        : "${SLAM_IMAGE:?slam.image missing from config}"
+        : "${SLAM_COMMAND:?slam.command missing from config}"
+        log "SLAM sidecar: ${SLAM_TYPE} → '${SLAM_CONTAINER}' on cores ${SLAM_CPU:-all} (delay ${SLAM_DELAY:-0}s)"
+
+        # orbslam2_fixed only ships FastRTPS; the main stack uses CycloneDDS.
+        # Copy CycloneDDS libs from the running ros2_perception_stack container to a
+        # host temp dir and bind-mount them into the sidecar so both use the same RMW.
+        SLAM_CYCL_DIR=/tmp/slam_cyclone_libs
+        sudo rm -rf "${SLAM_CYCL_DIR}" && sudo mkdir -p "${SLAM_CYCL_DIR}"
+        sudo docker cp ros2_perception_stack:/opt/ros/jazzy/lib/librmw_cyclonedds_cpp.so \
+            "${SLAM_CYCL_DIR}/" 2>/dev/null \
+            && sudo docker cp ros2_perception_stack:/opt/ros/jazzy/lib/aarch64-linux-gnu/. \
+            "${SLAM_CYCL_DIR}/" 2>/dev/null \
+            && log "CycloneDDS libs extracted → ${SLAM_CYCL_DIR}" \
+            || log "WARN: CycloneDDS extract failed — sidecar may use wrong RMW"
+
+        # Benchmark mode: tell the ORB-SLAM2 node where to write per-frame front-end
+        # timing (ScopedBenchmarkTimer flushes each event → docker stop-safe). OV2SLAM
+        # ignores this env var, so it is harmless to set unconditionally.
+        SLAM_TIMING_ENV=":"   # no-op for scout mode
+        if [[ "$MODE" == "benchmark" ]]; then
+            SLAM_TIMING_ENV="export ORB_BENCH_TIMING_CSV=/workspace/${RUNREL}/timing_events.csv"
+        fi
+
+        sudo docker run -d \
+            --entrypoint "" \
+            --name "$SLAM_CONTAINER" \
+            --restart "${SLAM_RESTART:-no}" \
+            --net=host --ipc=host --privileged \
+            -v "${WS}:/workspace" -v /tmp:/tmp \
+            -v "${SLAM_CYCL_DIR}:${SLAM_CYCL_DIR}" \
+            "$SLAM_IMAGE" bash -lc "
+                sleep ${SLAM_DELAY:-0}
+                source /opt/ros/jazzy/setup.bash
+                source /workspace/install/setup.bash
+                [[ -n ${SLAM_SETUP_OVERLAY:-} ]] && source ${SLAM_SETUP_OVERLAY}
+                export RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION}
+                export ROS_DOMAIN_ID=${ROS_DOMAIN_ID}
+                export ${DDS_ENV_VAR}
+                ${SLAM_TIMING_ENV}
+                export LD_LIBRARY_PATH=${SLAM_CYCL_DIR}:${SLAM_LD_PREFIX:+${SLAM_LD_PREFIX}:}/workspace/opencv/build/lib:\${LD_LIBRARY_PATH:-}
+                exec ${SLAM_CPU:+taskset -c ${SLAM_CPU}} ${SLAM_COMMAND} --ros-args ${SLAM_REMAPS}
+            " || die "SLAM sidecar failed to start (is image '${SLAM_IMAGE}' present? name clash on '${SLAM_CONTAINER}'?)"
+        log "SLAM sidecar started — log: docker logs ${SLAM_CONTAINER}"
+
+        # Benchmark mode: auto-start the host-side CPU/mem/thread sampler for the
+        # sidecar (the "while loop"). Detached so it survives this script exiting;
+        # self-terminates when stop removes the container. PID file lets stop kill it.
+        if [[ "$MODE" == "benchmark" ]]; then
+            SLAM_CPU_CSV="${WS}/${RUNREL}/slam_process_cpu.csv"
+            nohup bash "${WS}/benchmarks/slam_cpu_sampler.sh" \
+                "$SLAM_CONTAINER" "$SLAM_CPU_CSV" 2 \
+                > "${WS}/${RUNREL}/slam_cpu_sampler.log" 2>&1 &
+            echo $! > /tmp/slam_cpu_sampler.pid
+            disown 2>/dev/null || true
+            log "SLAM CPU sampler started (pid $(cat /tmp/slam_cpu_sampler.pid)) → ${RUNREL}/slam_process_cpu.csv"
+
+            # Per-thread CPU sampler: reads /proc/1/task/ inside the container via docker exec.
+            # Writes slam_thread_cpu.csv for the per-thread bar chart (eval_slam_hil.py).
+            SLAM_THREAD_CSV="${WS}/${RUNREL}/slam_thread_cpu.csv"
+            nohup python3 "${WS}/benchmarks/slam_thread_sampler.py" \
+                "$SLAM_CONTAINER" "$SLAM_THREAD_CSV" 2 \
+                > "${WS}/${RUNREL}/slam_thread_sampler.log" 2>&1 &
+            echo $! > /tmp/slam_thread_sampler.pid
+            disown 2>/dev/null || true
+            log "SLAM thread sampler started (pid $(cat /tmp/slam_thread_sampler.pid)) → ${RUNREL}/slam_thread_cpu.csv"
+        fi
+    else
+        log "SLAM skipped (slam.enabled=false / --no-slam)"
+    fi
+}
+
+# ── launch_stack — one ros2 launch invocation of hil_simulation.launch.py ─────
+# Small helper so the bridge-only / stack-only / full-stack launch calls (used
+# by the init_gate path) don't triplicate the same env-export boilerplate.
+launch_stack() {
+    local extra_args="$1"
+    sudo docker exec -d ros2_perception_stack bash -lc "
+        source /opt/ros/jazzy/setup.bash
+        source /workspace/install/setup.bash
+        export RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION}
+        export ROS_DOMAIN_ID=${ROS_DOMAIN_ID}
+        export ${DDS_ENV_VAR}
+        export WORKSPACE_DIR=/workspace
+        export LD_LIBRARY_PATH=/workspace/opencv/build/lib:\${LD_LIBRARY_PATH:-}
+        ros2 launch sim_camera_bridge hil_simulation.launch.py ${LAUNCH_ARGS} ${extra_args} \
+            >> /tmp/hil_launch.log 2>&1
+    "
+}
 
 # ── load_config: parse NESTED config/hil/stack/<name>.yaml via parse_stack.py ─
 # The Python parser flattens the nested schema to shell-safe KEY=value lines
@@ -105,6 +231,7 @@ load_config() {
 
 # ── Parse flags (all args; order doesn't matter) ──────────────────────────────
 SLAM_ENABLED=true
+INIT_GATE_ENABLED=false
 DEBUG_IMAGE_ON=false
 CONFIG_NAME=""
 _NO_SLAM_FLAG=false
@@ -156,6 +283,16 @@ case "$MODE" in
     benchmark|scout) ;;
     *) die "Unknown MODE='${MODE}'. Valid: benchmark | scout" ;;
 esac
+
+# init_gate (SLAM warmup gate) is ORB-SLAM2-only — no /slam/tracking_state
+# signal exists for OV2SLAM (confirmed: src/ov2slam_ros/src/ov2slam_node.cpp
+# publishes only /slam/pose, nothing else).
+if [[ "$INIT_GATE_ENABLED" == "true" ]]; then
+    [[ "$SLAM_ENABLED" == "true" ]] \
+        || die "init_gate.enabled=true requires slam.enabled=true"
+    [[ "$SLAM_TYPE" == "orbslam2" ]] \
+        || die "init_gate.enabled=true requires slam.type=orbslam2 (no /slam/tracking_state signal for '${SLAM_TYPE}')"
+fi
 
 # ── build [pkg] — colcon build inside a throwaway container ──────────────────
 # Artifacts land in /workspace/install/ (host filesystem via volume mount) and
@@ -390,18 +527,13 @@ else
 fi
 
 # ── 2. ROS2 launch (sim_camera_bridge + bridges + visp — NO slam yet) ─────────
-log "2/4  ros2 launch hil_simulation (cores 0,2,3 — slam deferred)"
-sudo docker exec -d ros2_perception_stack bash -lc "
-    source /opt/ros/jazzy/setup.bash
-    source /workspace/install/setup.bash
-    export RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION}
-    export ROS_DOMAIN_ID=${ROS_DOMAIN_ID}
-    export ${DDS_ENV_VAR}
-    export WORKSPACE_DIR=/workspace
-    export LD_LIBRARY_PATH=/workspace/opencv/build/lib:\${LD_LIBRARY_PATH:-}
-    ros2 launch sim_camera_bridge hil_simulation.launch.py ${LAUNCH_ARGS} \
-        > /tmp/hil_launch.log 2>&1
-"
+if [[ "$INIT_GATE_ENABLED" == "true" ]]; then
+    log "2/5  ros2 launch hil_simulation (bridge nodes only — INITIALIZER_GATE runs before the stack)"
+    launch_stack "bridge_nodes:=true stack_nodes:=false"
+else
+    log "2/4  ros2 launch hil_simulation (cores 0,2,3 — slam deferred)"
+    launch_stack ""
+fi
 
 # Wait for sim_camera_bridge to create the SHM (it does this on construction)
 log "Waiting for /dev/shm/ovcam_frames to appear..."
@@ -443,108 +575,36 @@ else
     log "3/4  Detector=oracle — yolo_producer skipped (oracle_detector_node starts via launch)"
 fi
 
-# ── 4. SLAM sidecar — separate docker-run container, config-driven ───────────
-# ── Benchmark run dir (created early so SLAM timing/CPU artefacts land here) ──
-# The bag is recorded later (after the stack settles), but the run dir + meta are
-# created now so the SLAM sidecar's timing_events.csv and the CPU sampler can
-# write straight into it via the /workspace volume mount.
-BAG_HOST=""
-if [[ "$MODE" == "benchmark" ]]; then
-    STAMP=$(date +%Y%m%d_%H%M%S)
-    RUNREL="bags/run_${CONFIG_NAME:-nocfg}_${RUN_TAG:+${RUN_TAG}_}${STAMP}"
-    BAG_HOST="${WS}/${RUNREL}"
-    mkdir -p "$BAG_HOST"
-    GIT_SHA=$(git -C "$WS" rev-parse --short HEAD 2>/dev/null || echo nogit)
-    {
-        echo "config=${CONFIG_NAME:-nocfg}"
-        echo "mode=benchmark"
-        echo "controller=${CONTROLLER}"
-        echo "detector=${DETECTOR}"
-        echo "slam_enabled=${SLAM_ENABLED}"
-        echo "slam_type=${SLAM_TYPE:-none}"
-        echo "git_sha=${GIT_SHA}"
-        echo "stamp=${STAMP}"
-        echo "run_tag=${RUN_TAG}"
-        echo "matlab_host_ip=${MATLAB_HOST_IP}"
-        echo "dds=${DDS} domain=${ROS_DOMAIN_ID}"
-    } > "${BAG_HOST}/meta.txt"
+# ── 4. SLAM sidecar — deferred to its normal position UNLESS init_gate needs
+# it started early (right after the bridge nodes came up, below). ────────────
+if [[ "$INIT_GATE_ENABLED" != "true" ]]; then
+    start_slam_sidecar
 fi
 
-# Replaces the old bash watchdog: `docker run -d --restart` gives a named,
-# auto-restarting sidecar. The startup delay runs INSIDE the container so this
-# script returns immediately (the drone can start moving for parallax). All SLAM
-# wiring (image/cpu/command/remaps) comes from the config via parse_stack.py.
-if [[ "$SLAM_ENABLED" == "true" ]]; then
-    : "${SLAM_CONTAINER:?slam.container_name missing from config}"
-    : "${SLAM_IMAGE:?slam.image missing from config}"
-    : "${SLAM_COMMAND:?slam.command missing from config}"
-    log "4/4  SLAM sidecar: ${SLAM_TYPE} → '${SLAM_CONTAINER}' on cores ${SLAM_CPU:-all} (delay ${SLAM_DELAY:-0}s)"
+# ── INITIALIZER_GATE — SLAM warmup, runs before detector+controller launch ───
+# Only when init_gate.enabled=true (ORB-SLAM2 configs only, validated earlier).
+if [[ "$INIT_GATE_ENABLED" == "true" ]]; then
+    sep
+    log "3.5/5  Starting SLAM sidecar early (INITIALIZER_GATE needs it)..."
+    start_slam_sidecar
 
-    # orbslam2_fixed only ships FastRTPS; the main stack uses CycloneDDS.
-    # Copy CycloneDDS libs from the running ros2_perception_stack container to a
-    # host temp dir and bind-mount them into the sidecar so both use the same RMW.
-    SLAM_CYCL_DIR=/tmp/slam_cyclone_libs
-    sudo rm -rf "${SLAM_CYCL_DIR}" && sudo mkdir -p "${SLAM_CYCL_DIR}"
-    sudo docker cp ros2_perception_stack:/opt/ros/jazzy/lib/librmw_cyclonedds_cpp.so \
-        "${SLAM_CYCL_DIR}/" 2>/dev/null \
-        && sudo docker cp ros2_perception_stack:/opt/ros/jazzy/lib/aarch64-linux-gnu/. \
-        "${SLAM_CYCL_DIR}/" 2>/dev/null \
-        && log "CycloneDDS libs extracted → ${SLAM_CYCL_DIR}" \
-        || log "WARN: CycloneDDS extract failed — sidecar may use wrong RMW"
-
-    # Benchmark mode: tell the ORB-SLAM2 node where to write per-frame front-end
-    # timing (ScopedBenchmarkTimer flushes each event → docker stop-safe). OV2SLAM
-    # ignores this env var, so it is harmless to set unconditionally.
-    SLAM_TIMING_ENV=":"   # no-op for scout mode
-    if [[ "$MODE" == "benchmark" ]]; then
-        SLAM_TIMING_ENV="export ORB_BENCH_TIMING_CSV=/workspace/${RUNREL}/timing_events.csv"
+    log "4/5  INITIALIZER_GATE running (timeout enforced internally — see src/init_gate/init_gate/params.py)"
+    sudo docker exec ros2_perception_stack bash -lc "
+        source /opt/ros/jazzy/setup.bash
+        source /workspace/install/setup.bash
+        export RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION}
+        export ROS_DOMAIN_ID=${ROS_DOMAIN_ID}
+        export ${DDS_ENV_VAR}
+        ros2 run init_gate init_gate_node
+    "
+    GATE_EXIT=$?
+    if [[ $GATE_EXIT -ne 0 ]]; then
+        die "INITIALIZER_GATE: SLAM_INIT_FAILED (timed out waiting for /slam/tracking_state==OK) — bag and SLAM sidecar left running for inspection; run './run_stack_hil.sh stop' manually when ready."
     fi
+    log "INITIALIZER_GATE: SLAM_READY — launching detector+controller stack"
 
-    sudo docker run -d \
-        --entrypoint "" \
-        --name "$SLAM_CONTAINER" \
-        --restart "${SLAM_RESTART:-no}" \
-        --net=host --ipc=host --privileged \
-        -v "${WS}:/workspace" -v /tmp:/tmp \
-        -v "${SLAM_CYCL_DIR}:${SLAM_CYCL_DIR}" \
-        "$SLAM_IMAGE" bash -lc "
-            sleep ${SLAM_DELAY:-0}
-            source /opt/ros/jazzy/setup.bash
-            source /workspace/install/setup.bash
-            [[ -n ${SLAM_SETUP_OVERLAY:-} ]] && source ${SLAM_SETUP_OVERLAY}
-            export RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION}
-            export ROS_DOMAIN_ID=${ROS_DOMAIN_ID}
-            export ${DDS_ENV_VAR}
-            ${SLAM_TIMING_ENV}
-            export LD_LIBRARY_PATH=${SLAM_CYCL_DIR}:${SLAM_LD_PREFIX:+${SLAM_LD_PREFIX}:}/workspace/opencv/build/lib:\${LD_LIBRARY_PATH:-}
-            exec ${SLAM_CPU:+taskset -c ${SLAM_CPU}} ${SLAM_COMMAND} --ros-args ${SLAM_REMAPS}
-        " || die "SLAM sidecar failed to start (is image '${SLAM_IMAGE}' present? name clash on '${SLAM_CONTAINER}'?)"
-    log "SLAM sidecar started — log: docker logs ${SLAM_CONTAINER}"
-
-    # Benchmark mode: auto-start the host-side CPU/mem/thread sampler for the
-    # sidecar (the "while loop"). Detached so it survives this script exiting;
-    # self-terminates when stop removes the container. PID file lets stop kill it.
-    if [[ "$MODE" == "benchmark" ]]; then
-        SLAM_CPU_CSV="${WS}/${RUNREL}/slam_process_cpu.csv"
-        nohup bash "${WS}/benchmarks/slam_cpu_sampler.sh" \
-            "$SLAM_CONTAINER" "$SLAM_CPU_CSV" 2 \
-            > "${WS}/${RUNREL}/slam_cpu_sampler.log" 2>&1 &
-        echo $! > /tmp/slam_cpu_sampler.pid
-        disown 2>/dev/null || true
-        log "SLAM CPU sampler started (pid $(cat /tmp/slam_cpu_sampler.pid)) → ${RUNREL}/slam_process_cpu.csv"
-
-        # Per-thread CPU sampler: reads /proc/1/task/ inside the container via docker exec.
-        # Writes slam_thread_cpu.csv for the per-thread bar chart (eval_slam_hil.py).
-        SLAM_THREAD_CSV="${WS}/${RUNREL}/slam_thread_cpu.csv"
-        nohup python3 "${WS}/benchmarks/slam_thread_sampler.py" \
-            "$SLAM_CONTAINER" "$SLAM_THREAD_CSV" 2 \
-            > "${WS}/${RUNREL}/slam_thread_sampler.log" 2>&1 &
-        echo $! > /tmp/slam_thread_sampler.pid
-        disown 2>/dev/null || true
-        log "SLAM thread sampler started (pid $(cat /tmp/slam_thread_sampler.pid)) → ${RUNREL}/slam_thread_cpu.csv"
-    fi
-else
-    log "4/4  SLAM skipped (slam.enabled=false / --no-slam)"
+    log "5/5  ros2 launch hil_simulation (stack nodes only — bridge already running)"
+    launch_stack "bridge_nodes:=false stack_nodes:=true"
 fi
 
 # ── 4b. Benchmark recording — only in benchmark mode ─────────────────────────
@@ -576,7 +636,7 @@ sep
 echo ""
 echo "  HIL stack is running."
 echo ""
-echo "  Mode : ${MODE}   Controller : ${CONTROLLER}   Detector : ${DETECTOR}   SLAM : ${SLAM_ENABLED} (${SLAM_TYPE:-none})"
+echo "  Mode : ${MODE}   Controller : ${CONTROLLER}   Detector : ${DETECTOR}   SLAM : ${SLAM_ENABLED} (${SLAM_TYPE:-none})   init_gate : ${INIT_GATE_ENABLED}"
 echo ""
 echo "  MATLAB side must publish:"
 echo "    /sim/camera/image_raw       sensor_msgs/Image  rgb8  640x480  ~20 Hz"

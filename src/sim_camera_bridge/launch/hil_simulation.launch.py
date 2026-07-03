@@ -13,6 +13,9 @@
 #                     oracle → starts oracle_detector_node (projects target from drone pose)
 #   slam            true | false  (default: false — OV2SLAM started separately by run_stack_hil.sh)
 #   ovcam           true | false  (default: true — ovcam_bridge for SLAM/debug)
+#   bridge_nodes    true | false  (default: true — sim_camera_bridge + ovcam_bridge)
+#   stack_nodes     true | false  (default: true — detector + controller. Set false to
+#                     launch bridge-only while INITIALIZER_GATE runs; see run_stack_hil.sh)
 #   debug_image     true | false  (default: false)
 #   benchmark_mode  true | false  (default: false = scout, engage immediately on boot)
 #   target_class    COCO label string  (default: stop sign)
@@ -53,6 +56,8 @@ def launch_setup(context, *args, **kwargs):
     detector       = s('detector')
     slam           = s('slam').lower() == 'true'
     ovcam          = s('ovcam').lower() == 'true'
+    bridge_nodes   = s('bridge_nodes').lower() in ('true', '1', 'yes')
+    stack_nodes    = s('stack_nodes').lower()  in ('true', '1', 'yes')
     debug_image    = s('debug_image').lower() == 'true'
     benchmark_mode = s('benchmark_mode').lower() in ('true', '1', 'yes')
     calib_yaml     = s('calib_yaml')
@@ -70,79 +75,88 @@ def launch_setup(context, *args, **kwargs):
 
     nodes = []
 
-    # ── 1. SHM filler — converts /sim/camera/image_raw → /dev/shm/ovcam_frames ──
-    nodes.append(Node(
-        package='sim_camera_bridge',
-        executable='sim_camera_bridge_node',
-        name='sim_camera_bridge',
-        output='screen',
-        parameters=[{
-            'input_topic': '/sim/camera/image_raw',
-            'width': 640, 'height': 480, 'slots': 4,
-            'shm_name': '/ovcam_frames',
-            'sem_name': '/ovcam_ready',
-        }],
-    ))
-
-    # ── 2. ovcam_bridge — SHM → /ovcam/image_raw (needed by OV2SLAM / debug) ───
-    if ovcam:
+    # ── bridge_nodes: SLAM needs these regardless of whether the FSM/detector/
+    # controller stack is up yet (see INITIALIZER_GATE in run_stack_hil.sh, which
+    # launches bridge_nodes:=true stack_nodes:=false first so SLAM can receive
+    # images during the warmup gate, before the stack ever starts). ─────────────
+    if bridge_nodes:
+        # ── 1. SHM filler — converts /sim/camera/image_raw → /dev/shm/ovcam_frames ──
         nodes.append(Node(
-            package='ovcam_bridge',
-            executable='ovcam_bridge_node',
-            name='ovcam_bridge',
+            package='sim_camera_bridge',
+            executable='sim_camera_bridge_node',
+            name='sim_camera_bridge',
             output='screen',
+            parameters=[{
+                'input_topic': '/sim/camera/image_raw',
+                'width': 640, 'height': 480, 'slots': 4,
+                'shm_name': '/ovcam_frames',
+                'sem_name': '/ovcam_ready',
+            }],
         ))
 
-    # ── 3. Detector (DET_MAP-driven; exactly one runs) ───────────────────────────
-    #   oracle → projects the known target through the sim drone pose (needs
-    #            /sim/drone_pose + /sim/target_pose from MATLAB; no hardware).
-    #   yolo   → yolo_bridge reads /yolo_shm written by the host yolo_producer.
-    # Both publish /yolo/detections. Add a detector by adding a DET_MAP row above.
-    if detector not in DET_MAP:
-        raise RuntimeError(
-            f"Unknown detector='{detector}'. Valid: {list(DET_MAP)}")
-    dpkg, dexe, dname, dparam_files, dwants_class = DET_MAP[detector]
-    dparams = [cfg(p) for p in dparam_files]
-    if dwants_class:
-        dparams.append({'target_class': target_class})
-    nodes.append(Node(
-        package=dpkg,
-        executable=dexe,
-        name=dname,
-        output='screen',
-        prefix=pfx(detector_cpu),
-        parameters=dparams,
-    ))
+        # ── 2. ovcam_bridge — SHM → /ovcam/image_raw (needed by OV2SLAM / debug) ───
+        if ovcam:
+            nodes.append(Node(
+                package='ovcam_bridge',
+                executable='ovcam_bridge_node',
+                name='ovcam_bridge',
+                output='screen',
+            ))
 
-    # ── 4. OV2SLAM — normally deferred by run_stack_hil.sh (slam:=false passed). ─
-    #    Only active when this launch file is invoked directly with slam:=true.
-    if slam:
+    # ── stack_nodes: detector + controller (the FSM). Held off while
+    # INITIALIZER_GATE is running (see run_stack_hil.sh) so nothing is
+    # commanding /cmd_vel except the gate until SLAM is ready. ──────────────────
+    if stack_nodes:
+        # ── 3. Detector (DET_MAP-driven; exactly one runs) ───────────────────────
+        #   oracle → projects the known target through the sim drone pose (needs
+        #            /sim/drone_pose + /sim/target_pose from MATLAB; no hardware).
+        #   yolo   → yolo_bridge reads /yolo_shm written by the host yolo_producer.
+        # Both publish /yolo/detections. Add a detector by adding a DET_MAP row above.
+        if detector not in DET_MAP:
+            raise RuntimeError(
+                f"Unknown detector='{detector}'. Valid: {list(DET_MAP)}")
+        dpkg, dexe, dname, dparam_files, dwants_class = DET_MAP[detector]
+        dparams = [cfg(p) for p in dparam_files]
+        if dwants_class:
+            dparams.append({'target_class': target_class})
         nodes.append(Node(
-            package='ov2slam',
-            executable='ov2slam_node',
-            name='ov2slam',
+            package=dpkg,
+            executable=dexe,
+            name=dname,
             output='screen',
-            prefix='taskset -c 2,3',
-            arguments=[calib_yaml],
+            prefix=pfx(detector_cpu),
+            parameters=dparams,
         ))
 
-    # ── 5. Controller ─────────────────────────────────────────────────────────────
-    if controller not in CTRL_MAP:
-        raise RuntimeError(
-            f"Unknown controller='{controller}'. Valid: {list(CTRL_MAP)}")
-    pkg, exe, ctrl_cfg = CTRL_MAP[controller]
-    nodes.append(Node(
-        package=pkg,
-        executable=exe,
-        name=exe,
-        output='screen',
-        prefix=pfx(controller_cpu),
-        parameters=[cfg('bench_fsm.yaml'), cfg(ctrl_cfg),
-                    {'target_class': target_class,
-                     'benchmark_mode': benchmark_mode,
-                     'use_slam_depth': use_slam_depth,
-                     'use_slam_pose':  use_slam_pose}],
-    ))
+        # ── 4. OV2SLAM — normally deferred by run_stack_hil.sh (slam:=false passed). ─
+        #    Only active when this launch file is invoked directly with slam:=true.
+        if slam:
+            nodes.append(Node(
+                package='ov2slam',
+                executable='ov2slam_node',
+                name='ov2slam',
+                output='screen',
+                prefix='taskset -c 2,3',
+                arguments=[calib_yaml],
+            ))
+
+        # ── 5. Controller ─────────────────────────────────────────────────────────
+        if controller not in CTRL_MAP:
+            raise RuntimeError(
+                f"Unknown controller='{controller}'. Valid: {list(CTRL_MAP)}")
+        pkg, exe, ctrl_cfg = CTRL_MAP[controller]
+        nodes.append(Node(
+            package=pkg,
+            executable=exe,
+            name=exe,
+            output='screen',
+            prefix=pfx(controller_cpu),
+            parameters=[cfg('bench_fsm.yaml'), cfg(ctrl_cfg),
+                        {'target_class': target_class,
+                         'benchmark_mode': benchmark_mode,
+                         'use_slam_depth': use_slam_depth,
+                         'use_slam_pose':  use_slam_pose}],
+        ))
 
     return nodes
 
@@ -161,6 +175,11 @@ def generate_launch_description():
             description='Start OV2SLAM inline (normally run_stack_hil.sh starts it separately)'),
         DeclareLaunchArgument('ovcam', default_value='true',
             description='Start ovcam_bridge (needed when slam=true or debug_image=true)'),
+        DeclareLaunchArgument('bridge_nodes', default_value='true',
+            description='Start sim_camera_bridge + ovcam_bridge (SLAM needs these)'),
+        DeclareLaunchArgument('stack_nodes', default_value='true',
+            description='Start detector + controller (FSM). Set false to launch '
+                        'bridge-only while INITIALIZER_GATE runs.'),
         DeclareLaunchArgument('debug_image', default_value='false',
             description='Publish /visp/debug_image back to MATLAB (costly — 921 KB/frame)'),
         DeclareLaunchArgument('benchmark_mode', default_value='false',
