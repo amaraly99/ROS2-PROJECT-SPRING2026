@@ -1,0 +1,8 @@
+# Which SLAM sidecar to build/verify with scripts/test_slam_build.sh.
+# Build-time test toggle only -- NOT the runtime SLAM choice for a HIL run
+# (that's config/hil/stack/<name>.yaml's `slam.type`). This just controls
+# which one gets compiled when you run test_slam_build.sh, instead of
+# building every SLAM every time.
+#
+# One of: ov2slam | orbslam2 | none
+slam: ov2slam
