@@ -12,14 +12,14 @@ network:
 
 detector:
   type:     oracle
-  cpu:      ""
+  cpu:      "0" # NEVER PUT ""
   topics:
     image_in: /ovcam/image_raw
     out:      /yolo/detections
 
 controller:
   type:       proportional
-  cpu:        ""
+  cpu:        "1" # NEVER PUT ""
   gains_file: bench_proportional.yaml
   topics:
     detections_in: /yolo/detections
