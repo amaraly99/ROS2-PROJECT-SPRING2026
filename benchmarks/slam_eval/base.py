@@ -22,16 +22,29 @@
 #   4. Register it in __main__.py's SLAM_REGISTRY.
 #   That's it — the bag reading, evo alignment, ATE, and every plot come for free.
 #
-# ATE IS COMPUTED WITH EVO (github.com/MichaelGrupp/evo) — the SAME tool the
-#   offline ORB-SLAM2 / OV2SLAM benchmarks used (evo_ape --align --correct_scale).
-#   We call evo's Python API directly (evo.core), so the alignment (Umeyama Sim3)
-#   and RMSE are evo's, not a hand-rolled copy. Run this with the evo venv's
-#   python: benchmarks/.evo_venv/bin/python -m slam_eval <run_dir>
+# ATE'S HEADLINE NUMBERS (rmse/mean/median/min/max/std -- what gets reported,
+#   plotted, and compared) come from literally shelling out to the real
+#   `evo_ape` CLI (github.com/MichaelGrupp/evo, the same tool the offline
+#   ORB-SLAM2 / OV2SLAM benchmarks used), parsing its stdout -- NOT evo's Python
+#   API with our own parameters. This matters: an earlier version of this file
+#   called evo.core's association/align/APE functions directly with a
+#   hand-picked --t_max_diff=0.05, and the result was substantially different
+#   from evo_ape's own default (--t_max_diff=0.01, see evo/cli/ape_parser.py) --
+#   nearly 2x on some runs. Shelling out to the actual CLI guarantees the
+#   reported numbers are exactly what running `evo_ape` by hand would show, and
+#   can never silently drift from evo's own defaults again.
+#   evo's Python API (evo.core) is still used for ONE thing the CLI's stdout
+#   doesn't expose: the per-point aligned positions needed to draw the
+#   trajectory plot, and the scale factor for the coverage metric. That
+#   alignment call uses the same 0.01 default for consistency with the CLI
+#   numbers it's drawn alongside.
+#   Run this with the evo venv's python: benchmarks/.evo_venv/bin/python -m slam_eval <run_dir>
 # ─────────────────────────────────────────────────────────────────────────────
 from __future__ import annotations
 
 import copy
 import csv
+import subprocess
 import sys
 from pathlib import Path
 
@@ -44,6 +57,8 @@ from rosbags.highlevel import AnyReader
 
 from evo.core import metrics, sync
 from evo.core.trajectory import PoseTrajectory3D
+
+_EVO_T_MAX_DIFF = 0.01   # matches evo_ape CLI's own default (ape_parser.py)
 
 
 # Reference lines drawn on the plots, matching generate_paper_images.py exactly.
@@ -135,29 +150,74 @@ class SlamEvaluator:
         quat = np.tile([1.0, 0.0, 0.0, 0.0], (len(t), 1))  # wxyz identity
         return PoseTrajectory3D(positions_xyz=xyz, orientations_quat_wxyz=quat, timestamps=t)
 
-    # ── ATE via evo (Umeyama Sim3 align + APE RMSE — the canonical tool) ──────
-    def compute_ate(self, slam, gt):
+    # ── ATE: real evo_ape CLI for the headline stats, evo API for plot geometry
+    def _evo_ape_cli(self, gt_tum: Path, slam_tum: Path) -> dict | None:
+        """Run the literal `evo_ape` command and parse its stdout. This is the
+        source of truth for rmse/mean/median/min/max/std -- see the module
+        docstring for why. Returns None if evo_ape reports too few associated
+        pairs / fails outright (e.g. a window with almost no overlap)."""
+        proc = subprocess.run(
+            ["evo_ape", "tum", str(gt_tum), str(slam_tum), "--align", "--correct_scale"],
+            capture_output=True, text=True,
+        )
+        if proc.returncode != 0:
+            print(f"  evo_ape failed on {slam_tum.name}: {proc.stderr.strip()[-300:]}")
+            return None
+        out = {}
+        for line in proc.stdout.splitlines():
+            parts = line.split()
+            if len(parts) == 2 and parts[0] in ("max", "mean", "median", "min", "rmse", "sse", "std"):
+                out[parts[0]] = float(parts[1])
+        if "rmse" not in out:
+            print(f"  evo_ape produced no parseable stats for {slam_tum.name}")
+            return None
+        return out
+
+    def _align_for_plot(self, slam, gt):
+        """evo API alignment (max_diff matching evo_ape's own default) -- used
+        ONLY for the trajectory plot's point positions and the scale factor fed
+        into the coverage metric. Not the source of any reported ATE statistic;
+        see _evo_ape_cli() for those."""
         gt_traj = self._to_evo(gt[:, 0], gt[:, 1:4])
         slam_traj = self._to_evo(slam[:, 0], slam[:, 1:4])
-        # Associate by nearest timestamp (GT ~50 Hz, SLAM ~16 Hz).
-        ref, est = sync.associate_trajectories(gt_traj, slam_traj, max_diff=0.05)
+        ref, est = sync.associate_trajectories(gt_traj, slam_traj, max_diff=_EVO_T_MAX_DIFF)
         if ref.num_poses < 10:
             sys.exit(f"only {ref.num_poses} associated poses — did SLAM and GT overlap?")
         est_aligned = copy.deepcopy(est)
-        # correct_scale=True → Sim3 (monocular). Returns (R, t, s).
-        _, _, scale = est_aligned.align(ref, correct_scale=True)
-        ape = metrics.APE(metrics.PoseRelation.translation_part)
-        ape.process_data((ref, est_aligned))
-        stat = lambda k: float(ape.get_statistic(k))
-        ate = {
-            "rmse": stat(metrics.StatisticsType.rmse),
-            "mean": stat(metrics.StatisticsType.mean),
-            "median": stat(metrics.StatisticsType.median),
-            "std": stat(metrics.StatisticsType.std),
-            "min": stat(metrics.StatisticsType.min),
-            "max": stat(metrics.StatisticsType.max),
-        }
-        return ate, ref, est_aligned, float(scale)
+        _, _, scale = est_aligned.align(ref, correct_scale=True)   # Sim3 (monocular)
+        return ref, est_aligned, float(scale)
+
+    def compute_ate(self, slam, gt):
+        """Whole-bag ATE -- includes whatever happened before the FSM started
+        (e.g. the init_gate's own warm-up wiggle). See compute_ate_mission()
+        for the number that actually reflects tracking quality during the
+        real mission, which is the one to report/compare."""
+        ref, est_aligned, scale = self._align_for_plot(slam, gt)
+        ate = self._evo_ape_cli(self.rundir / "gt_traj.tum", self.rundir / "slam_traj.tum")
+        return ate, ref, est_aligned, scale
+
+    def compute_ate_mission(self, slam, gt, bench):
+        """ATE restricted to t >= FSM start (excludes the init_gate's pre-mission
+        warm-up). This is the number that should be reported/compared -- the
+        pre-mission window is typically small (~20 samples here) but its error is
+        disproportionately larger (SLAM just initialized, scale/pose not yet
+        settled), and RMSE squares errors, so a handful of those points can
+        noticeably inflate the whole-bag number relative to what the settled,
+        in-mission tracking actually looks like. Returns None if no FSM marker
+        (e.g. a non-gated run) or too few post-FSM samples."""
+        fsm_t = self._find_fsm_start(bench)
+        if fsm_t is None:
+            return None
+        gt_m = gt[gt[:, 0] >= fsm_t]
+        slam_m = slam[slam[:, 0] >= fsm_t]
+        if len(gt_m) < 10 or len(slam_m) < 10:
+            return None
+        gt_tum = self.rundir / "gt_mission.tum"
+        slam_tum = self.rundir / "slam_mission.tum"
+        self._write_tum(gt_tum, gt_m[:, 0], gt_m[:, 1:4])
+        self._write_tum(slam_tum, slam_m[:, 0], slam_m[:, 1:4])
+        ate = self._evo_ape_cli(gt_tum, slam_tum)
+        return (ate,) if ate is not None else None
 
     # ── per-frame front-end timing (subclass supplies the filename) ───────────
     def read_frontend_timing(self):
@@ -264,13 +324,20 @@ class SlamEvaluator:
         ax.grid(axis="y", alpha=0.25)
         self._save(fig, filename)
 
-    def plot_rmse(self, ate):
+    def plot_rmse(self, ate, mission_ate=None):
         # No error bar: a single HIL run has no across-run spread (the study's
         # RMSE error bars were std across N runs). The per-pose APE spread is
         # reported separately as ATE_std_m in the metrics CSV.
-        top = max(0.16, ate["rmse"] * 1.3)
-        self._single_bar(ate["rmse"], 0.0, "APE RMSE (m)",
-                         f"{self.label} — APE RMSE (HIL run)", "fig_slam_rmse.png",
+        # Primary bar is the mission-only ATE (excludes the init_gate's
+        # pre-mission warm-up window) when available -- that's the number that
+        # reflects actual tracking quality during the flight, not the whole-bag
+        # one, which a brief high-error settling period right after init can
+        # disproportionately inflate (RMSE squares errors).
+        headline = mission_ate if mission_ate is not None else ate
+        note = "" if mission_ate is not None else " (whole bag — no FSM marker found)"
+        top = max(0.16, headline["rmse"] * 1.3)
+        self._single_bar(headline["rmse"], 0.0, "APE RMSE (m)",
+                         f"{self.label} — mission APE RMSE (HIL run){note}", "fig_slam_rmse.png",
                          ylim=(0, top), lines=[(y, t, "grey") for y, t in _RMSE_LINES])
 
     def plot_frontend_bar(self, durs):
@@ -335,7 +402,7 @@ class SlamEvaluator:
         ax.plot(est_xy[:, 0], est_xy[:, 1], "-", color=self.color, lw=2.0,
                 label=f"{self.label} (s={scale:.3f})")
         ax.set_xlabel("x (m)"); ax.set_ylabel("y (m)")
-        ax.set_title(f"{self.label} — trajectory  (APE RMSE {ate['rmse']*100:.1f} cm)")
+        ax.set_title(f"{self.label} — trajectory  (whole-bag APE RMSE {ate['rmse']:.4f} m)")
         ax.axis("equal"); ax.legend(loc="best"); ax.grid(True, alpha=0.3)
         self._save(fig, "fig_slam_trajectory.png")
 
@@ -364,9 +431,15 @@ class SlamEvaluator:
         if len(gt) == 0:
             sys.exit("no /sim/drone_pose in bag — GT not recorded")
 
-        ate, ref, est_aligned, scale = self.compute_ate(slam, gt)
+        # TUM files first -- compute_ate()/compute_ate_mission() shell out to
+        # the real evo_ape CLI, which reads these from disk (not in-memory arrays).
         self._write_tum(self.rundir / "gt_traj.tum", gt[:, 0], gt[:, 1:4])
         self._write_tum(self.rundir / "slam_traj.tum", slam[:, 0], slam[:, 1:4])
+        ate, ref, est_aligned, scale = self.compute_ate(slam, gt)
+        if ate is None:
+            sys.exit("evo_ape failed on the whole-bag trajectory — see stderr above")
+        mission_ate_result = self.compute_ate_mission(slam, gt, bench)
+        mission_ate = mission_ate_result[0] if mission_ate_result is not None else None
 
         fe_x, durs = self.read_frontend_timing()
         cpu = self.read_cpu()
@@ -374,15 +447,29 @@ class SlamEvaluator:
         gt_cov, slam_cov, cov_pct = self.compute_coverage(slam, gt, bench, scale)
 
         # ── assemble metrics ─────────────────────────────────────────────────
+        # "_full_" = whole bag (includes the init_gate's pre-mission warm-up
+        # window). "_mission_" = restricted to t >= FSM start -- the number
+        # that actually reflects tracking quality during the flight; the
+        # warm-up window is brief but its error is disproportionately larger
+        # (SLAM has only just initialized), and RMSE squares errors, so it can
+        # noticeably inflate the whole-bag figure. Report mission_, not full_,
+        # unless comparing against something that only has whole-bag numbers.
         m = self.metrics
         m["slam_type"] = self.slam_type
         m["label"] = self.label
-        m["ATE_RMSE_m"] = round(ate["rmse"], 6)
-        m["ATE_mean_m"] = round(ate["mean"], 6)
-        m["ATE_median_m"] = round(ate["median"], 6)
-        m["ATE_std_m"] = round(ate["std"], 6)
-        m["ATE_min_m"] = round(ate["min"], 6)
-        m["ATE_max_m"] = round(ate["max"], 6)
+        m["ATE_RMSE_full_m"] = round(ate["rmse"], 6)
+        m["ATE_mean_full_m"] = round(ate["mean"], 6)
+        m["ATE_median_full_m"] = round(ate["median"], 6)
+        m["ATE_std_full_m"] = round(ate["std"], 6)
+        m["ATE_min_full_m"] = round(ate["min"], 6)
+        m["ATE_max_full_m"] = round(ate["max"], 6)
+        if mission_ate is not None:
+            m["ATE_RMSE_mission_m"] = round(mission_ate["rmse"], 6)
+            m["ATE_mean_mission_m"] = round(mission_ate["mean"], 6)
+            m["ATE_median_mission_m"] = round(mission_ate["median"], 6)
+            m["ATE_std_mission_m"] = round(mission_ate["std"], 6)
+            m["ATE_min_mission_m"] = round(mission_ate["min"], 6)
+            m["ATE_max_mission_m"] = round(mission_ate["max"], 6)
         m["umeyama_scale"] = round(scale, 6)
         m["n_slam_poses"] = int(len(slam))
         m["n_associated"] = int(ref.num_poses)
@@ -405,7 +492,7 @@ class SlamEvaluator:
 
         # ── plots ────────────────────────────────────────────────────────────
         self.plot_trajectory(gt, ref, est_aligned, scale, ate)
-        self.plot_rmse(ate)
+        self.plot_rmse(ate, mission_ate)
         self.plot_frontend_bar(durs)
         self.plot_frontend_timeseries(fe_x, durs)
         self.plot_cpu_total(cpu)
