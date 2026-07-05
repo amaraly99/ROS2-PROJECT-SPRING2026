@@ -12,6 +12,8 @@ log/
 **/build/
 **/install/
 **/log/
+src/orbslam2/build_stereo/
+src/orbslam2/install_stereo/
 
 ############################################################
 # Thirdparty compiled libraries
