@@ -1,0 +1,42 @@
+# SLAM RMSE capture — OV2SLAM (ACCURATE profile) + ORACLE detector + Proportional (BENCHMARK).
+# Same as ov2slam_oracle.yaml but pins OV2SLAM's ACCURATE feature-extractor profile
+# (calib: hil_sim_ov2slam_accurate.yaml). Pair with ov2slam_oracle_fast.yaml to
+# benchmark fast vs accurate — the same split the offline EuRoC study drew
+# (ov2_accurate vs ov2_fast). Eval infers the mode from this config's name.
+mode: benchmark
+
+network:
+  matlab_host_ip: 192.168.1.201
+  interface:      wlan0
+  dds:            cyclonedds
+  ros_domain_id:  0
+
+detector:
+  type: oracle
+  cpu:  "0"
+
+controller:
+  type: proportional
+  cpu:  "0"
+
+slam:
+  enabled:           true
+  type:              ov2slam
+  image:             ros2_perception_stack
+  container_name:    slam_ov2slam
+  cpu:               "2,3"
+  startup_delay_sec: 15
+  restart:           unless-stopped
+  command:           "ros2 run ov2slam ov2slam_node /workspace/camera_calib/hil_sim_ov2slam_accurate.yaml"
+  topics:
+    image_in: /ovcam/image_raw
+    pose_out: /slam/pose
+  remap:
+    - "/ovcam/image_raw:=/ovcam/image_raw"
+    - "vo_pose:=/slam/pose"
+    - "slam_tracking_state:=/slam/tracking_state"
+
+init_gate:
+  # SLAM-warmup gate — see ov2slam_oracle.yaml for the full rationale. Readiness
+  # is OV2SLAM's bvision_init_ republished as /slam/tracking_state (2=ready).
+  enabled: true

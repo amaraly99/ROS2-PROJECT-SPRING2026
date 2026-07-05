@@ -39,6 +39,9 @@ open_todos: [TODO-x, TODO-y]   # optional
 
 | ID | Date | Title | Status |
 |----|------|-------|--------|
+| [015](015-slam-eval-evo-modular.md) | 2026-07-05 | SLAM eval → modular per-SLAM package (evo ATE, paper plots) + OV2SLAM front-end timing + fast/accurate | **resolved** |
+| [014](014-ov2slam-init-gate-support.md) | 2026-07-05 | INITIALIZER_GATE support for OV2SLAM — bvision_init_ republished as /slam/tracking_state | **resolved** |
+| [013](013-slam-coverage-after-fsm.md) | 2026-07-04 | slam_coverage_after_fsm_pct — SLAM tracking-coverage sanity check post-FSM-start | **resolved** |
 | [012](012-stale-orbslam2-wrapper-binary.md) | 2026-07-02 | Stale ORB-SLAM2 ROS2 wrapper binary — /slam/tracking_state was never published | **resolved** |
 | [011](011-slam-init-gate.md) | 2026-07-02 | SLAM-init gate — blind search until ORB-SLAM2 initializes (opt-in) | **resolved** |
 | [010](010-slam-pose-integration.md) | 2026-06-29 | SLAM pose → IBVS controller (staleness gate + ORB-SLAM2 confidence + bag stop fix) | **done** |
@@ -54,6 +57,16 @@ open_todos: [TODO-x, TODO-y]   # optional
 
 ## Open TODOs across all fixes
 
+- **TODO-AB/AC** (015, active): fast/accurate OV2SLAM configs omit upstream
+  dop3p/fkf_filtering_ratio differences (AB); the two calib files duplicate ~133
+  hand-synced lines (AC).
+- **TODO-Y/Z** (014, active): stereo OV2SLAM + init_gate would deterministically fail every
+  run (Y, no config exists yet); TRANSIENT_LOCAL QoS for guaranteed late-joiner delivery on
+  OV2SLAM's tracking_state topic (Z, currently relies on per-frame republish instead).
+- **TODO-V/W** (013, active): `slam_coverage_after_fsm_pct` methodology risks —
+  raw path-length jitter bias + reused-global-scale on a re-localized SLAM
+  segment could mask exactly the degenerate case it's meant to catch (V); no
+  shared upper time bound between GT/SLAM windows compared (W).
 - **TODO-S/T/U** (011, active): SLAM-init gate follow-ups — verify 3-strafe budget vs
   15s startup on the Pi (S), evaluate the RELOCATE full-rotate cost / mono-map stability (T),
   distinguish "SLAM never up" from "SLAM up but failed to init" in the FAILED marker (U).

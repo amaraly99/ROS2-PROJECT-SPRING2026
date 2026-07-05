@@ -41,6 +41,7 @@
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/image_encodings.hpp>
 #include <sensor_msgs/msg/imu.hpp>
+#include <std_msgs/msg/int32.hpp>
 
 #include <cv_bridge/cv_bridge.hpp>
 #include <opencv2/core.hpp>
@@ -57,6 +58,32 @@ class SensorsGrabber {
 public:
     SensorsGrabber(SlamManager *slam) : pslam_(slam) {
         std::cout << "\nSensors Grabber is created...\n";
+
+        // Republish OV2SLAM's own bvision_init_ flag (SlamParams, set true once
+        // mono init succeeds -- visual_front_end.cpp, reset to false by
+        // SlamParams::reset()) as the same /slam/tracking_state contract
+        // ORB-SLAM2's wrapper publishes (std_msgs/Int32, 2=ready), so
+        // init_gate/slam_readiness.py works unmodified against either backend.
+        tracking_state_pub_ = nh->create_publisher<std_msgs::msg::Int32>("slam_tracking_state", rclcpp::QoS(10));
+    }
+
+    // Called once per frame actually handed to OV2SLAM (mirrors ORB-SLAM2's own
+    // wrapper, which publishes tracking_state once per TrackMonocular() call) --
+    // NOT on every 1ms sync_process() poll tick. Matters for two reasons: (1)
+    // this topic is VOLATILE (no late-joiner delivery, confirmed via `ros2 topic
+    // info -v`), so it must still publish unconditionally (not only on change)
+    // for a late-subscribing init_gate to reliably see the current value; (2)
+    // publishing at real per-frame cadence instead of 1kHz keeps init_gate's
+    // READY_DEBOUNCE=2 check taking a comparable amount of real wall-clock time
+    // to ORB-SLAM2's, rather than latching in ~2ms -- bvision_init_ can flip
+    // back to false shortly after going true if OV2SLAM's Mapper thread rejects
+    // the first post-init keyframe (mapper.cpp: kfid_==1 && nb3dkps_<30 -> full
+    // reset), and an artificially fast debounce would hand off to the main FSM
+    // before that check has any realistic chance to run.
+    void publishTrackingState() {
+        std_msgs::msg::Int32 msg;
+        msg.data = pslam_->pslamstate_->bvision_init_ ? 2 : 1;
+        tracking_state_pub_->publish(msg);
     }
 
     void subLeftImage(const sensor_msgs::msg::Image::SharedPtr image) const
@@ -125,6 +152,7 @@ public:
 
                         if( !image0.empty() && !image1.empty() ) {
                             pslam_->addNewStereoImages(time0, image0, image1);
+                            publishTrackingState();
                         }
                     }
                 }
@@ -143,6 +171,7 @@ public:
 
                     if( !image0.empty()) {
                         pslam_->addNewMonoImage(time, image0);
+                        publishTrackingState();
                     }
                 }
             }
@@ -157,7 +186,9 @@ public:
     mutable std::queue<sensor_msgs::msg::Image::SharedPtr> img0_buf;
     mutable std::queue<sensor_msgs::msg::Image::SharedPtr> img1_buf;
     mutable std::mutex img_mutex;
-    
+
+    rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr tracking_state_pub_;
+
     SlamManager *pslam_;
 };
 

@@ -34,3 +34,16 @@ slam:
   remap:
     - "/ovcam/image_raw:=/ovcam/image_raw"
     - "vo_pose:=/slam/pose"
+    - "slam_tracking_state:=/slam/tracking_state"
+
+init_gate:
+  # SLAM-warmup gate: runs before the FSM/detector/controller stack launches,
+  # does a translation-only warmup (left/right/up, elapsed-time legs only, no
+  # arrival-tolerance chasing) so OV2SLAM gets real parallax before the drone
+  # commits to the normal approach. Readiness here is OV2SLAM's own
+  # bvision_init_ flag (SlamParams), republished as the same std_msgs/Int32
+  # /slam/tracking_state contract ORB-SLAM2 uses (2=ready) -- coarser than
+  # ORB-SLAM2's 4-state enum (OV2SLAM has no LOST/RELOCALIZING concept, it
+  # fully resets instead), which is fine since the gate only checks for
+  # the ready value. See src/init_gate/ and src/ov2slam_ros/src/ov2slam_node.cpp.
+  enabled: true

@@ -35,6 +35,7 @@
 #include <cmath>
 #include <mutex>
 #include <fstream>
+#include <cstdlib>
 
 class Profiler {
 public:
@@ -242,7 +243,42 @@ public:
         Profiler::getInstance().exportCSV(filepath);
     }
 
+    // ── Per-frame event CSV sink (benchmark, HIL) ─────────────────────────
+    // Mirrors ORB-SLAM2's ORB_BENCH_TIMING_CSV / ScopedBenchmarkTimer: if the
+    // env var OV2_BENCH_TIMING_CSV is set, each call appends ONE row and flushes
+    // it immediately, so per-frame timing survives a `docker stop` mid-run (the
+    // aggregate ExportCSV above only fires on a graceful writeResults(), which a
+    // HIL stop does not reach). No-op when the env var is unset, so the call
+    // site can stay compiled in unconditionally at ~zero cost.
+    static void LogEvent(const std::string & category, float duration_ms, long frame_id) {
+        Profiler::getInstance().logEvent(category, duration_ms, frame_id);
+    }
+
+    void logEvent(const std::string & category, float duration_ms, long frame_id) {
+        std::lock_guard<std::mutex> lock(event_mutex_);
+        if( !event_csv_checked_ ) {
+            event_csv_checked_ = true;
+            const char* path = std::getenv("OV2_BENCH_TIMING_CSV");
+            if( path && path[0] != '\0' ) {
+                event_csv_.open(path, std::ios::out | std::ios::trunc);
+                if( event_csv_.is_open() )
+                    event_csv_ << "wall_ts,category,duration_ms,frame_id\n";
+            }
+        }
+        if( !event_csv_.is_open() )
+            return;
+        double wall = std::chrono::duration<double>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        event_csv_ << std::fixed << wall << "," << category << ","
+                   << duration_ms << "," << frame_id << "\n";
+        event_csv_.flush();
+    }
+
 private:
     std::map<std::string, Clock::time_point> start_map_;
     std::map<std::string, State> timing_map_;
+
+    std::ofstream event_csv_;
+    std::mutex event_mutex_;
+    bool event_csv_checked_ = false;
 };

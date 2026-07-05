@@ -136,12 +136,31 @@ start_slam_sidecar() {
             && log "CycloneDDS libs extracted → ${SLAM_CYCL_DIR}" \
             || log "WARN: CycloneDDS extract failed — sidecar may use wrong RMW"
 
-        # Benchmark mode: tell the ORB-SLAM2 node where to write per-frame front-end
-        # timing (ScopedBenchmarkTimer flushes each event → docker stop-safe). OV2SLAM
-        # ignores this env var, so it is harmless to set unconditionally.
+        # Benchmark mode: tell each SLAM backend where to write per-frame front-end
+        # timing (both flush each event → docker stop-safe). ORB-SLAM2 reads
+        # ORB_BENCH_TIMING_CSV (ScopedBenchmarkTimer), OV2SLAM reads
+        # OV2_BENCH_TIMING_CSV (Profiler::LogEvent). Each ignores the other's var,
+        # so setting both is harmless — the running backend picks up only its own.
         SLAM_TIMING_ENV=":"   # no-op for scout mode
+        SLAM_LOG_REDIRECT=""  # no-op for scout mode (no RUNREL to write into)
+        # Pre-computed here (not inline below) because the docker run command
+        # below is one big double-quoted string in THIS script -- a literal
+        # unescaped `"` inside it prematurely closes/reopens that outer string
+        # rather than nesting, silently mangling everything after it (this bit
+        # a real fix once: `[[ -n "${SLAM_SETUP_OVERLAY:-}" ]]` inline collapsed
+        # to `[[ -n  ]]`, a syntax error, because the two `"` around an EMPTY
+        # expansion just vanish). Computing the conditional out here, in normal
+        # (non-nested) shell context, avoids the problem entirely.
+        SLAM_SETUP_SOURCE_CMD=":"
+        [[ -n "${SLAM_SETUP_OVERLAY:-}" ]] && SLAM_SETUP_SOURCE_CMD="source ${SLAM_SETUP_OVERLAY}"
         if [[ "$MODE" == "benchmark" ]]; then
-            SLAM_TIMING_ENV="export ORB_BENCH_TIMING_CSV=/workspace/${RUNREL}/timing_events.csv"
+            SLAM_TIMING_ENV="export ORB_BENCH_TIMING_CSV=/workspace/${RUNREL}/timing_events.csv; export OV2_BENCH_TIMING_CSV=/workspace/${RUNREL}/ov2slam_timing_events.csv"
+            # The sidecar's own console output (crash messages, "not ready to
+            # init yet", etc.) previously only existed in `docker logs`, which is
+            # lost the moment the container is stopped/removed — exactly the
+            # evidence needed to diagnose an init failure after the fact. Persist
+            # it next to bag_record.log/slam_cpu_sampler.log instead.
+            SLAM_LOG_REDIRECT=" >>/workspace/${RUNREL}/slam_sidecar.log 2>&1"
         fi
 
         sudo docker run -d \
@@ -155,15 +174,19 @@ start_slam_sidecar() {
                 sleep ${SLAM_DELAY:-0}
                 source /opt/ros/jazzy/setup.bash
                 source /workspace/install/setup.bash
-                [[ -n ${SLAM_SETUP_OVERLAY:-} ]] && source ${SLAM_SETUP_OVERLAY}
+                ${SLAM_SETUP_SOURCE_CMD}
                 export RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION}
                 export ROS_DOMAIN_ID=${ROS_DOMAIN_ID}
                 export ${DDS_ENV_VAR}
                 ${SLAM_TIMING_ENV}
                 export LD_LIBRARY_PATH=${SLAM_CYCL_DIR}:${SLAM_LD_PREFIX:+${SLAM_LD_PREFIX}:}/workspace/opencv/build/lib:\${LD_LIBRARY_PATH:-}
-                exec ${SLAM_CPU:+taskset -c ${SLAM_CPU}} ${SLAM_COMMAND} --ros-args ${SLAM_REMAPS}
+                exec ${SLAM_CPU:+taskset -c ${SLAM_CPU}} ${SLAM_COMMAND} --ros-args ${SLAM_REMAPS}${SLAM_LOG_REDIRECT}
             " || die "SLAM sidecar failed to start (is image '${SLAM_IMAGE}' present? name clash on '${SLAM_CONTAINER}'?)"
-        log "SLAM sidecar started — log: docker logs ${SLAM_CONTAINER}"
+        if [[ "$MODE" == "benchmark" ]]; then
+            log "SLAM sidecar started — log: docker logs ${SLAM_CONTAINER}  (persisted: ${RUNREL}/slam_sidecar.log)"
+        else
+            log "SLAM sidecar started — log: docker logs ${SLAM_CONTAINER}"
+        fi
 
         # Benchmark mode: auto-start the host-side CPU/mem/thread sampler for the
         # sidecar (the "while loop"). Detached so it survives this script exiting;
@@ -310,14 +333,16 @@ case "$MODE" in
     *) die "Unknown MODE='${MODE}'. Valid: benchmark | scout" ;;
 esac
 
-# init_gate (SLAM warmup gate) is ORB-SLAM2-only — no /slam/tracking_state
-# signal exists for OV2SLAM (confirmed: src/ov2slam_ros/src/ov2slam_node.cpp
-# publishes only /slam/pose, nothing else).
+# init_gate (SLAM warmup gate) requires a /slam/tracking_state signal.
+# Supported backends: orbslam2 (native tracking_state_pub_), ov2slam (wrapper-
+# added bvision_init_ republish — see src/ov2slam_ros/src/ov2slam_node.cpp).
 if [[ "$INIT_GATE_ENABLED" == "true" ]]; then
     [[ "$SLAM_ENABLED" == "true" ]] \
         || die "init_gate.enabled=true requires slam.enabled=true"
-    [[ "$SLAM_TYPE" == "orbslam2" ]] \
-        || die "init_gate.enabled=true requires slam.type=orbslam2 (no /slam/tracking_state signal for '${SLAM_TYPE}')"
+    case "$SLAM_TYPE" in
+        orbslam2|ov2slam) ;;
+        *) die "init_gate.enabled=true requires slam.type=orbslam2 or ov2slam (no /slam/tracking_state signal for '${SLAM_TYPE}')" ;;
+    esac
 fi
 
 # ── build [pkg] — colcon build inside a throwaway container ──────────────────
@@ -664,6 +689,9 @@ echo "    /tmp/yolo_producer.log  (host Hailo NPU, PID ${YOLO_PID})"
 fi
 if [[ "$SLAM_ENABLED" == "true" ]]; then
 echo "    docker logs ${SLAM_CONTAINER}   (SLAM sidecar — auto-restarts via --restart=${SLAM_RESTART:-no})"
+if [[ "$MODE" == "benchmark" ]]; then
+echo "    ${RUNREL}/slam_sidecar.log   (persisted copy — survives container stop/removal)"
+fi
 fi
 if [[ "$MODE" == "benchmark" ]]; then
 echo ""

@@ -104,5 +104,6 @@ public:
     std::queue<cv::Mat> qimg_left_, qimg_right_;
     std::queue<double> qimg_time_;
 
+
     std::mutex img_mutex_;
 };

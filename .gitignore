@@ -156,3 +156,4 @@ stream_my_movie_frames.py
 streamed_images/
 src/SEBVS
 src/h_vsi
+benchmarks/.evo_venv/

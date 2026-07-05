@@ -40,7 +40,13 @@ VisualFrontEnd::VisualFrontEnd(std::shared_ptr<SlamParams> pstate, std::shared_p
 bool VisualFrontEnd::visualTracking(cv::Mat &iml, double time)
 {
     std::lock_guard<std::mutex> lock(pmap_->map_mutex_);
-    
+
+    // Per-frame front-end wall time for HIL benchmarking. Measured unconditionally
+    // (cheap steady_clock, independent of the debug/log_timings Profiler gate
+    // below) and flushed by Profiler::LogEvent only if OV2_BENCH_TIMING_CSV is
+    // set. Spans exactly the same region as the "0.Full-Front_End" Profiler timer.
+    auto fe_bench_t0 = std::chrono::steady_clock::now();
+
     if( pslamstate_->debug_ || pslamstate_->log_timings_ )
         Profiler::Start("0.Full-Front_End");
 
@@ -56,6 +62,11 @@ bool VisualFrontEnd::visualTracking(cv::Mat &iml, double time)
 
     if( pslamstate_->debug_ || pslamstate_->log_timings_ )
         Profiler::StopAndDisplay(pslamstate_->debug_, "0.Full-Front_End");
+
+    Profiler::LogEvent("frontend/full_tracking",
+        std::chrono::duration<float, std::milli>(
+            std::chrono::steady_clock::now() - fe_bench_t0).count(),
+        pcurframe_->id_);
 
     return iskfreq;
 }

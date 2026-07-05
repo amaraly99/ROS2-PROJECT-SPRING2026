@@ -56,6 +56,7 @@ init_gate:
   # SLAM-warmup gate: runs before the FSM/detector/controller stack launches,
   # does a translation-only warmup (left/right/up, elapsed-time legs only, no
   # arrival-tolerance chasing) so ORB-SLAM2 gets real parallax before the drone
-  # commits to the normal approach. ORB-SLAM2 only -- OV2SLAM has no
-  # /slam/tracking_state equivalent to check against. See src/init_gate/.
+  # commits to the normal approach. Also supported for OV2SLAM (see
+  # ov2slam_oracle.yaml, src/ov2slam_ros/src/ov2slam_node.cpp) -- both
+  # backends publish the same /slam/tracking_state contract. See src/init_gate/.
   enabled: true

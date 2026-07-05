@@ -30,7 +30,6 @@
 #include "ov2slam.hpp"
 #include "logger.hpp"
 
-
 SlamManager::SlamManager(std::shared_ptr<SlamParams> pstate, std::shared_ptr<RosVisualizer> pviz)
     : pslamstate_(pstate)
     , prosviz_(pviz)
@@ -117,7 +116,6 @@ SlamManager::SlamManager(std::shared_ptr<SlamParams> pstate, std::shared_ptr<Ros
 void SlamManager::run()
 {
     std::cout << "\nOV²SLAM is ready to process incoming images!\n";
-
     bis_on_ = true;
 
     cv::Mat img_left, img_right;
