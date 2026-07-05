@@ -25,6 +25,7 @@
 */
 
 #include <thread>
+#include <pthread.h>
 #include <opencv2/highgui.hpp>
 
 #include "ov2slam.hpp"
@@ -115,6 +116,11 @@ SlamManager::SlamManager(std::shared_ptr<SlamParams> pstate, std::shared_ptr<Ros
 
 void SlamManager::run()
 {
+    // OS-level thread name for CPU-per-thread sampling (matches the naming
+    // convention used across this file/mapper.cpp/estimator.cpp/loop_closer.cpp
+    // -- ov2_<role> -- 15-char limit for pthread_setname_np on Linux).
+    pthread_setname_np(pthread_self(), "ov2_main");
+
     std::cout << "\nOV²SLAM is ready to process incoming images!\n";
     bis_on_ = true;
 
@@ -465,8 +471,9 @@ void SlamManager::reset()
 //   Visualization functions
 // ==========================
 
-void SlamManager::visualizeAtFrameRate(const double time) 
+void SlamManager::visualizeAtFrameRate(const double time)
 {
+    pthread_setname_np(pthread_self(), "ov2_vizfr");
     bframe_viz_ison_ = true;
     
     visualizeFrame(pvisualfrontend_->cur_img_, time);
@@ -478,6 +485,7 @@ void SlamManager::visualizeAtFrameRate(const double time)
 
 void SlamManager::visualizeAtKFsRate(const double time)
 {
+    pthread_setname_np(pthread_self(), "ov2_vizkf");
     bkf_viz_ison_ = true;
 
     visualizeCovisibleKFs(time);

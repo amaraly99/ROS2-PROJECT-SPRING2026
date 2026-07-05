@@ -25,6 +25,7 @@
 */
 
 #include <thread>
+#include <pthread.h>
 
 #include "mapper.hpp"
 #include "opencv2/video/tracking.hpp"
@@ -43,6 +44,7 @@ Mapper::Mapper(std::shared_ptr<SlamParams> pslamstate, std::shared_ptr<MapManage
 
 void Mapper::run()
 {
+    pthread_setname_np(pthread_self(), "ov2_map");
     std::cout << "\nMapper is ready to process Keyframes!\n";
     
     Keyframe kf;
@@ -555,6 +557,7 @@ bool Mapper::matchingToLocalMap(Frame &frame)
 
 void Mapper::mergeMatches(const Frame &frame, const std::map<int,int> &map_kpids_lmids)
 {
+    pthread_setname_np(pthread_self(), "ov2_merge");
     std::lock_guard<std::mutex> lock2(pmap_->optim_mutex_);
 
     std::lock_guard<std::mutex> lock(pmap_->map_mutex_);

@@ -25,12 +25,14 @@
 */
 
 #include <thread>
+#include <pthread.h>
 
 #include "estimator.hpp"
 
 
 void Estimator::run()
 {
+    pthread_setname_np(pthread_self(), "ov2_est");
     std::cout << "\n Estimator is ready to process Keyframes!\n";
     
     while( !bexit_required_ ) {

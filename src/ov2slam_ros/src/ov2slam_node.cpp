@@ -27,6 +27,7 @@
 #include <iostream>
 #include <string>
 #include <thread>
+#include <pthread.h>
 #include <mutex>
 #include <queue>
 
@@ -117,6 +118,7 @@ public:
     // (mostly derived from Vins-Fusion: https://github.com/HKUST-Aerial-Robotics/VINS-Fusion)
     void sync_process()
     {
+        pthread_setname_np(pthread_self(), "ov2_feed");
         std::cout << "\nStarting the measurements reader thread!\n";
         
         while( !pslam_->bexit_required_ )
@@ -197,6 +199,7 @@ int main(int argc, char** argv)
 {
     // Init the node
     //ros::init(argc, argv, "ov2slam_node");
+    pthread_setname_np(pthread_self(), "ov2slam_node");   // main()'s own thread (rclcpp::spin)
 	rclcpp::init(argc, argv);
 	nh = rclcpp::Node::make_shared("ov2slam_node");
 
