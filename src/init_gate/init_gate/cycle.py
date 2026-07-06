@@ -31,8 +31,8 @@ from init_gate.params import LEG_SPEED, LEG_DURATION_SEC, TIMEOUT_SEC
 def run_cycle(motion, readiness, log_state):
     t_start = time.monotonic()
     legs = [
-        ('left',  0.0, +LEG_SPEED, 0.0),
-        ('right', 0.0, -LEG_SPEED, 0.0),
+        #('left',  0.0, +LEG_SPEED, 0.0),
+        #('right', 0.0, -LEG_SPEED, 0.0),
         ('up',    0.0, 0.0, +LEG_SPEED),
     ]
     while time.monotonic() - t_start < TIMEOUT_SEC:
