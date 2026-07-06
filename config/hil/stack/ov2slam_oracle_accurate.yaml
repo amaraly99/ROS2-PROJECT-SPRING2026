@@ -27,8 +27,7 @@ slam:
   cpu:               "2,3"
   startup_delay_sec: 15
   restart:           unless-stopped
-  # Direct binary path, not "ros2 run" -- see ov2slam_oracle.yaml for why.
-  command:           "/workspace/install/ov2slam/lib/ov2slam/ov2slam_node /workspace/camera_calib/hil_sim_ov2slam_accurate.yaml"
+  command:           "ros2 run ov2slam ov2slam_node /workspace/camera_calib/hil_sim_ov2slam_accurate.yaml"
   topics:
     image_in: /ovcam/image_raw
     pose_out: /slam/pose

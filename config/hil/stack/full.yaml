@@ -28,11 +28,7 @@ slam:
   cpu:               "2,3"
   startup_delay_sec: 15
   restart:           unless-stopped
-  # Direct binary path, not "ros2 run" -- ros2 run is a Python wrapper that
-  # forks a child process for the real binary instead of exec-replacing itself,
-  # so PID 1 (what slam_thread_sampler.py samples) stays the Python wrapper and
-  # never shows the real OV2SLAM thread names (ov2_est/ov2_map/ov2_lc/...).
-  command:           "/workspace/install/ov2slam/lib/ov2slam/ov2slam_node /workspace/camera_calib/hil_sim_ov2slam.yaml"
+  command:           "ros2 run ov2slam ov2slam_node /workspace/camera_calib/hil_sim_ov2slam.yaml"
   topics:
     image_in: /ovcam/image_raw
     pose_out: /slam/pose
