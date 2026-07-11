@@ -511,25 +511,34 @@ def postprocess_ondevice_nms(output_flat: np.ndarray,
                              conf_thresh: float = 0.25,
                              timing: dict = None) -> list:
     """
-    Parse on-device NMS output from Hailo (yolov8m/yolov11m).
+    Parse on-device NMS output from Hailo (yolov8/yolov11, HAILO NMS BY CLASS).
 
-    Output tensor is flat: num_classes * (1 + max_per_class * 5) floats.
-    Per class: float32 count, then count × {y_min, x_min, y_max, x_max, score}
-    all normalized to [0, 1] relative to the 640×640 input (including letterbox).
+    The output is VARIABLE-LENGTH, packed back-to-back per class:
+      [count_c][count_c × {y_min, x_min, y_max, x_max, score}] for c = 0..79,
+    boxes normalized to [0, 1] relative to the 640×640 input (incl. letterbox).
+    The buffer is only zero-padded up to num_classes*(1+max_per_class*5) floats.
+
+    NOTE: this parser previously assumed FIXED 501-float strides per class,
+    which coincides with the real layout only for class 0 (person) — every
+    other class read a padding zero as its count and was silently dropped.
+    That bug masqueraded as "v8/v11 HEFs only detect persons" (old Finding 9).
     """
     t0 = time.perf_counter_ns()
-    stride = 1 + max_per_class * 5  # 501 floats per class
     dets = []
 
+    off = 0
+    total = output_flat.shape[0]
     for cls_id in range(num_classes):
-        base = cls_id * stride
-        count = int(output_flat[base])
+        if off >= total:
+            break
+        count = int(output_flat[off])
+        off += 1
         if count == 0:
             continue
         count = min(count, max_per_class)
         for j in range(count):
-            off = base + 1 + j * 5
-            y_min, x_min, y_max, x_max, score = output_flat[off:off + 5]
+            y_min, x_min, y_max, x_max, score = output_flat[off + j * 5:
+                                                            off + j * 5 + 5]
             if score < conf_thresh:
                 continue
             # Convert from normalized [0,1] in 640×640 space → source image pixels
@@ -545,6 +554,7 @@ def postprocess_ondevice_nms(output_flat: np.ndarray,
                 "x2": max(0, min(int(px2), img_w - 1)),
                 "y2": max(0, min(int(py2), img_h - 1)),
             })
+        off += count * 5
 
     t1 = time.perf_counter_ns()
     if timing is not None:
