@@ -35,7 +35,19 @@
 #                   default: yolo. opencv/vlm ignore --model/--backend.
 #   --conf <f>      detection confidence threshold              default: 0.20
 #   --stamp-log     sim_camera_bridge logs per-frame stamps to
-#                   /tmp/sim_cam_stamps.csv (latency stages S1/S2)
+#                   /tmp/sim_cam_stamps.csv (latency stages S1/S2); also enables
+#                   ViSP centroid telemetry → /tmp/visp_telemetry.csv by default
+#   --slam-cores <list>     taskset CPU list for OV2SLAM         default: 2,3
+#   --detector-core <core>  taskset CPU for the host producer    default: 1
+#   --node-cores <list>     taskset CPU list for the ROS nodes   default: 0-3 (all)
+#                   (sim_camera_bridge + ovcam_bridge + yolo_bridge + visp_servo)
+#   --visp-telemetry-csv <path>  per-frame centroid CSV (overrides the default)
+#
+#   Placement configs (from benchmarks/run_hil_experiments.sh --placement):
+#     A  npu, --slam-cores 2,3 --detector-core 1 --node-cores 0-3  (baseline)
+#     B  cpu, --slam-cores 2,3 --detector-core 1 --node-cores 0-3  (CPU infer)
+#     C  npu, --slam-cores 0   --detector-core 1 --node-cores 0    (SLAM shares core 0)
+#     D  npu, --slam-cores 0   --detector-core 0 --node-cores 0    (all on core 0)
 #
 # Env vars (override before invoking):
 #   MATLAB_HOST_IP   — Windows host IP for unicast DDS discovery (REQUIRED)
@@ -56,6 +68,14 @@ BACKEND="npu"
 DETECTOR_TYPE="yolo"
 CONF_THRESH="0.20"
 STAMP_LOG_ON=false
+# Core-affinity knobs (placement sweep). Defaults reproduce the baseline layout:
+#   SLAM cores 2,3 (dedicated) · detector producer core 1 · ROS nodes 0-3 (all = no-op pin)
+# Config C passes --slam-cores 0 --node-cores 0 (SLAM + bridges + visp share core 0).
+# Config D adds --detector-core 0 (everything, incl. producer, on core 0).
+SLAM_CORES="2,3"
+DETECTOR_CORE="1"
+NODE_CORES="0-3"
+VISP_TELEMETRY_CSV=""
 ARGS=("$@")
 for i in "${!ARGS[@]}"; do
     arg="${ARGS[$i]}"
@@ -68,8 +88,15 @@ for i in "${!ARGS[@]}"; do
         --backend)     BACKEND="$next" ;;
         --detector)    DETECTOR_TYPE="$next" ;;
         --conf)        CONF_THRESH="$next" ;;
+        --slam-cores)    SLAM_CORES="$next" ;;
+        --detector-core) DETECTOR_CORE="$next" ;;
+        --node-cores)    NODE_CORES="$next" ;;
+        --visp-telemetry-csv) VISP_TELEMETRY_CSV="$next" ;;
     esac
 done
+# When stamp-log (latency instrumentation) is on, also capture visp centroid
+# telemetry by default so placement runs get the Centroid RMS metric for free.
+[[ "$STAMP_LOG_ON" == "true" && -z "$VISP_TELEMETRY_CSV" ]] && VISP_TELEMETRY_CSV="/tmp/visp_telemetry.csv"
 case "$BACKEND" in npu|cpu) ;; *) echo "[hil] ERROR: --backend must be npu|cpu (got '$BACKEND')" >&2; exit 1 ;; esac
 case "$DETECTOR_TYPE" in yolo|opencv|vlm) ;; *) echo "[hil] ERROR: --detector must be yolo|opencv|vlm (got '$DETECTOR_TYPE')" >&2; exit 1 ;; esac
 TELEMETRY_CSV="${TELEMETRY_CSV:-/tmp/yolo_telemetry.csv}"
@@ -241,6 +268,10 @@ sleep 1
 LAUNCH_ARGS=" slam:=false"
 LAUNCH_ARGS+=" target_class:='${TARGET_CLASS}'"
 [[ -n "$CLASS_NAME_MAP" ]] && LAUNCH_ARGS+=" class_name_map:='${CLASS_NAME_MAP}'"
+LAUNCH_ARGS+=" node_cores:=${NODE_CORES}"
+[[ "$NODE_CORES" != "0-3" ]] && log "ROS-side nodes pinned to core(s) ${NODE_CORES} (placement sweep)"
+[[ -n "$VISP_TELEMETRY_CSV" ]] && LAUNCH_ARGS+=" visp_telemetry_csv:=${VISP_TELEMETRY_CSV}" \
+    && log "ViSP centroid telemetry enabled → ${VISP_TELEMETRY_CSV}"
 [[ "$STAMP_LOG_ON" == "true" ]] && LAUNCH_ARGS+=" cam_stamp_log:=/tmp/sim_cam_stamps.csv" \
     && log "Camera stamp log enabled → /tmp/sim_cam_stamps.csv"
 [[ "$SLAM_ON"        == "false" ]] && log "OV2SLAM will be skipped (--no-slam)"
@@ -282,7 +313,7 @@ sudo chmod 666 /dev/shm/ovcam_frames /dev/shm/sem.ovcam_ready 2>/dev/null || tru
 log "SHM permissions fixed (0666)."
 
 # ── 3. detector producer — host, Core 1 ──────────────────────────────────────
-log "3/4  detector=${DETECTOR_TYPE} model=${MODEL_ID} backend=${BACKEND} conf=${CONF_THRESH}  →  core 1 (host, native)"
+log "3/4  detector=${DETECTOR_TYPE} model=${MODEL_ID} backend=${BACKEND} conf=${CONF_THRESH}  →  core ${DETECTOR_CORE} (host, native)"
 # Ensure log file is writable (may have been left root-owned by a prior sudo run)
 sudo chmod 666 /tmp/yolo_producer.log 2>/dev/null || true
 # conf default 0.20: publish detections down to 0.20 so visp (min_confidence=0.20)
@@ -306,7 +337,7 @@ case "$DETECTOR_TYPE" in
                       --telemetry_csv "$TELEMETRY_CSV")
         ;;
 esac
-taskset -c 1 "${PRODUCER_CMD[@]}" > /tmp/yolo_producer.log 2>&1 &
+taskset -c "${DETECTOR_CORE}" "${PRODUCER_CMD[@]}" > /tmp/yolo_producer.log 2>&1 &
 YOLO_PID=$!
 for i in $(seq 1 20); do
     [[ -e /dev/shm/yolo_shm ]] && break
@@ -317,9 +348,13 @@ done
 
 # ── 4. OV2SLAM — deferred start + watchdog, cores 2,3 ────────────────────────
 if [[ "$SLAM_ON" == "true" ]]; then
-    log "4/4  OV2SLAM deferred: waiting 15 s for drone to begin motion before init..."
-    sleep 15
-    log "Starting OV2SLAM watchdog  →  cores 2,3 (Docker)"
+    # Deferred so the drone has begun moving (monocular SLAM needs parallax to
+    # initialize). Tunable via SLAM_DEFER_S; default lowered 15 s → 5 s to shrink
+    # the per-run boot gap. If SLAM fails to bootstrap at 5 s, raise it.
+    SLAM_DEFER_S="${SLAM_DEFER_S:-5}"
+    log "4/4  OV2SLAM deferred: waiting ${SLAM_DEFER_S} s for drone to begin motion before init..."
+    sleep "$SLAM_DEFER_S"
+    log "Starting OV2SLAM watchdog  →  core(s) ${SLAM_CORES} (Docker)"
     # Watchdog loop: restarts ov2slam_node whenever it exits (crash or auto-exit).
     # Runs in the background so run_stack_hil.sh returns immediately.
     # Stops when the Docker container is gone (stack was stopped).
@@ -340,7 +375,7 @@ if [[ "$SLAM_ON" == "true" ]]; then
                 export ROS_DOMAIN_ID=${ROS_ID}
                 export ${DDS_VAR}
                 export LD_LIBRARY_PATH=/workspace/opencv/build/lib:\${LD_LIBRARY_PATH:-}
-                taskset -c 2,3 ros2 run ov2slam ov2slam_node \
+                taskset -c ${SLAM_CORES} ros2 run ov2slam ov2slam_node \
                     /workspace/camera_calib/hil_sim_ov2slam.yaml \
                     >> /tmp/ov2slam_hil.log 2>&1
             "
