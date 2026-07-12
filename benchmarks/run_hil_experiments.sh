@@ -178,7 +178,7 @@ while time.monotonic() < deadline:
         last = seq
     except (FileNotFoundError, ValueError):
         pass
-    time.sleep(1.0)
+    time.sleep(0.3)              # tight poll → monitor starts ~<1 s after reset
 sys.exit(1)
 PYEOF
 }
@@ -209,16 +209,15 @@ for N in $(seq 1 "$RUNS"); do
     # clear stale per-run scratch so a failed/short run can't copy previous data
     sudo rm -f /tmp/visp_telemetry.csv /tmp/sim_cam_stamps.csv "$TELEM_CSV" 2>/dev/null || true
 
-    # 1. (re)start the simulation FIRST — restart resets the drone pose.
-    #    Order matters: the Windows-side frame publisher keeps streaming the
-    #    previous run's final frame (drone parked at the sign) after a model
-    #    stop, so starting the stack first lets visp_servo see that stale
-    #    end-scene and latch a bogus REACHED on /visp/state before the reset.
-    matlab_start_or_prompt
-
-    # 2. start the stack (creates the container + camera SHM). The drone just
-    #    hovers at its initial condition until /cmd_vel starts flowing, so the
-    #    ~20 s of stack boot costs nothing mission-wise.
+    # 1. boot the stack FIRST and let it fully come up — this is the ~20 s cost.
+    #    It is kept BEFORE the sim reset so it no longer sits between 'start' and
+    #    the mission clock (which is what made the drone appear to move during
+    #    the "warming up" gap: visp came up mid-boot and commanded the already-
+    #    reset drone before mission_monitor started). The camera SHM is created
+    #    by sim_camera_bridge inside the container, so this boot does NOT depend
+    #    on MATLAB publishing yet. If visp sees a stale end-scene while booting
+    #    and latches a bogus REACHED, it is harmless: mission_monitor records its
+    #    first sample as initial_state (not an event), so it is ignored.
     TELEMETRY_CSV="$TELEM_CSV" ./run_stack_hil.sh "${STACK_ARGS[@]}" \
         > "$STACK_LOG" 2>&1
     if [[ $? -ne 0 ]]; then
@@ -227,7 +226,13 @@ for N in $(seq 1 "$RUNS"); do
         continue
     fi
 
-    # 3. camera frames must flow before the warm-up clock starts
+    # 2. reset the drone LAST, once the stack is already consuming frames, so the
+    #    mission clock (step 3b) starts within ~1 s of the reset — not after a
+    #    20 s boot. This removes the drone's head start and the long dead gap
+    #    between 'start' and 'warming up'.
+    matlab_start_or_prompt
+
+    # 3. fresh post-reset camera frames must flow before the warm-up clock starts
     if ! wait_for_frames 45; then
         log "STARTUP_FAILED run $N (no camera frames within 45 s — is MATLAB publishing?)"
         matlab_send "stop" || true
