@@ -1,38 +1,52 @@
 # MATLAB-side HIL automation
 
-## What you (the operator) do per experiment session
+The MATLAB/Simulink sim host is the authoritative source of camera frames and drone
+state; the Pi runs the perception stack and closes the loop over ROS 2. The scripts that
+run on the sim host live in [`matlab/`](../../matlab/) at the repo root — this page only
+covers how the Pi drives them during a sweep.
 
-1. On the Windows laptop, open MATLAB and `cd` to the folder with the HIL
-   Simulink model.
-2. Open `hil_run_supervisor.m` (copy it over from this repo), set `MODEL_NAME`
-   at the top to your model's name (without `.slx`).
-3. Run the script. It listens on TCP port **55556** and prints every command.
-4. Leave it running. Start sweeps from the Pi:
-   ```bash
-   ./benchmarks/sweep_detectors.sh                 # full 20-config sweep
-   ./benchmarks/run_hil_experiments.sh --label smoke --runs 1 --duration 30
-   ```
-5. When the sweep finishes, Ctrl+C the supervisor.
+## Per experiment session (on the sim host)
 
-The Pi sends `start` before each run — the supervisor stops and restarts the
-model, which re-applies all initial conditions (drone back at its starting
-pose) — and `stop` after each run.
+Run these in order, in one MATLAB session. Each step must be confirmed working before the
+next; the supervisor in particular starts **last**, once frames are already streaming.
 
-**Firewall note:** the first time MATLAB opens the port, Windows will ask to
-allow it. Allow on the VirtualBox host-only / private network. The Pi connects
-from 192.168.56.2 to 192.168.56.1:55556.
+1. `clear all`, then the three `setenv(...)` ROS 2 environment lines.
+2. `hil_ros_init_LT` — wait for `=== LT Init complete ===`.
+3. Open and **run** `hil_closed_loop.slx` — wait for `latest_frame` to appear in the workspace.
+4. `sim_camera_publisher_timer_LT` — confirm ~20 Hz is arriving on the Pi *first*.
+5. `hil_run_supervisor` — returns to the prompt and keeps polling. Stop it with
+   `stop_hil_supervisor`.
 
-## If you don't run the supervisor
+The supervisor listens on TCP port **55556**: `start` stops the model if running and
+restarts it, re-applying every initial condition so the drone returns to its starting
+pose; `stop` halts it. It is a non-blocking state machine on a 0.2 s timer — the callback
+must never block, because it can fire re-entrantly from inside the Simulink 3D engine's
+own step, and a blocking wait there deadlocks the sim.
 
-Everything still works: the Pi falls back to prompting
-`(Re)start the Simulink simulation manually, then press Enter...` between
-runs. With `NONINTERACTIVE=1` it skips the prompt and assumes the sim is
-already streaming (no per-run drone reset — fine for quick smoke tests,
-wrong for comparable closed-loop trajectories).
-
-## Quick test of the supervisor from the Pi
+## Driving it from the Pi
 
 ```bash
-echo start | nc -w 3 192.168.56.1 55556   # should print "ok" and start the sim
-echo stop  | nc -w 3 192.168.56.1 55556   # should print "ok" and stop it
+./benchmarks/sweep_detectors.sh                                    # full 20-config sweep
+./benchmarks/run_hil_experiments.sh --label smoke --runs 1 --duration 30
 ```
+
+The Pi sends `start` before each run and `stop` after it.
+
+**Firewall:** the first time MATLAB opens the port, Windows asks to allow it — allow on
+the private / host-only network. Set `MATLAB_HOST_IP` on the Pi to the sim host's address
+(default `192.168.56.1`, the host-only adapter).
+
+Quick connectivity check from the Pi:
+
+```bash
+echo start | nc -w 3 "$MATLAB_HOST_IP" 55556   # prints "ok" and starts the sim
+echo stop  | nc -w 3 "$MATLAB_HOST_IP" 55556   # prints "ok" and stops it
+```
+
+## Without the supervisor
+
+Everything still works: the Pi falls back to prompting
+`(Re)start the Simulink simulation manually, then press Enter...` between runs. With
+`NONINTERACTIVE=1` it skips the prompt and assumes the sim is already streaming — fine for
+a smoke test, but there is no per-run drone reset, so trajectories are not comparable
+across configs.
