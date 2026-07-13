@@ -57,6 +57,30 @@ frame.raw
 benchmarks/results/
 *.csv
 
+# Curated, aggregated results that BACK THE PAPER are published on purpose.
+# They live in their own directory rather than in benchmarks/results/, because
+# git cannot re-include a file whose parent directory is excluded — the rule
+# above kills any negation under results/. Only the *.csv file rule applies
+# here, and that one a negation can undo.
+!benchmarks/paper_data/*.csv
+
+############################################################
+# Model binaries (~700 MB — fetched, not committed)
+############################################################
+# NOTE: there is deliberately no bare `*.hef` rule. models/yolo26n_10h.hef is
+# already tracked and is the default model the stack runs with; a blanket rule
+# would only hide it from future updates. Ignore the bulk directories instead.
+# See models/fetch_models.sh to obtain everything below.
+models/hef/
+models/onnx/
+modeltest/
+
+############################################################
+# Manuscript (IEEE template ships its own licensed fonts; the
+# paper itself is not part of the software artifact)
+############################################################
+paper/
+
 ############################################################
 # Claude Code internal files
 ############################################################
