@@ -42,6 +42,26 @@ MIN_APPROACH_S = 2.0
 
 def recover(mission: dict, min_approach: float):
     """Return (verdict, t_reach, approach_dur) from one mission JSON."""
+    # visp-CSV-derived JSONs (source="visp_csv", written by mission_from_visp_csv.py)
+    # are boot-aligned ground truth: visp_servo logs its own state from its first frame,
+    # so there is no latched-topic contamination to undo. Here transitions[0] is a REAL
+    # event (the first APPROACHING) — the legacy trans[1:] surgery below would wrongly
+    # drop it and null out approach_duration. Trust the JSON's own fields; SUSPECT still
+    # guards MOG2 false-positive "reaches" below the physical floor.
+    if mission.get("source") == "visp_csv":
+        # Prefer SIM time: wall-clock reach scales with whatever rate MATLAB ran at
+        # (drift 0.78-0.95x), so wall numbers are not comparable across configs.
+        t_reach = mission.get("time_to_reached_sim_s")
+        approach = mission.get("approach_duration_sim_s")
+        if t_reach is None:                       # no cam_stamps -> fall back to wall
+            t_reach = mission.get("time_to_reached_s")
+            approach = mission.get("approach_duration_s")
+        if t_reach is None:
+            return "NO_REACH", None, None
+        if approach is not None and approach < min_approach:
+            return "SUSPECT", t_reach, approach
+        return "REAL", t_reach, approach
+
     trans = mission.get("transitions") or []
     if not trans:
         return "NO_DATA", None, None
@@ -92,7 +112,8 @@ def main():
             "label": label, "run": run,
             "raw_time_to_reached_s": mission.get("time_to_reached_s"),
             "raw_approach_duration_s": mission.get("approach_duration_s"),
-            "initial_latched_state": (mission.get("transitions") or [[None, ""]])[0][1],
+            "initial_latched_state": (mission.get("initial_state")
+                                      or (mission.get("transitions") or [[None, ""]])[0][1]),
             "recovered_time_to_reached_s": t_reach,
             "recovered_approach_duration_s": approach,
             "verdict": verdict,
@@ -135,15 +156,22 @@ def main():
     with open(comparison) as f:
         rows = list(csv.DictReader(f))
         fields = rows and list(rows[0].keys())
+    def _set(row, key, val):
+        # plot_detector_sweep renamed the reach columns (sim-time is now primary), so
+        # only write columns this CSV actually has — keeps us tolerant of either schema.
+        if key in row:
+            row[key] = "" if val is None else val
+
     for row in rows:
         s = summary.get(row["label"])
         if s is None:
             continue
-        row["reached_rate"] = s["reached_rate"]
-        row["time_to_reached_s"] = ("" if s["time_to_reached_s"] is None
-                                    else s["time_to_reached_s"])
-        row["approach_duration_s"] = ("" if s["approach_duration_s"] is None
-                                      else s["approach_duration_s"])
+        _set(row, "reached_rate", s["reached_rate"])
+        # recover() now returns SIM-time values for visp_csv missions.
+        _set(row, "time_to_reached_sim_s", s["time_to_reached_s"])
+        _set(row, "approach_duration_sim_s", s["approach_duration_s"])
+        _set(row, "time_to_reached_s", s["time_to_reached_s"])
+        _set(row, "approach_duration_s", s["approach_duration_s"])
     fixed_path = os.path.join(sweep, "detector_comparison_fixed.csv")
     with open(fixed_path, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fields)

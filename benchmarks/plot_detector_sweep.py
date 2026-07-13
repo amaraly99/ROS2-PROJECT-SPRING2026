@@ -53,11 +53,17 @@ def main():
     rows.sort(key=lambda s: s["label"])
 
     # ── table ────────────────────────────────────────────────────────────────
+    # reach_*_sim_s are the PRIMARY mission metrics: the wall-clock ones scale with
+    # whatever rate MATLAB happened to run at (measured drift 0.78-0.95x, which alone
+    # stretched identical missions from 43.7 s to 54.8 s wall). Sim-time is invariant.
     cols = ["label", "detector", "model", "backend",
             "cmd_vel_hz", "cmd_vel_std", "det_hz",
             "s4_preprocess", "s5_inference", "s6_nms", "s7_shm_write",
             "detector_compute", "det_path",
-            "reached_rate", "time_to_reached_s", "approach_duration_s",
+            "reached_rate",
+            "time_to_reached_sim_s", "time_to_reached_sim_std",
+            "approach_duration_sim_s", "sim_rate",
+            "time_to_reached_s_wall", "approach_duration_s_wall",
             "n_reacquire", "frozen"]
     out_csv = os.path.join(d, "detector_comparison.csv")
     with open(out_csv, "w", newline="") as f:
@@ -71,8 +77,11 @@ def main():
                 s["cmd_vel_hz"]["mean"], s["cmd_vel_hz"]["std"], s["det_hz"]["mean"],
                 g(dl, "s4_preprocess"), g(dl, "s5_inference"), g(dl, "s6_nms"),
                 g(dl, "s7_shm_write"), g(dl, "detector_compute"), g(dl, "det_path"),
-                m.get("reached_success_rate"), g(m, "time_to_reached_s"),
-                g(m, "approach_duration_s"), g(m, "n_reacquire"),
+                m.get("reached_success_rate"),
+                g(m, "time_to_reached_sim_s"), g(m, "time_to_reached_sim_s", "std"),
+                g(m, "approach_duration_sim_s"), g(m, "sim_rate"),
+                g(m, "time_to_reached_s"), g(m, "approach_duration_s"),
+                g(m, "n_reacquire"),
                 s.get("frozen_camera_flag"),
             ])
     print(f"→ {out_csv}")
