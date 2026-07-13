@@ -43,6 +43,85 @@ def _read_csv(path):
         return list(csv.DictReader(f))
 
 
+def _int(r, k):
+    try:
+        return int(r[k])
+    except (KeyError, ValueError, TypeError):
+        return 0
+
+
+def _float(r, k):
+    try:
+        return float(r[k])
+    except (KeyError, ValueError, TypeError):
+        return None
+
+
+# Grouping of the S1-S9 checkpoints into the four paper stages
+# (see benchmarks/LATENCY_STAGES.md and paper Table tab:latency_results).
+PAPER_STAGE_LABELS = [
+    ("frame_acq_jitter",  "Frame Acquisition"),   # S1 cross-host DELIVERY JITTER
+    ("object_detection",  "Object Detection"),    # S3+S4+S5+S6 (pickup+pre+inf+post)
+    ("detection_publish", "Detection Publish"),   # S7+S8 (det SHM write → topic)
+    ("control",           "Control"),             # S9 (det recv → /cmd_vel)
+    ("end_to_end",        "End-to-end"),          # measured on-Pi S3→S9
+]
+
+
+def paper_stage_series(telem, probe, bridge):
+    """Per-frame durations (ms) for the four paper stages + E2E.
+
+    Returns {stage_key: [values...]}. Frame Acquisition is the MATLAB→Pi
+    *delivery jitter* (offset-free, cross-clock) — NOT an absolute latency —
+    because the sim host and Pi clocks are not hardware-synchronized. All other
+    stages share the Pi CLOCK_MONOTONIC base. On probe-matched frames,
+    object_detection + detection_publish + control == end_to_end by construction.
+    """
+    series = {}
+
+    # Frame Acquisition — |Δt_recv − Δt_sim| across consecutive frames.
+    if bridge:
+        jit = []
+        for a, b in zip(bridge, bridge[1:]):
+            d_recv = _int(b, "t_recv_mono_ns") - _int(a, "t_recv_mono_ns")
+            d_sim = _int(b, "t_sim_stamp_ns") - _int(a, "t_sim_stamp_ns")
+            jit.append(abs(d_recv - d_sim) / 1e6)
+        series["frame_acq_jitter"] = jit
+
+    # Object Detection — capture → nms_done (= frame pickup + preprocess +
+    # inference + postprocess = the detector's own latency, S3-S6).
+    telem_by_stamp = {}
+    if telem:
+        od = []
+        for r in telem:
+            cap, nms = _int(r, "ts_capture"), _int(r, "ts_nms_done")
+            if cap and nms:
+                od.append((nms - cap) / 1e6)
+                telem_by_stamp[cap] = r
+        series["object_detection"] = od
+
+    # Control (S9), E2E, and Detection Publish (S7+S8 = cam_to_det − objdet)
+    # from the probe, joined to telemetry on the source stamp.
+    if probe:
+        ctrl, e2e, dpub = [], [], []
+        for r in probe:
+            a = _float(r, "approx_e2e_ms")
+            c2d = _float(r, "cam_to_det_ms")
+            if a is not None:
+                ctrl.append(a)
+            if a is not None and c2d is not None:
+                e2e.append(c2d + a)
+            t = telem_by_stamp.get(_int(r, "t_det_stamp_ns"))
+            if t is not None and c2d is not None:
+                od_ms = (_int(t, "ts_nms_done") - _int(t, "ts_capture")) / 1e6
+                dpub.append(c2d - od_ms)
+        series["control"] = ctrl
+        series["detection_publish"] = dpub
+        series["end_to_end"] = e2e
+
+    return series
+
+
 def main():
     ap = argparse.ArgumentParser(description="Per-stage latency report")
     ap.add_argument("--telemetry", default=None)
@@ -50,11 +129,37 @@ def main():
     ap.add_argument("--bridge-log", dest="bridge_log", default=None)
     ap.add_argument("--out", default=None, help="write stage table CSV here")
     ap.add_argument("--json", dest="json_out", default=None)
+    ap.add_argument("--paper-stages", dest="paper_stages", action="store_true",
+                    help="emit the 4 grouped paper stages + E2E instead of S1-S9")
     args = ap.parse_args()
 
     telem = _read_csv(args.telemetry)
     probe = _read_csv(args.probe)
     bridge = _read_csv(args.bridge_log)
+
+    # ── grouped paper stages (Table tab:latency_results) ─────────────────────
+    if args.paper_stages:
+        series = paper_stage_series(telem, probe, bridge)
+        rows_out = []
+        print(f"{'stage':18} {'n':>6} {'mean ms':>9} {'p50 ms':>9} {'p95 ms':>9}")
+        print("─" * 56)
+        for key, label in PAPER_STAGE_LABELS:
+            d = _dist(series.get(key, []))
+            if d is None:
+                print(f"{label:18} {'-':>6} {'n/a':>9} {'n/a':>9} {'n/a':>9}")
+                continue
+            note = "  (delivery jitter)" if key == "frame_acq_jitter" else ""
+            print(f"{label:18} {d['n']:>6} {d['mean_ms']:>9.3f} {d['p50_ms']:>9.3f} "
+                  f"{d['p95_ms']:>9.3f}{note}")
+            rows_out.append({"stage": label, "key": key, **d})
+        if args.out and rows_out:
+            os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
+            with open(args.out, "w", newline="") as f:
+                w = csv.DictWriter(f, fieldnames=list(rows_out[0].keys()))
+                w.writeheader()
+                w.writerows(rows_out)
+            print(f"→ {args.out}")
+        return
 
     stages = {}  # key -> (description, dist)
 

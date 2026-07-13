@@ -81,11 +81,17 @@ def _rate_stats(recv_ns: list) -> dict:
 
 
 class E2ELatencyProbe(Node):
-    def __init__(self, output_path: str, camera: bool = True):
+    def __init__(self, output_path: str, camera: bool = True,
+                 skip_first_s: float = 0.0):
         super().__init__("e2e_latency_probe")
 
         self.output_path = output_path
         self.camera_enabled = camera
+        # Warmup prefix to discard at save time (SLAM cold-start). Data is still
+        # collected during it, then trimmed from both the CSV and the stats so the
+        # measurement window can overlap the warmup instead of following a dead sleep.
+        self.skip_first_s = skip_first_s
+        self._t_start_ns: int = self.get_clock().now().nanoseconds
         self.rows: list = []
 
         self._last_det_stamp_ns: int = 0
@@ -202,7 +208,28 @@ class E2ELatencyProbe(Node):
     def _base(self) -> str:
         return os.path.splitext(self.output_path)[0]
 
+    def _trim_warmup(self):
+        """Drop all samples received in the first `skip_first_s` seconds so the SLAM
+        cold-start transient does not pollute the CSV or the latency distribution."""
+        if self.skip_first_s <= 0:
+            return
+        cutoff = self._t_start_ns + int(self.skip_first_s * 1e9)
+        n_before = len(self.rows)
+        self.rows = [r for r in self.rows if r["t_cmd_recv_ns"] >= cutoff]
+        # _det_recv and _cam_to_det are appended together in _on_det → index-aligned.
+        kept = [(t, c) for t, c in zip(self._det_recv, self._cam_to_det) if t >= cutoff]
+        self._det_recv = [t for t, _ in kept]
+        self._cam_to_det = [c for _, c in kept]
+        self._cmd_recv = [t for t in self._cmd_recv if t >= cutoff]
+        self._ovcam_recv = [t for t in self._ovcam_recv if t >= cutoff]
+        self._simcam_recv = [t for t in self._simcam_recv if t >= cutoff]
+        self._cam_csv_rows = [row for row in self._cam_csv_rows if row[2] >= cutoff]
+        self.get_logger().info(
+            f"trimmed first {self.skip_first_s:.0f}s warmup: "
+            f"{n_before}→{len(self.rows)} det+cmd samples kept")
+
     def save(self):
+        self._trim_warmup()
         stats = self._compute_stats()
 
         if not self.rows:
@@ -268,6 +295,10 @@ def main():
                         help="Explicit output CSV path (overrides --config naming)")
     parser.add_argument("--no-camera", dest="no_camera", action="store_true",
                         help="Skip camera-topic subscriptions (original behavior)")
+    parser.add_argument("--skip-first-s", dest="skip_first_s", type=float, default=0.0,
+                        help="Discard samples from the first N seconds (warmup) from "
+                             "the CSV and stats (default: 0). Run --duration = "
+                             "warmup+measure and pass the warmup here.")
     args = parser.parse_args()
 
     output_path = args.output or os.path.join(
@@ -275,7 +306,8 @@ def main():
         f"e2e_latency_{args.config}.csv")
 
     rclpy.init()
-    node = E2ELatencyProbe(output_path, camera=not args.no_camera)
+    node = E2ELatencyProbe(output_path, camera=not args.no_camera,
+                           skip_first_s=args.skip_first_s)
 
     try:
         deadline = time.monotonic() + args.duration
