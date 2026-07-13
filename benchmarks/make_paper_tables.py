@@ -185,9 +185,17 @@ def main():
     ap.add_argument("--labelC", default="placement_C")
     ap.add_argument("--labelD", default="placement_D")
     ap.add_argument("--out-dir", default="benchmarks/results/paper_tables")
-    ap.add_argument("--centroid-states", default=None,
-                    help="comma-separated state names for centroid RMS filter, "
-                         "e.g. APPROACHING,REACHED")
+    # Centroid RMS is measured during APPROACHING only. Pooling every state instead
+    # makes the metric a function of how much of the fixed recording window each run
+    # spent parked at the goal: once REACHED, the drone is stationary and centred, so
+    # its error collapses to ~10-18 px, and REACHED's share of the samples varies by
+    # config (23% for the 16 Hz NPU run vs 44% for the 4.3 Hz CPU run). That ratio is
+    # an artifact of run length versus reach time, not of tracking quality, and it
+    # silently flatters whichever config idled at the target longest. Pass
+    # --centroid-states '' to restore the old pooled behaviour.
+    ap.add_argument("--centroid-states", default="APPROACHING",
+                    help="comma-separated servo states to measure centroid RMS over "
+                         "(default: APPROACHING). Empty string pools all states.")
     args = ap.parse_args()
 
     dirs = args.results_dir or [

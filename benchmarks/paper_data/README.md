@@ -77,6 +77,20 @@ fast and still be useless for closed-loop servoing.
 **`yolov11s_cpu` has elevated reach variance** (44.7 ± 3.9 s): one run briefly lost the sign
 mid-approach and re-acquired. Real low-rate tracking fragility, not an artifact.
 
+**Centroid RMS is measured during APPROACHING only.** Pooling every servo state instead makes the
+metric a function of how much of the fixed recording window each run spent *parked at the goal*:
+once REACHED, the drone is stationary and centred, so its error collapses to ~10–18 px, and
+REACHED's share of the samples varies a lot by config (23% of samples for the 16 Hz NPU run versus
+44% for the 4.3 Hz CPU run, which arrives with more of its window left). That ratio reflects run
+length versus reach time, not tracking quality, and it silently flatters whichever config idled at
+the target longest. `make_paper_tables.py` therefore defaults to `--centroid-states APPROACHING`.
+
+Under that metric, **a higher command rate does not buy better tracking**: the 16.16 Hz NPU config
+(A, 114.4 ± 7.3 px) has *higher* approach-phase centroid error than the 4.33 Hz CPU config
+(B, 96.7 ± 7.5 px). The same ordering holds under the pooled metric, so it is not an artifact of the
+filter. This is consistent with the reach result — the mission is actuation-limited, and past roughly
+1 Hz, additional detections do not translate into better closed-loop behaviour.
+
 ## Known artifacts in earlier data
 
 Fixed in this dataset; the reason older numbers differ and must not be carried forward.
