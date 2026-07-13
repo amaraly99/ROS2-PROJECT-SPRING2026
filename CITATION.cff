@@ -1,0 +1,49 @@
+cff-version: 1.2.0
+message: "If you use this software or its data, please cite the paper below."
+title: "Modular ROS 2 Framework for End-to-End Evaluation of Onboard Vision Pipelines"
+abstract: >-
+  A modular ROS 2 framework for evaluating onboard robot vision pipelines end to end on
+  edge hardware. Object detection, visual SLAM, and visual servoing can each be swapped
+  with a single argument, and the framework measures what changes across the whole
+  pipeline — per-stage latency, control-loop rate, and closed-loop mission outcome —
+  rather than in isolation. Evaluated on a Raspberry Pi 5 with a Hailo-10H NPU against a
+  hardware-in-the-loop Simulink simulator.
+type: software
+license: GPL-3.0
+repository-code: "https://github.com/amaraly99/ROS2-PROJECT-SPRING2026"
+authors:
+  - family-names: Dhaouadi
+    given-names: Ahmed
+    email: b00095536@aus.edu
+    affiliation: "Department of Computer Science and Engineering, American University of Sharjah"
+  - family-names: Aly
+    given-names: Amar
+    email: b00096144@aus.edu
+    affiliation: "Department of Computer Science and Engineering, American University of Sharjah"
+  - family-names: Hassan
+    given-names: Mohamed
+    email: mhassan@aus.edu
+    affiliation: "Department of Computer Science and Engineering, American University of Sharjah"
+keywords:
+  - robotics
+  - ROS 2
+  - edge AI
+  - object detection
+  - visual SLAM
+  - visual servoing
+  - hardware-in-the-loop
+  - neural processing unit
+preferred-citation:
+  type: article
+  title: "Onboard Vision for Small Robots: Detection, SLAM, and Visual Servoing"
+  authors:
+    - family-names: Dhaouadi
+      given-names: Ahmed
+    - family-names: Aly
+      given-names: Amar
+    - family-names: Hassan
+      given-names: Mohamed
+  journal: "IEEE Access"
+  year: 2026
+  # TODO before submission: confirm the final title with the supervisor (the .tex still
+  # marks it as a working title), then add volume/pages/doi once accepted.
