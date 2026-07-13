@@ -1,0 +1,35 @@
+{
+  "reached": true,
+  "time_to_reached_s": 54.203,
+  "approach_duration_s": 15.544,
+  "time_to_first_approach_s": 0.0,
+  "n_reacquire": 0,
+  "n_lost": 0,
+  "time_in_state_s": {
+    "SEARCHING": 0.655,
+    "APPROACHING": 53.548,
+    "REACQUIRE": 0.0,
+    "REACHED": 18.249
+  },
+  "initial_state": "APPROACHING",
+  "final_state": "REACHED",
+  "n_transitions": 3,
+  "transitions": [
+    [
+      38.004,
+      "SEARCHING"
+    ],
+    [
+      38.659,
+      "APPROACHING"
+    ],
+    [
+      54.203,
+      "REACHED"
+    ]
+  ],
+  "source": "visp_csv",
+  "sim_rate": 0.8792,
+  "time_to_reached_sim_s": 50.257,
+  "approach_duration_sim_s": 13.407
+}

@@ -1,0 +1,7 @@
+config,run,raw_initial_state,raw_time_to_reached_s,raw_approach_duration_s,recovered_initial_state,recovered_time_to_reached_s,recovered_approach_duration_s,recovered_final_state
+placement_C,placement_C_run1,SEARCHING,43.523,42.296,SEARCHING,43.523,42.296,REACHED
+placement_C,placement_C_run2,APPROACHING,42.114,42.114,APPROACHING,42.114,42.114,REACHED
+placement_C,placement_C_run3,APPROACHING,44.285,44.285,APPROACHING,44.285,44.285,REACHED
+placement_D,placement_D_run1,APPROACHING,45.336,45.336,APPROACHING,45.336,45.336,REACHED
+placement_D,placement_D_run2,APPROACHING,45.581,45.581,APPROACHING,45.581,45.581,REACHED
+placement_D,placement_D_run3,APPROACHING,47.412,47.412,APPROACHING,47.412,47.412,REACHED

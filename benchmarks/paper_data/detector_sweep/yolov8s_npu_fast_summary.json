@@ -1,0 +1,132 @@
+{
+  "label": "yolov8s_npu_fast",
+  "detector": "yolo",
+  "model": "yolov8s",
+  "backend": "npu",
+  "slam_mode": "fast",
+  "runs_requested": 3,
+  "runs_ok": 3,
+  "cmd_vel_hz": {
+    "mean": 16.117,
+    "std": 0.005,
+    "n": 3
+  },
+  "det_hz": {
+    "mean": 16.117,
+    "std": 0.005,
+    "n": 3
+  },
+  "camera_hz": {
+    "mean": 16.117,
+    "std": 0.009,
+    "n": 3
+  },
+  "ovcam_hz": {
+    "mean": 16.117,
+    "std": 0.005,
+    "n": 3
+  },
+  "e2e_det_to_cmd_ms_mean": {
+    "mean": 2.412,
+    "std": 0.517,
+    "n": 3
+  },
+  "e2e_det_to_cmd_ms_p95": {
+    "mean": 1.29,
+    "std": 0.299,
+    "n": 3
+  },
+  "cam_to_det_ms_mean": {
+    "mean": 25.188,
+    "std": 0.009,
+    "n": 3
+  },
+  "cam_to_det_ms_p95": {
+    "mean": 26.715,
+    "std": 0.061,
+    "n": 3
+  },
+  "detector_latency_ms": {
+    "s3_frame_age": {
+      "mean": 4.556,
+      "std": 0.042,
+      "n": 3
+    },
+    "s4_preprocess": {
+      "mean": 0.936,
+      "std": 0.008,
+      "n": 3
+    },
+    "s5_inference": {
+      "mean": 18.779,
+      "std": 0.008,
+      "n": 3
+    },
+    "s6_nms": {
+      "mean": 0.144,
+      "std": 0.0,
+      "n": 3
+    },
+    "s7_shm_write": {
+      "mean": 0.029,
+      "std": 0.0,
+      "n": 3
+    },
+    "det_path": {
+      "mean": 25.182,
+      "std": 0.011,
+      "n": 3
+    },
+    "detector_compute": {
+      "mean": 19.888,
+      "std": 0.006,
+      "n": 3
+    }
+  },
+  "mission": {
+    "runs": 3,
+    "reached_success_rate": 1.0,
+    "time_to_reached_sim_s": {
+      "mean": 41.117,
+      "std": 0.467,
+      "n": 3
+    },
+    "approach_duration_sim_s": {
+      "mean": null,
+      "std": null,
+      "n": 0
+    },
+    "sim_rate": {
+      "mean": 0.938,
+      "std": 0.002,
+      "n": 3
+    },
+    "time_to_reached_s": {
+      "mean": 44.406,
+      "std": 1.218,
+      "n": 3
+    },
+    "approach_duration_s": {
+      "mean": 44.406,
+      "std": 1.218,
+      "n": 3
+    },
+    "time_to_first_approach_s": {
+      "mean": 0.0,
+      "std": 0.0,
+      "n": 3
+    },
+    "n_reacquire": {
+      "mean": 0.0,
+      "std": 0.0,
+      "n": 3
+    },
+    "n_lost": {
+      "mean": 0.0,
+      "std": 0.0,
+      "n": 3
+    }
+  },
+  "unique_frame_ratio": 0.8738,
+  "frozen_camera_flag": false
+}

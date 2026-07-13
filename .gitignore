@@ -63,6 +63,7 @@ benchmarks/results/
 # above kills any negation under results/. Only the *.csv file rule applies
 # here, and that one a negation can undo.
 !benchmarks/paper_data/*.csv
+!benchmarks/paper_data/**/*.csv
 
 ############################################################
 # Model binaries (~700 MB — fetched, not committed)

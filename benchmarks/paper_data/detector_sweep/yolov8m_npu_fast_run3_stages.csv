@@ -1,0 +1,12 @@
+stage,name,n,mean_ms,p50_ms,p95_ms
+S1*,MATLAB→Pi delivery jitter (|Δrecv−Δstamp|),1099,82.825,18.221,61.38
+S2,cam recv → SHM write (rgb→NV12),1100,1.193,0.976,2.421
+S3,SHM write → detector pickup (frame age),1149,4.65,4.535,6.081
+S4,preprocess,1149,0.955,0.895,1.516
+S5,inference,1149,25.109,25.009,25.821
+S6,postprocess / NMS,1149,0.147,0.14,0.203
+S7,detection SHM write,1149,0.03,0.028,0.04
+S8,det SHM write → det recv (bridge+DDS),968,0.835,0.737,1.312
+S9,det recv → /cmd_vel recv (controller),968,1.029,0.574,1.101
+S3-S8,camera SHM write → det recv (pipeline),968,31.7,31.522,33.609
+E2E,camera SHM write → /cmd_vel recv,968,32.729,32.137,34.613
