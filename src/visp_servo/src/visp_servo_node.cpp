@@ -35,6 +35,7 @@
 #include <geometry_msgs/msg/twist.hpp>
 #include <std_msgs/msg/float64.hpp>
 #include <std_msgs/msg/float64_multi_array.hpp>
+#include <std_msgs/msg/string.hpp>
 #include <yolo_msgs/msg/detection_array.hpp>
 #include <cv_bridge/cv_bridge.hpp>
 
@@ -47,6 +48,8 @@
 #include <algorithm>
 #include <vector>
 #include <chrono>
+#include <fstream>
+#include <ctime>
 
 using DetectionArray = yolo_msgs::msg::DetectionArray;
 using Detection      = yolo_msgs::msg::Detection;
@@ -129,6 +132,7 @@ private:
     double hold_bbox_ratio_;
     double hold_center_tol_;
     int    reach_consec_ticks_;
+    double reach_require_far_ratio_;
 
     // Lock-on
     int    lockon_consec_;
@@ -162,6 +166,7 @@ private:
 
     // Misc
     double watchdog_period_sec_;
+    double detection_lost_sec_;
     double diag_period_sec_;
     int    smoothing_window_;
     double debug_min_draw_conf_;
@@ -181,6 +186,13 @@ private:
     int           consecutive_dets_   = 0;
     rclcpp::Time  approach_start_time_;
     int           reach_ticks_        = 0;
+    // Guard against latching REACHED on a stale close-up. Between runs the sim
+    // publisher keeps streaming the PREVIOUS mission's final frame (drone parked at
+    // the sign, bbox ~0.7), so visp's first frames can look "arrived" before the sim
+    // resets. Distance-based REACHED would latch on that in ~0.25 s at 16 Hz. A real
+    // mission always starts far (bbox ~0.05), so require having seen the sign small
+    // before an arrival can count.
+    bool          saw_far_            = false;
     double        last_bearing_to_sign_rad_ = 0.0; // for handoff to SEARCH after REACQUIRE timeout
     bool          have_last_bearing_  = false;
 
@@ -238,6 +250,7 @@ private:
 
     rclcpp::Publisher<Twist>::SharedPtr pub_cmd_;
     rclcpp::Publisher<Image>::SharedPtr pub_debug_;
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pub_state_;  // mission state for benchmarking
 
     rclcpp::TimerBase::SharedPtr diag_timer_;
     rclcpp::TimerBase::SharedPtr watchdog_timer_;
@@ -256,6 +269,19 @@ private:
     bool have_det_callback_ = false;
 
     rclcpp::Time last_log_time_;
+
+    // Per-frame centroid telemetry (paper Centroid-RMS metric). Opened only when
+    // the `telemetry_csv` param is non-empty; written un-throttled, one row per
+    // detection callback that has a target.
+    std::ofstream telemetry_csv_;
+
+    // CLOCK_MONOTONIC ns — shares the epoch used by the detector producer
+    // telemetry so centroid rows can be joined to frames if ever needed.
+    static uint64_t mono_ns() {
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        return static_cast<uint64_t>(ts.tv_sec) * 1000000000ull + ts.tv_nsec;
+    }
 
     // ─────────────────────────────────────────────────────────
     void declare_parameters() {
@@ -280,6 +306,10 @@ private:
         declare_parameter("hold_bbox_ratio",    0.70);
         declare_parameter("hold_center_tol",    0.12);
         declare_parameter("reach_consec_ticks", 8);
+        // bbox_ratio must have been BELOW this at least once before REACHED can latch
+        // (proves the drone genuinely closed distance rather than booting into a stale
+        // parked-at-the-sign frame). Real missions start ~0.05; stale end-scenes ~0.7.
+        declare_parameter("reach_require_far_ratio", 0.30);
 
         declare_parameter("lockon_consec",      2);
         declare_parameter("lockon_ex_tol",      0.5);
@@ -307,11 +337,19 @@ private:
         declare_parameter("safety_pose_max_age",  2.0);
 
         declare_parameter("watchdog_period_sec",  0.20);
+        // How long with NO detection before the target is treated as lost (drives
+        // the no-detection path: resets lock-on counter, enters REACQUIRE). MUST be
+        // larger than the slowest detector's inter-frame gap, else that gap is misread
+        // as a loss and the state machine's progress counters are reset every tick.
+        // Kept separate from watchdog_period_sec so the watchdog TIMER stays fast
+        // (responsive SEARCH) while the loss THRESHOLD is generous for CPU detectors.
+        declare_parameter("detection_lost_sec",   0.40);
         declare_parameter("diag_period_sec",      2.0);
 
         declare_parameter("smoothing_window",     5);
         declare_parameter("debug_min_draw_conf",  0.15);
         declare_parameter("debug_image_enabled",  true);
+        declare_parameter("telemetry_csv",        std::string(""));
     }
 
     void load_parameters() {
@@ -346,6 +384,7 @@ private:
         hold_bbox_ratio_    = get_parameter("hold_bbox_ratio").as_double();
         hold_center_tol_    = get_parameter("hold_center_tol").as_double();
         reach_consec_ticks_ = get_parameter("reach_consec_ticks").as_int();
+        reach_require_far_ratio_ = get_parameter("reach_require_far_ratio").as_double();
 
         lockon_consec_      = get_parameter("lockon_consec").as_int();
         lockon_ex_tol_      = get_parameter("lockon_ex_tol").as_double();
@@ -373,10 +412,46 @@ private:
         safety_pose_max_age_  = get_parameter("safety_pose_max_age").as_double();
 
         watchdog_period_sec_  = get_parameter("watchdog_period_sec").as_double();
+        detection_lost_sec_   = get_parameter("detection_lost_sec").as_double();
         diag_period_sec_      = get_parameter("diag_period_sec").as_double();
 
         smoothing_window_     = get_parameter("smoothing_window").as_int();
         debug_min_draw_conf_  = get_parameter("debug_min_draw_conf").as_double();
+
+        std::string telem_path = get_parameter("telemetry_csv").as_string();
+        if (!telem_path.empty()) {
+            telemetry_csv_.open(telem_path, std::ios::out | std::ios::trunc);
+            if (telemetry_csv_.is_open()) {
+                telemetry_csv_ << "t_mono_ns,state,cx_px,cy_px,ex_norm,ey_norm,"
+                                  "ex_px,ey_px,centroid_err_px,bbox_ratio,conf,"
+                                  "vx,vy,vz,wy,wz\n";
+                telemetry_csv_.flush();
+                RCLCPP_INFO(get_logger(), "ViSP centroid telemetry → %s",
+                            telem_path.c_str());
+            } else {
+                RCLCPP_WARN(get_logger(),
+                            "could not open telemetry_csv '%s' — centroid logging off",
+                            telem_path.c_str());
+            }
+        }
+    }
+
+    // Per-frame centroid telemetry writer (un-throttled — one row per detected
+    // frame so the Centroid-RMS aggregate is exact). No-op unless the CSV is open.
+    void log_telemetry_csv(double cx, double cy, double bbox_ratio,
+                           double ex_norm, double ey_norm, double conf,
+                           const Twist& cmd) {
+        if (!telemetry_csv_.is_open()) return;
+        const double ex_px = ex_norm * (image_width_  / 2.0);
+        const double ey_px = ey_norm * (image_height_ / 2.0);
+        const double err_px = std::sqrt(ex_px * ex_px + ey_px * ey_px);
+        telemetry_csv_ << mono_ns() << ',' << state_name(state_) << ','
+                       << cx << ',' << cy << ',' << ex_norm << ',' << ey_norm << ','
+                       << ex_px << ',' << ey_px << ',' << err_px << ','
+                       << bbox_ratio << ',' << conf << ','
+                       << cmd.linear.x << ',' << cmd.linear.y << ',' << cmd.linear.z << ','
+                       << cmd.angular.y << ',' << cmd.angular.z << '\n';
+        telemetry_csv_.flush();
     }
 
     // ─────────────────────────────────────────────────────────
@@ -417,6 +492,17 @@ private:
         pub_cmd_ = create_publisher<Twist>("/cmd_vel", 10);
         if (debug_image_enabled_)
             pub_debug_ = create_publisher<Image>("/visp/debug_image", qos_be);
+
+        // Mission state, latched so a late-joining benchmark monitor sees the
+        // current state immediately. Published on every transition (see the
+        // state-machine block) — drives the time-to-REACHED metric.
+        {
+            rclcpp::QoS qos_state(1);
+            qos_state.transient_local().reliable();
+            pub_state_ = create_publisher<std_msgs::msg::String>("/visp/state", qos_state);
+            std_msgs::msg::String m; m.data = state_name(state_);
+            pub_state_->publish(m);
+        }
 
         auto t0 = now();
         last_log_time_          = t0;
@@ -524,6 +610,7 @@ private:
         state_ = State::SEARCHING;
         consecutive_dets_   = 0;
         reach_ticks_        = 0;
+        saw_far_            = false;   // new mission must re-earn "approached from afar"
         prev_cx_ = prev_cy_ = -1.0;
         cx_hist_.clear();
         cy_hist_.clear();
@@ -706,6 +793,7 @@ private:
         publish_cmd_vel(cmd);
 
         throttled_log(cx, cy, bh, bbox_ratio, ex_norm, ey_norm, best_conf, cmd);
+        log_telemetry_csv(cx, cy, bbox_ratio, ex_norm, ey_norm, best_conf, cmd);
     }
 
     // ─────────────────────────────────────────────────────────
@@ -715,9 +803,19 @@ private:
                                    double /*conf*/) {
         State prev = state_;
 
-        bool centered = std::abs(ex_norm) < hold_center_tol_ &&
-                        std::abs(ey_norm) < hold_center_tol_;
-        bool close    = bbox_ratio >= hold_bbox_ratio_;
+        // Distance-based arrival: closeness alone is the physical REACHED criterion.
+        // At low detection rate the lateral IBVS loop limit-cycles (the sign hunts
+        // across the frame) and never holds tight centering, so gating REACHED on
+        // centering would stop slow detectors from ever latching despite the drone
+        // having physically arrived. vx already tapers to 0 at target_bbox_ratio, so
+        // the drone parks at the sign regardless of the residual lateral hunt.
+        bool close = bbox_ratio >= hold_bbox_ratio_;
+        (void) ey_norm;   // centering no longer gates REACHED; ex_norm still steers search yaw
+
+        // Latch once the sign has been seen small — i.e. the drone really is
+        // approaching from a distance, not booting into the previous run's parked
+        // end-scene. Cleared on sim restart so every mission must earn it afresh.
+        if (bbox_ratio < reach_require_far_ratio_) saw_far_ = true;
 
         switch (state_) {
         case State::SEARCHING: {
@@ -745,7 +843,7 @@ private:
             reach_ticks_ = 0;
             break;
         case State::APPROACHING:
-            if (close && centered) {
+            if (close && saw_far_) {
                 reach_ticks_++;
                 if (reach_ticks_ >= reach_consec_ticks_) {
                     state_ = State::REACHED;
@@ -764,6 +862,10 @@ private:
                 "State: %s -> %s  (consec=%d ratio=%.2f ex=%+.2f ey=%+.2f)",
                 state_name(prev), state_name(state_),
                 consecutive_dets_, bbox_ratio, ex_norm, ey_norm);
+            if (pub_state_) {
+                std_msgs::msg::String m; m.data = state_name(state_);
+                pub_state_->publish(m);
+            }
         }
     }
 
@@ -1051,7 +1153,13 @@ private:
     // ─────────────────────────────────────────────────────────
     void watchdog_tick() {
         double det_age = (now() - last_det_callback_time_).seconds();
-        if (det_age > 2.0 * watchdog_period_sec_) {
+        // Before any detection ever arrives, always drive SEARCH. Afterwards, only
+        // treat the target as lost once det_age exceeds detection_lost_sec — a fixed
+        // 2×period (0.4s) would misfire between the frames of a slow CPU detector
+        // (0.6–3.4s gaps), zeroing consecutive_dets_/reach_ticks_ every tick so the
+        // state machine could never accumulate a lock-on or a reach. During a genuine
+        // absence det_age stays large, so SEARCH still advances every watchdog tick.
+        if (!have_det_callback_ || det_age > detection_lost_sec_) {
             // YOLO is silent. Drive the no-detection path so SEARCH advances
             // and REACQUIRE timer runs even with zero detections.
             consecutive_dets_ = 0;

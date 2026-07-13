@@ -49,14 +49,33 @@ visp_servo_node:
     # hold_bbox_ratio is the floor for declaring REACHED.
     target_bbox_ratio:  0.55
     hold_bbox_ratio:    0.50
-    hold_center_tol:    0.12
-    reach_consec_ticks: 8
+    hold_center_tol:    0.12   # (no longer gates REACHED — kept for reference/telemetry)
+    # 4 (was 8): REACHED now latches on sustained CLOSENESS alone (bbox ≥ hold_bbox_ratio
+    # for this many consecutive detections), NOT close+centered — at CPU rates (0.5–2 Hz)
+    # the lateral IBVS loop limit-cycles so tight centering never holds, yet the drone has
+    # physically arrived. 4 consecutive close ticks filters transient overshoot while
+    # completing reliably. At NPU 16 Hz the drone is close+centered anyway, so REACHED
+    # timing shifts <0.3 s (below run-to-run noise).
+    reach_consec_ticks: 4
+    # Anti-stale-scene guard: bbox_ratio must have dipped below this before REACHED can
+    # latch. Between runs the sim publisher keeps streaming the previous mission's final
+    # frame (drone parked at the sign, bbox ~0.7); without this, distance-based REACHED
+    # fires in ~0.25 s at 16 Hz on that stale frame (observed: 7/12 NPU runs latched a
+    # bogus REACHED at 0.18-0.26 s). Real missions start at bbox ~0.05, so 0.30 separates
+    # them cleanly and is a no-op for any genuine approach.
+    reach_require_far_ratio: 0.30
 
     # ── Lock-on (SEARCHING → APPROACHING) ─────────────────────
     # Lock requires N consecutive detections AND |ex_norm| below tolerance
     # (sign roughly facing us). Edge-of-frame detections in SEARCHING pull
     # the search yaw target toward the sign via k_lockon_bias.
-    lockon_consec:  2
+    # 1 (was 2): a slow CPU detector combined with the open-loop search yaw rarely
+    # yields two CONSECUTIVE centred detections before the sign moves/leaves frame, so
+    # 2 never locks on at 0.5 Hz. Lock on the first centred stop-sign detection
+    # (target-class + min_confidence + |ex|<tol already gate false positives; a bad
+    # lock self-corrects via REACQUIRE→SEARCHING). At NPU 16 Hz this locks ~60 ms
+    # sooner — negligible.
+    lockon_consec:  1
     lockon_ex_tol:  0.5
     k_lockon_bias:  0.5
 
@@ -104,7 +123,13 @@ visp_servo_node:
     safety_pose_max_age: 2.0    # stale pose disables clamp (warn only)
 
     # ── Watchdog & diagnostics ────────────────────────────────
-    watchdog_period_sec: 0.20   # if no det callback in 2× this, drive no-det path
+    watchdog_period_sec: 0.20   # watchdog TIMER rate (keeps SEARCH responsive)
+    # Treat the target as lost only after this long with no detection. Must exceed the
+    # slowest loop-closing detector's inter-frame gap: CPU-nano ~0.6 s, CPU-small
+    # ~2.2 s, CPU-medium ~3.4 s. 5.0 s covers all with margin. Below this, a normal gap
+    # between slow frames was misread as a loss, resetting the lock-on/reach counters
+    # every tick (drone stuck in SEARCHING / never completing APPROACH on CPU configs).
+    detection_lost_sec:  5.0
     diag_period_sec:     2.0
 
     # ── Misc ──────────────────────────────────────────────────
