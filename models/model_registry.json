@@ -13,7 +13,7 @@
     "input_size": 640,
     "classes": 80,
     "reg_max": 16,
-    "conf": 0.25,
+    "conf": 0.20,
     "iou": 0.45
   },
   "models": {
@@ -25,7 +25,7 @@
       "nms_config": "onnx/yolov8n/yolov8n_nms_config.json",
       "onnx_layout": "v8_anchors",
       "hef_postproc": "ondevice_nms",
-      "conf": 0.25, "iou": 0.45
+      "conf": 0.20, "iou": 0.45
     },
     "yolov8s": {
       "family": "v8", "variant": "s",
@@ -35,7 +35,7 @@
       "nms_config": "onnx/yolov8s/yolov8s_nms_config.json",
       "onnx_layout": "v8_anchors",
       "hef_postproc": "ondevice_nms",
-      "conf": 0.25, "iou": 0.45
+      "conf": 0.20, "iou": 0.45
     },
     "yolov8m": {
       "family": "v8", "variant": "m",
@@ -45,7 +45,7 @@
       "nms_config": "onnx/yolov8m/yolov8m_nms_config.json",
       "onnx_layout": "v8_anchors",
       "hef_postproc": "ondevice_nms",
-      "conf": 0.25, "iou": 0.45
+      "conf": 0.20, "iou": 0.45
     },
     "yolov11n": {
       "family": "v11", "variant": "n",
@@ -55,7 +55,7 @@
       "nms_config": "onnx/yolo11n/yolo11n_nms_config.json",
       "onnx_layout": "v8_anchors",
       "hef_postproc": "ondevice_nms",
-      "conf": 0.25, "iou": 0.45
+      "conf": 0.20, "iou": 0.45
     },
     "yolov11s": {
       "family": "v11", "variant": "s",
@@ -65,7 +65,7 @@
       "nms_config": "onnx/yolo11s/yolo11s_nms_config.json",
       "onnx_layout": "v8_anchors",
       "hef_postproc": "ondevice_nms",
-      "conf": 0.25, "iou": 0.45
+      "conf": 0.20, "iou": 0.45
     },
     "yolov11m": {
       "family": "v11", "variant": "m",
@@ -75,7 +75,7 @@
       "nms_config": "onnx/yolo11m/yolo11m_nms_config.json",
       "onnx_layout": "v8_anchors",
       "hef_postproc": "ondevice_nms",
-      "conf": 0.25, "iou": 0.45
+      "conf": 0.20, "iou": 0.45
     },
     "yolo26n": {
       "family": "yolo26", "variant": "n",
@@ -85,7 +85,7 @@
       "nms_config": "onnx/yolo26n/yolo26n_nms_config.json",
       "onnx_layout": "yolo26_e2e",
       "hef_postproc": "raw_tensor",
-      "conf": 0.25, "iou": 0.45
+      "conf": 0.20, "iou": 0.45
     },
     "yolo26s": {
       "family": "yolo26", "variant": "s",
@@ -95,7 +95,7 @@
       "nms_config": "onnx/yolo26s/yolo26s_nms_config.json",
       "onnx_layout": "yolo26_e2e",
       "hef_postproc": "raw_tensor",
-      "conf": 0.25, "iou": 0.45
+      "conf": 0.20, "iou": 0.45
     },
     "yolo26m": {
       "family": "yolo26", "variant": "m",
@@ -105,7 +105,7 @@
       "nms_config": "onnx/yolo26m/yolo26m_nms_config.json",
       "onnx_layout": "yolo26_e2e",
       "hef_postproc": "raw_tensor",
-      "conf": 0.25, "iou": 0.45
+      "conf": 0.20, "iou": 0.45
     }
   },
   "reference_models": {
@@ -117,7 +117,7 @@
       "onnx": null,
       "onnx_layout": null,
       "hef_postproc": "raw_tensor",
-      "conf": 0.25, "iou": 0.45
+      "conf": 0.20, "iou": 0.45
     }
   }
 }

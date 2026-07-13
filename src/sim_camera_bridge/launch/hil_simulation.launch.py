@@ -37,8 +37,10 @@ def generate_launch_description():
     debug_image   = LaunchConfiguration('debug_image')
     calib_yaml    = LaunchConfiguration('calib_yaml')
     slam_cores    = LaunchConfiguration('slam_cores')
+    node_cores    = LaunchConfiguration('node_cores')
     class_name_map = LaunchConfiguration('class_name_map')
     cam_stamp_log  = LaunchConfiguration('cam_stamp_log')
+    visp_telemetry_csv = LaunchConfiguration('visp_telemetry_csv')
 
     return LaunchDescription([
         DeclareLaunchArgument(
@@ -63,6 +65,16 @@ def generate_launch_description():
             'slam_cores', default_value='2,3',
             description='taskset CPU list for OV2SLAM core pinning (sweepable per run)'),
         DeclareLaunchArgument(
+            'node_cores', default_value='0-3',
+            description='taskset CPU list for the ROS-side nodes (sim_camera_bridge, '
+                        'ovcam_bridge, yolo_bridge, visp_servo). Default 0-3 = all cores '
+                        '(no-op pin, current behavior). Placement Config C/D pass "0" to '
+                        'co-locate these nodes on a single core.'),
+        DeclareLaunchArgument(
+            'visp_telemetry_csv', default_value='',
+            description='CSV path for per-frame visp_servo centroid telemetry '
+                        '(ex/ey norm + px, bbox_ratio, conf, cmd). Empty = off.'),
+        DeclareLaunchArgument(
             'ovcam', default_value='true',
             description='Set to false to skip ovcam_bridge (safe only when slam:=false and debug_image:=false)'),
         DeclareLaunchArgument(
@@ -81,6 +93,7 @@ def generate_launch_description():
             executable='sim_camera_bridge_node',
             name='sim_camera_bridge',
             output='screen',
+            prefix=['taskset -c ', node_cores],
             parameters=[{
                 'input_topic': '/sim/camera/image_raw',
                 'width':  640,
@@ -99,6 +112,7 @@ def generate_launch_description():
             executable='ovcam_bridge_node',
             name='ovcam_bridge',
             output='screen',
+            prefix=['taskset -c ', node_cores],
             condition=IfCondition(ovcam),
         ),
 
@@ -108,6 +122,7 @@ def generate_launch_description():
             executable='yolo_bridge_node',
             name='yolo_bridge',
             output='screen',
+            prefix=['taskset -c ', node_cores],
             parameters=[{'class_name_map': class_name_map}],
         ),
 
@@ -137,11 +152,13 @@ def generate_launch_description():
             executable='visp_servo_node',
             name='visp_servo_node',
             output='screen',
+            prefix=['taskset -c ', node_cores],
             parameters=[
                 PathJoinSubstitution(
                     [workspace, 'config', 'hil', 'hil_servo_params.yaml']),
                 {'target_class': target_class,
-                 'debug_image_enabled': debug_image},
+                 'debug_image_enabled': debug_image,
+                 'telemetry_csv': visp_telemetry_csv},
             ],
         ),
     ])

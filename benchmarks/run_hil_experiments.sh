@@ -258,10 +258,20 @@ for N in $(seq 1 "$RUNS"); do
     in_container "timeout ${CMDVEL_TIMEOUT} ros2 topic echo --once /cmd_vel > /dev/null 2>&1" &
     CMDVEL_PID=$!
 
-    log "camera frames flowing — warming up ${WARMUP}s (SLAM init + first keyframes)"
-    sleep "$WARMUP"
+    # 4+5. measure — collection OVERLAPS the SLAM warmup instead of following a dead
+    #      sleep. The probe runs for the full WARMUP+DURATION starting the instant
+    #      frames flow (so the window brackets the drone's first motion) and discards
+    #      the first WARMUP s of samples, keeping the SLAM cold-start transient out of
+    #      the latency distribution. Net: DURATION s of clean post-warmup data, ~WARMUP
+    #      s earlier in wall time. Mission-state timing comes from the visp CSV (step 7),
+    #      not this window, so nothing behavioural is lost by starting early.
+    log "camera frames flowing — collecting ${DURATION}s (+${WARMUP}s warmup, overlapped)..."
+    in_container "python3 /workspace/benchmarks/e2e_latency_probe.py \
+        --duration $((WARMUP + DURATION)) --skip-first-s ${WARMUP} \
+        --output ${PROBE_CSV}" >> "$STACK_LOG" 2>&1
 
-    # 4. closed loop must be alive: a /cmd_vel message within the probe window
+    # closed loop must have been alive: the /cmd_vel liveness probe ran in parallel
+    # with collection, so it had the full WARMUP+DURATION window for DDS discovery.
     if ! wait "$CMDVEL_PID"; then
         log "STARTUP_FAILED run $N (no /cmd_vel within ${CMDVEL_TIMEOUT} s)"
         kill "$MON_PID" 2>/dev/null || true
@@ -270,11 +280,6 @@ for N in $(seq 1 "$RUNS"); do
         ./run_stack_hil.sh stop >> "$STACK_LOG" 2>&1
         continue
     fi
-
-    # 5. measure
-    log "collecting ${DURATION}s of data..."
-    in_container "python3 /workspace/benchmarks/e2e_latency_probe.py \
-        --duration ${DURATION} --output ${PROBE_CSV}" >> "$STACK_LOG" 2>&1
 
     # 6. tear down before copying (flushes telemetry + stamp CSVs)
     kill "$MON_PID" 2>/dev/null || true
@@ -293,6 +298,16 @@ for N in $(seq 1 "$RUNS"); do
     cp -f /tmp/sim_cam_stamps.csv "${RUN_PREFIX}_cam_stamps.csv" 2>/dev/null || true
     cp -f /tmp/visp_telemetry.csv "${RUN_PREFIX}_visp.csv"       2>/dev/null || true
     cp -f "$MISSION_JSON"         "${RUN_PREFIX}_mission.json"   2>/dev/null || true
+    # 7. Authoritative mission metrics from the visp CSV — visp_servo writes it from
+    #    its own boot (before it commands motion), so it captures SEARCHING and the
+    #    APPROACHING boundary regardless of when the latched-topic monitor attaches.
+    #    Overwrites the live monitor's copy above; on failure that copy is the fallback.
+    if [[ -s "${RUN_PREFIX}_visp.csv" ]]; then
+        python3 benchmarks/mission_from_visp_csv.py \
+            --visp-csv "${RUN_PREFIX}_visp.csv" \
+            --output "${RUN_PREFIX}_mission.json" >> "$STACK_LOG" 2>&1 \
+            || log "WARN run $N: mission_from_visp_csv failed — kept live-monitor JSON"
+    fi
     cat /tmp/hil_launch.log /tmp/yolo_producer.log >> "$STACK_LOG" 2>/dev/null || true
 
     if [[ ! -s "${RUN_PREFIX}.csv" ]]; then
@@ -399,6 +414,12 @@ if _missions:
     mission = {
         "runs": len(_missions),
         "reached_success_rate": round(n_reached / len(_missions), 3),
+        # PRIMARY: sim-time. Wall-clock reach scales with whatever rate MATLAB ran at
+        # (drift 0.78-0.95x stretched identical missions 43.7s -> 54.8s wall), so the
+        # wall numbers below are reference-only and must NOT be compared across configs.
+        "time_to_reached_sim_s":   _mean_std([m.get("time_to_reached_sim_s") for m in _missions]),
+        "approach_duration_sim_s": _mean_std([m.get("approach_duration_sim_s") for m in _missions]),
+        "sim_rate":                _mean_std([m.get("sim_rate") for m in _missions]),
         "time_to_reached_s":    _mean_std([m.get("time_to_reached_s") for m in _missions]),
         "approach_duration_s":  _mean_std([m.get("approach_duration_s") for m in _missions]),
         "time_to_first_approach_s": _mean_std([m.get("time_to_first_approach_s") for m in _missions]),

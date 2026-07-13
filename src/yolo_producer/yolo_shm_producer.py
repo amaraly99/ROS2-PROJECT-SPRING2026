@@ -33,6 +33,7 @@ Usage:
 
 import argparse
 import csv
+import hashlib
 import os
 import signal
 import struct
@@ -65,6 +66,7 @@ TELEM_FIELDS = (
     "ts_inference_done",       # raw tensors returned
     "ts_nms_done",             # bbox parsing / NMS finished
     "ts_yolo_shm_write",       # detections committed back to shm
+    "frame_hash",              # blake2b-4 of raw RGB frame; repeated value → frozen camera
 )
 
 
@@ -196,6 +198,8 @@ class YoloShmProducer:
             return False
 
         stamps: Dict[str, int] = {"ts_capture": int(ts_capture)}
+        stamps["frame_hash"] = int.from_bytes(
+            hashlib.blake2b(rgb.tobytes(), digest_size=4).digest(), "little")
         stamps["ts_yolo_shm_read"] = _now_ns()
 
         # Engine fills pre_done / inf_start / inf_done / nms_done (absolute ns).
