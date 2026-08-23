@@ -58,7 +58,7 @@ from rosbags.highlevel import AnyReader
 from evo.core import metrics, sync
 from evo.core.trajectory import PoseTrajectory3D
 
-_EVO_T_MAX_DIFF = 0.01   # matches evo_ape CLI's own default (ape_parser.py)
+_EVO_T_MAX_DIFF = 0.05   # raised from 0.01: GT and SLAM tick at the same 0.0773s period with a locked ~19ms phase offset, so 0.01 associates ZERO pairs
 
 
 # Reference lines drawn on the plots, matching generate_paper_images.py exactly.
@@ -157,7 +157,7 @@ class SlamEvaluator:
         docstring for why. Returns None if evo_ape reports too few associated
         pairs / fails outright (e.g. a window with almost no overlap)."""
         proc = subprocess.run(
-            ["evo_ape", "tum", str(gt_tum), str(slam_tum), "--align", "--correct_scale"],
+            ["evo_ape", "tum", str(gt_tum), str(slam_tum), "--align", "--correct_scale", "--t_max_diff", str(_EVO_T_MAX_DIFF)],
             capture_output=True, text=True,
         )
         if proc.returncode != 0:

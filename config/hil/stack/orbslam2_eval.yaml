@@ -5,8 +5,8 @@
 mode: benchmark
 
 network:
-  matlab_host_ip: 192.168.1.201
-  interface:      wlan0
+  matlab_host_ip: 192.168.137.1
+  interface:      eth0
   dds:            cyclonedds
   ros_domain_id:  0
 
@@ -38,9 +38,12 @@ slam:
   setup_overlay: /workspace/src/orbslam2/install_stereo/setup.bash
   ld_prefix:     /workspace/src/orbslam2/lib:/usr/local/lib:/opt/ros/jazzy/lib
 
-  # Use binary directly -- ros2 run fails (rclpy missing librcl_action.so in this image).
+  # FIX 5 (2026-07-18): ros2 run, not a raw binary. Verified on the Pi: it works AND
+  # preserves taskset affinity on the real child binary. The old 'rclpy missing
+  # librcl_action.so' claim was FALSE (that lib IS present at /opt/ros/jazzy/lib).
+  # ros2 run resolves 'orbslam' via slam.setup_overlay below.
   command: >-
-    /workspace/src/orbslam2/install_stereo/orbslam/lib/orbslam/mono
+    ros2 run orbslam mono
     /workspace/src/orbslam2/Vocabulary/ORBvoc.txt
     /workspace/src/orbslam2/ros2-ORB_SLAM2/src/monocular/hil_sim.yaml
 
@@ -60,3 +63,10 @@ init_gate:
   # ov2slam_oracle.yaml, src/ov2slam_ros/src/ov2slam_node.cpp) -- both
   # backends publish the same /slam/tracking_state contract. See src/init_gate/.
   enabled: true
+  module: orbslam2         # WS2 (2026-07-18): which init_gate/profiles/<name>.py cycle to run
+  params:     
+    legs: [left, right, up_slow]           # optional per-run overrides of that profile's DEFAULTS:
+    leg_speed: 1.0        #   Julien-exact was 0.6; bumped per user request 2026-07-19
+    leg_duration_sec: 0.50
+    timeout_sec: 30
+    ready_debounce: 2

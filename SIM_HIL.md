@@ -307,7 +307,7 @@ it via `scripts/parse_stack.py`. To add your own controller/detector, see
 
 ### Step 0 — set your Windows IP in the config (once)
 
-All shipped configs default to `network.matlab_host_ip: 192.168.1.201`. Edit that line in
+All shipped configs default to `network.matlab_host_ip: 192.168.137.1`. Edit that line in
 the config you intend to run to your actual Windows IP (from the Network setup section).
 
 ### Step 1 — pick a config

@@ -31,7 +31,7 @@ falsely report success — recording starts against a dead launch.
 **Always set both env vars before running:**
 ```bash
 export PI_INTERFACE=wlan0
-export MATLAB_HOST_IP=192.168.1.201
+export MATLAB_HOST_IP=192.168.137.1
 ```
 
 ---
@@ -89,7 +89,7 @@ The install tree at `/workspace/install/` is built for the container's ARM64 Lin
 environment. Never build on the host and expect it to work on the Pi container.
 
 ```bash
-ssh amaraly@192.168.1.60
+ssh amaraly@192.168.137.10
 ./enter_container.sh
 cd /workspace
 colcon build --packages-select servo_core visp_servo hil_servo --symlink-install
@@ -180,7 +180,7 @@ The Pi has NumPy 2.4. `plot_controller_hil.py` now falls back via
 ## 16. SSH is passwordless; container entry is via `./enter_container.sh`
 
 ```bash
-ssh amaraly@192.168.1.60     # passwordless — key deployed
+ssh amaraly@192.168.137.10     # passwordless — key deployed
 ./enter_container.sh          # enters ros2_perception_stack
 # now at /workspace inside the container
 ```
@@ -194,7 +194,7 @@ DDS env setup correctly.
 For one-off inspection from a remote (non-interactive) SSH session, `docker exec`
 hits `permission denied ... /var/run/docker.sock`. Use sudo:
 ```bash
-ssh amaraly@192.168.1.60 "sudo docker exec ros2_perception_stack bash -c \
+ssh amaraly@192.168.137.10 "sudo docker exec ros2_perception_stack bash -c \
   'source /opt/ros/jazzy/setup.bash && source /workspace/install/setup.bash && \
    timeout 5 ros2 topic echo /bench/state --field data | head'"
 ```

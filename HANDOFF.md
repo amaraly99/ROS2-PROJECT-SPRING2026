@@ -1,6 +1,6 @@
 # Project Handoff — ROS2 HIL Visual Servoing (2026-07-04)
 
-**Branch:** `controller-benchmark` | **Pi SSH:** `ssh amaraly@192.168.1.60` (passwordless, key deployed)
+**Branch:** `controller-benchmark` | **Pi SSH:** `ssh amaraly@192.168.137.10` (passwordless, key deployed)
 **Pi repo:** `/home/amaraly/ROS2-PROJECT-SPRING2026/` | **Container:** `ros2_perception_stack`
 
 > This document supersedes the 2026-07-03 handoff. See `docs/fixlog/` for individual

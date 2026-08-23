@@ -6,8 +6,8 @@
 mode: benchmark
 
 network:
-  matlab_host_ip: 192.168.1.201
-  interface:      wlan0
+  matlab_host_ip: 192.168.137.1
+  interface:      eth0
   dds:            cyclonedds
   ros_domain_id:  0
 
@@ -25,7 +25,7 @@ slam:
   image:             ros2_perception_stack
   container_name:    slam_ov2slam
   cpu:               "2,3"
-  startup_delay_sec: 15
+  startup_delay_sec: 2
   restart:           unless-stopped
   command:           "ros2 run ov2slam ov2slam_node /workspace/camera_calib/hil_sim_ov2slam_accurate.yaml"
   topics:
@@ -39,4 +39,4 @@ slam:
 init_gate:
   # SLAM-warmup gate — see ov2slam_oracle.yaml for the full rationale. Readiness
   # is OV2SLAM's bvision_init_ republished as /slam/tracking_state (2=ready).
-  enabled: true
+  enabled: false

@@ -28,7 +28,6 @@
 #include "loop_closer.hpp"
 
 #include <thread>
-#include <pthread.h>
 
 #include "multi_view_geometry.hpp"
 
@@ -65,7 +64,6 @@ LoopCloser::LoopCloser(std::shared_ptr<SlamParams> pslamstate, std::shared_ptr<M
 
 void LoopCloser::run()
 {
-    pthread_setname_np(pthread_self(), "ov2_lc");
 #ifdef IBOW_LCD
     std::cout << "\n Use LoopCLoser : " << pslamstate_->buse_loop_closer_;
     if( !pslamstate_->buse_loop_closer_ ) {

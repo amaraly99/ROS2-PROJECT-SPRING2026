@@ -38,7 +38,7 @@ servo_core::ServoVel ProportionalController::computeApproach(
     if (v.vz > 0.0) v.vz = 0.0;
 
     // wz — yaw is never used to centre during approach.
-    v.wz = 0.0;
+    v.wz = 0.0; //-0.7 * in.ex_norm; used to work..but arches
 
     return v;
 }

@@ -188,6 +188,10 @@ def generate_launch_description():
             description='taskset core(s) for the controller node (e.g. "0"); empty = no pin'),
         DeclareLaunchArgument('detector_cpu', default_value='',
             description='taskset core(s) for yolo_bridge/oracle_detector node; empty = no pin'),
+        # TODO (Phase 2, 2026-07-18): SLAM depth is BACKEND-AGNOSTIC on the feed side
+        # (SlamDepthSource subscribes /slam/pose + /slam/cloud, which every SLAM remaps
+        # to), but only the ViSP/IBVS controller CONSUMES it today. Wiring SLAM depth
+        # into the other controllers (proportional/hil_servo, h_vs, pbvs) is PENDING.
         DeclareLaunchArgument('use_slam_depth', default_value='false',
             description='IBVS only: feed SLAM map-point depth into the interaction matrix (vs bbox depth)'),
         DeclareLaunchArgument('use_slam_pose', default_value='false',

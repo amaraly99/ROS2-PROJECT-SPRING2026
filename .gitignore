@@ -159,3 +159,8 @@ streamed_images/
 src/SEBVS
 src/h_vsi
 benchmarks/.evo_venv/
+
+# Pangolin build tree bakes absolute /workspace/src/Pangolin paths into its
+# CMake config, so this symlink must exist for ORB-SLAM3 to build AND run.
+# Target is src/orbslam3/Pangolin (itself gitignored).
+src/Pangolin

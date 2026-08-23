@@ -4,8 +4,8 @@
 mode: scout
 
 network:
-  matlab_host_ip: 192.168.1.201
-  interface:      wlan0
+  matlab_host_ip: 192.168.137.1
+  interface:      eth0
   dds:            cyclonedds
   ros_domain_id:  0
 

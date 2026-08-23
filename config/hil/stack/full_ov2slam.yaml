@@ -21,8 +21,8 @@ mode: scout
 
 # ── Global / network ─────────────────────────────────────────────────────────
 network:
-  matlab_host_ip: 192.168.1.201
-  interface:      wlan0          # Pi NIC for DDS whitelist (omit -> auto-detect)
+  matlab_host_ip: 192.168.137.1
+  interface:      eth0          # Pi NIC for DDS whitelist (omit -> auto-detect)
   dds:            cyclonedds     # cyclonedds | fastrtps
   ros_domain_id:  0
 

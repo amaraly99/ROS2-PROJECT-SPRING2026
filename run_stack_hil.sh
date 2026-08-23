@@ -112,6 +112,47 @@ start_slam_sidecar() {
             echo "matlab_host_ip=${MATLAB_HOST_IP}"
             echo "dds=${DDS} domain=${ROS_DOMAIN_ID}"
         } > "${BAG_HOST}/meta.txt"
+        # run_config.yaml — the RESOLVED effective config for THIS run ("what actually
+        # happened"), Phase 2 (2026-07-18). Supersedes meta.txt (kept as an eval compat
+        # shim). init_gate.module forward-refs WS2 (defaults to 'none' until wired).
+        cat > "${BAG_HOST}/run_config.yaml" <<YAML
+config: ${CONFIG_NAME:-nocfg}
+run_tag: ${RUN_TAG}
+stamp: ${STAMP}
+git_sha: ${GIT_SHA}
+mode: ${MODE}
+detector:
+  type: ${DETECTOR}
+  cpu: "${DETECTOR_CPU:-}"
+controller:
+  type: ${CONTROLLER}
+  cpu: "${CONTROLLER_CPU:-}"
+  use_slam_depth: ${CONTROLLER_USE_SLAM_DEPTH:-false}
+  use_slam_pose: ${CONTROLLER_USE_SLAM_POSE:-false}
+slam:
+  enabled: ${SLAM_ENABLED}
+  type: ${SLAM_TYPE:-none}
+  image: ${SLAM_IMAGE:-}
+  container_name: ${SLAM_CONTAINER:-}
+  cpu: "${SLAM_CPU:-}"
+  startup_delay_sec: ${SLAM_DELAY:-0}
+  command: "${SLAM_COMMAND:-}"
+init_gate:
+  enabled: ${INIT_GATE_ENABLED:-false}
+  module: ${INIT_GATE_MODULE:-none}
+  legs: "${INIT_GATE_LEGS:-}"
+  leg_speed: "${INIT_GATE_LEG_SPEED:-}"
+  leg_duration_sec: "${INIT_GATE_LEG_DURATION:-}"
+  timeout_sec: "${INIT_GATE_TIMEOUT:-}"
+  ready_debounce: "${INIT_GATE_READY_DEBOUNCE:-}"
+network:
+  matlab_host_ip: ${MATLAB_HOST_IP}
+  pi_local_ip: ${PI_LOCAL_IP:-}
+  interface: ${PI_INTERFACE:-}
+  dds: ${DDS}
+  rmw: ${RMW_IMPLEMENTATION:-}
+  ros_domain_id: ${ROS_DOMAIN_ID}
+YAML
     fi
 
     # Replaces the old bash watchdog: `docker run -d --restart` gives a named,
@@ -289,6 +330,8 @@ _MODE_OVERRIDE=""
 RUN_TAG=""
 
 _BUILD_FIRST=false
+HOLD_FSM=false
+RESUME_FSM=false
 
 _i=1
 while [[ $_i -le $# ]]; do
@@ -296,6 +339,8 @@ while [[ $_i -le $# ]]; do
         --no-slam)     _NO_SLAM_FLAG=true ;;
         --debug-image) _DEBUG_FLAG=true ;;
         --build)       _BUILD_FIRST=true ;;
+        --hold-fsm)    HOLD_FSM=true ;;
+        --resume-fsm)  RESUME_FSM=true ;;
         --mode)
             _i=$((_i + 1))
             [[ $_i -le $# ]] || die "--mode requires an argument (benchmark|scout)"
@@ -332,6 +377,8 @@ case "$MODE" in
     benchmark|scout) ;;
     *) die "Unknown MODE='${MODE}'. Valid: benchmark | scout" ;;
 esac
+
+[[ "$HOLD_FSM" == "true" && "$RESUME_FSM" == "true" ]] && die "--hold-fsm and --resume-fsm are mutually exclusive"
 
 # init_gate (SLAM warmup gate) requires a /slam/tracking_state signal.
 # Supported backends: orbslam2 (native tracking_state_pub_), ov2slam (wrapper-
@@ -403,18 +450,50 @@ fi
 # ── hz <topic> — quick rate check with the right DDS env loaded ──────────────
 if [[ "$OPT" == "hz" ]]; then
     TOPIC="${2:-/sim/camera/image_raw}"
-    RESOLVED="/tmp/fastrtps_hil.resolved.xml"
-    [[ -f "$RESOLVED" ]] || die "$RESOLVED not found — start the stack first"
+    # FIX (2026-07-19): this used to hardcode FastRTPS, so it always failed with
+    # "not found -- start the stack first" for any cyclonedds-configured run (the
+    # majority of current configs) even while the stack WAS running -- it was
+    # looking for a file that only fastrtps runs ever create. Auto-detect instead:
+    # pick whichever resolved profile actually exists (newest, if somehow both do).
+    CYCLONE_RESOLVED="/tmp/cyclonedds_hil.resolved.xml"
+    FASTRTPS_RESOLVED="/tmp/fastrtps_hil.resolved.xml"
+    HZ_RESOLVED=""
+    HZ_RMW=""
+    if [[ -f "$CYCLONE_RESOLVED" && -f "$FASTRTPS_RESOLVED" ]]; then
+        if [[ "$CYCLONE_RESOLVED" -nt "$FASTRTPS_RESOLVED" ]]; then
+            HZ_RESOLVED="$CYCLONE_RESOLVED"; HZ_RMW="cyclonedds"
+        else
+            HZ_RESOLVED="$FASTRTPS_RESOLVED"; HZ_RMW="fastrtps"
+        fi
+    elif [[ -f "$CYCLONE_RESOLVED" ]]; then
+        HZ_RESOLVED="$CYCLONE_RESOLVED"; HZ_RMW="cyclonedds"
+    elif [[ -f "$FASTRTPS_RESOLVED" ]]; then
+        HZ_RESOLVED="$FASTRTPS_RESOLVED"; HZ_RMW="fastrtps"
+    else
+        die "no resolved DDS profile found ($CYCLONE_RESOLVED / $FASTRTPS_RESOLVED) — start the stack first"
+    fi
+    log "hz: using ${HZ_RMW} profile (${HZ_RESOLVED})"
     DOCKER_TTY_FLAGS=""
     [[ -t 0 && -t 1 ]] && DOCKER_TTY_FLAGS="-it"
-    sudo docker exec $DOCKER_TTY_FLAGS ros2_perception_stack bash -lc "
-        source /opt/ros/jazzy/setup.bash
-        source /workspace/install/setup.bash
-        export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-        export FASTRTPS_DEFAULT_PROFILES_FILE=${RESOLVED}
-        export ROS_DOMAIN_ID=${ROS_DOMAIN_ID}
-        ros2 topic hz ${TOPIC}
-    "
+    if [[ "$HZ_RMW" == "cyclonedds" ]]; then
+        sudo docker exec $DOCKER_TTY_FLAGS ros2_perception_stack bash -lc "
+            source /opt/ros/jazzy/setup.bash
+            source /workspace/install/setup.bash
+            export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+            export CYCLONEDDS_URI=file://${HZ_RESOLVED}
+            export ROS_DOMAIN_ID=${ROS_DOMAIN_ID}
+            ros2 topic hz ${TOPIC}
+        "
+    else
+        sudo docker exec $DOCKER_TTY_FLAGS ros2_perception_stack bash -lc "
+            source /opt/ros/jazzy/setup.bash
+            source /workspace/install/setup.bash
+            export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+            export FASTRTPS_DEFAULT_PROFILES_FILE=${HZ_RESOLVED}
+            export ROS_DOMAIN_ID=${ROS_DOMAIN_ID}
+            ros2 topic hz ${TOPIC}
+        "
+    fi
     exit 0
 fi
 
@@ -521,6 +600,9 @@ if [[ "$_BUILD_FIRST" == "true" ]]; then
 fi
 
 # ── clean stale state ─────────────────────────────────────────────────────────
+# --resume-fsm attaches to the container + SLAM already up from --hold-fsm, so
+# it skips cleanup + container creation (those would destroy the held init).
+if [[ "$RESUME_FSM" != "true" ]]; then
 log "Cleaning up any stale processes / shm..."
 # Graceful bag finalization before killing stale container.
 sudo docker exec ros2_perception_stack \
@@ -549,6 +631,7 @@ sudo docker run -d \
     -e DISPLAY=:0 -e QT_X11_NO_MITSHM=1 \
     ros2_perception_stack sleep infinity
 sleep 1
+fi   # end --resume-fsm skip of cleanup + container
 
 # helper: build launch args from parsed flags.
 # OV2SLAM is always started separately (below) so we always pass slam:=false to the
@@ -563,16 +646,14 @@ if [[ "$SLAM_ENABLED" == "false" && "$DEBUG_IMAGE_ON" == "false" ]]; then
     LAUNCH_ARGS+=" ovcam:=false"
     log "ovcam_bridge will be skipped (slam off + debug off)"
 fi
-# benchmark mode → FSM waits for a clean sim reset (t=0); scout → engage on boot.
+# KISS (Phase 2, 2026-07-18): MODE controls RECORDING ONLY (benchmark = record
+# bag + timing; scout = don't). It no longer gates FSM engagement. The FSM always
+# engages scout-style (benchmark_mode:=false -> have_fresh_sim_=true at boot);
+# pre-engagement warmup timing is the init_gate module's job. This removes the old
+# 3-way tangle where MODE secretly ALSO meant 'wait for a Simulink t=0 sim reset'.
+# NOTE: gated runs (e.g. Julien-exact ORBSLAM2) already ran benchmark_mode:=false,
+# so this leaves that path byte-identical; only non-gated benchmark configs change.
 BENCH_FLAG=false
-[[ "$MODE" == "benchmark" ]] && BENCH_FLAG=true
-# init_gate runs MUST engage in scout mode: the benchmark fresh-sim guard needs a
-# MATLAB Stop→Run to reset the sim to t=0, but that teleports the drone to home ICs
-# and destroys the SLAM tracking the gate just spent ~20s establishing. So the FSM
-# would sit frozen in SEARCHING forever (detecting + centered, but never locking on)
-# because it never sees sim_t<2.0. Scout mode (have_fresh_sim_=true at boot) engages
-# on the first detection with no reset — the only mode compatible with continuous SLAM.
-[[ "$INIT_GATE_ENABLED" == "true" ]] && BENCH_FLAG=false
 # Controller / detector selection + per-module CPU pinning (applied as Node taskset).
 LAUNCH_ARGS+=" controller:=${CONTROLLER} detector:=${DETECTOR} benchmark_mode:=${BENCH_FLAG}"
 LAUNCH_ARGS+=" controller_cpu:=${CONTROLLER_CPU:-} detector_cpu:=${DETECTOR_CPU:-}"
@@ -585,8 +666,10 @@ else
 fi
 
 # ── 2. ROS2 launch (sim_camera_bridge + bridges + visp — NO slam yet) ─────────
-if [[ "$INIT_GATE_ENABLED" == "true" ]]; then
-    log "2/5  ros2 launch hil_simulation (bridge nodes only — INITIALIZER_GATE runs before the stack)"
+if [[ "$RESUME_FSM" == "true" ]]; then
+    log "2/5  Resume: bridge nodes already running — skipping bridge launch"
+elif [[ "$INIT_GATE_ENABLED" == "true" || "$HOLD_FSM" == "true" ]]; then
+    log "2/5  ros2 launch hil_simulation (bridge nodes only — FSM held for gate/manual init)"
     launch_stack "bridge_nodes:=true stack_nodes:=false"
 else
     log "2/4  ros2 launch hil_simulation (cores 0,2,3 — slam deferred)"
@@ -611,7 +694,9 @@ log "SHM permissions fixed (0666)."
 
 # ── 3. Detector — yolo_producer (host) OR oracle (Docker) ─────────────────────
 YOLO_PID=""
-if [[ "$DETECTOR" == "yolo" ]]; then
+if [[ "$HOLD_FSM" == "true" ]]; then
+    log "3/5  Detector deferred — FSM held (--hold-fsm); starts on --resume-fsm"
+elif [[ "$DETECTOR" == "yolo" ]]; then
     DETECTOR_HOST_CPU="${DETECTOR_HOST_CPU:-1}"
     log "3/4  yolo_producer  →  core ${DETECTOR_HOST_CPU} (host, native)"
     # Ensure log file is writable (may have been left root-owned by a prior sudo run)
@@ -637,7 +722,9 @@ fi
 # it started early (right after the bridge nodes came up, below). Bag
 # recording (4b) now starts right alongside it, BEFORE the gate check, so a
 # failed gate still leaves a real bag behind — not just meta.txt. ────────────
-if [[ "$INIT_GATE_ENABLED" != "true" ]]; then
+if [[ "$RESUME_FSM" == "true" ]]; then
+    log "4/5  Resume: SLAM sidecar + bag already running — skipping"
+elif [[ "$INIT_GATE_ENABLED" != "true" ]]; then
     start_slam_sidecar
     start_bag_recording
 fi
@@ -650,14 +737,23 @@ if [[ "$INIT_GATE_ENABLED" == "true" ]]; then
     start_slam_sidecar
     start_bag_recording
 
-    log "4/5  INITIALIZER_GATE running (timeout enforced internally — see src/init_gate/init_gate/params.py)"
+    log "4/5  INITIALIZER_GATE running (module=${INIT_GATE_MODULE:-default}; timeout enforced internally)"
+    # WS2 (2026-07-18): swappable init_gate. Pass the module + any config param
+    # overrides; each scalar only if set (else the profile DEFAULTS apply). These
+    # expand on the HOST here, before the docker exec string is evaluated.
+    GATE_ROS_ARGS="--ros-args -p module:=${INIT_GATE_MODULE:-default}"
+    [[ -n "${INIT_GATE_LEGS:-}"          ]] && GATE_ROS_ARGS+=" -p legs:=${INIT_GATE_LEGS}"
+    [[ -n "${INIT_GATE_LEG_SPEED:-}"      ]] && GATE_ROS_ARGS+=" -p leg_speed:=${INIT_GATE_LEG_SPEED}"
+    [[ -n "${INIT_GATE_LEG_DURATION:-}"   ]] && GATE_ROS_ARGS+=" -p leg_duration_sec:=${INIT_GATE_LEG_DURATION}"
+    [[ -n "${INIT_GATE_TIMEOUT:-}"        ]] && GATE_ROS_ARGS+=" -p timeout_sec:=${INIT_GATE_TIMEOUT}"
+    [[ -n "${INIT_GATE_READY_DEBOUNCE:-}" ]] && GATE_ROS_ARGS+=" -p ready_debounce:=${INIT_GATE_READY_DEBOUNCE}"
     sudo docker exec ros2_perception_stack bash -lc "
         source /opt/ros/jazzy/setup.bash
         source /workspace/install/setup.bash
         export RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION}
         export ROS_DOMAIN_ID=${ROS_DOMAIN_ID}
         export ${DDS_ENV_VAR}
-        ros2 run init_gate init_gate_node
+        ros2 run init_gate init_gate_node ${GATE_ROS_ARGS}
     "
     GATE_EXIT=$?
     if [[ $GATE_EXIT -ne 0 ]]; then
@@ -666,6 +762,31 @@ if [[ "$INIT_GATE_ENABLED" == "true" ]]; then
     log "INITIALIZER_GATE: SLAM_READY — launching detector+controller stack"
 
     log "5/5  ros2 launch hil_simulation (stack nodes only — bridge already running)"
+    launch_stack "bridge_nodes:=false stack_nodes:=true"
+fi
+
+# ── Manual SLAM-init (Plan A): hold the FSM, or resume it after MATLAB init ──
+if [[ "$HOLD_FSM" == "true" ]]; then
+    sep
+    log "SLAM HELD — camera + SLAM sidecar up, FSM NOT launched (--hold-fsm)."
+    log "  1) MATLAB: run slam_init_cycle_LT      (wait for the [SANE] verdict)"
+    log "  2) Then:   ./run_stack_hil.sh --config ${CONFIG_NAME} --resume-fsm"
+    sep
+    exit 0
+fi
+if [[ "$RESUME_FSM" == "true" ]]; then
+    sep
+    # If an FSM is already up (e.g. a prior benchmark that lost tracking), RESTART
+    # it instead of stacking a duplicate: kill the old detector + controller stack
+    # nodes but leave the camera bridges + SLAM sidecar (and the SLAM init) alone,
+    # so you can re-run the benchmark WITHOUT re-initialising SLAM.
+    if sudo docker exec ros2_perception_stack bash -lc "source /opt/ros/jazzy/setup.bash; source /workspace/install/setup.bash; export RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION}; export ROS_DOMAIN_ID=${ROS_DOMAIN_ID}; export ${DDS_ENV_VAR}; ros2 node list 2>/dev/null" | grep -q hil_servo_node; then
+        log "Existing FSM found -- restarting it (SLAM + bridges + init kept)..."
+        # exact-name kill (can't self-match the wrapper shell like pkill -f did)
+        sudo docker exec ros2_perception_stack bash /workspace/scripts/restart_fsm_nodes.sh 2>/dev/null || true
+        sleep 2
+    fi
+    log "5/5  Resume: launching FSM + controller stack nodes (SLAM untouched)..."
     launch_stack "bridge_nodes:=false stack_nodes:=true"
 fi
 

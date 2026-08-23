@@ -1,52 +1,43 @@
-# cycle.py -- the warmup sequence. Pure policy, no ROS wiring.
+# cycle.py -- the generic warmup driver. Pure policy, no ROS wiring, no SLAM
+# specifics. The per-SLAM motion (LEGS) + scalar params come from a profile
+# (init_gate/profiles/<module>.py) chosen by config, passed in by init_gate_node.
 #
-# Open-loop mirror: each leg goes OUT for a fixed time, then its exact MIRROR
-# (same body-frame command, sign flipped, same duration) brings it back. Looped
-# until SLAM reports ready or TIMEOUT_SEC.
+# Open-loop mirror: each leg goes OUT at leg_speed for leg_duration_sec, then its
+# exact MIRROR (same body-frame command, sign flipped, same duration) brings it
+# back. Looped until SLAM reports ready or timeout_sec.
 #
-#   left 1s  -> right 1s   (go back)
-#   right 1s -> left 1s    (go back)
-#   up 1s    -> down 1s    (go back)
+# Why mirror the COMMAND instead of a pose-based return: /cmd_vel is BODY frame,
+# /sim/drone_pose is WORLD frame, and the drone can start at yaw=pi. A pose-based
+# return computed in world frame but sent as a body command inverts sign at yaw=pi
+# -> positive feedback -> the drone strafes away forever. Mirroring the command
+# itself cannot invert: whatever "out" did, the sign-flipped "back" undoes, at any
+# yaw. No pose, no frame math, no runaway.
 #
-# Why mirror the COMMAND instead of computing a return from /sim/drone_pose:
-# /cmd_vel is BODY frame, /sim/drone_pose is WORLD frame, and the drone starts
-# at yaw=pi. The old pose-based return computed the correction in world frame
-# but sent it as a body command -> at yaw=pi the sign inverted into positive
-# feedback -> the drone strafed one direction forever. Mirroring the command
-# itself cannot invert: whatever "left 1s" did, "right 1s" at the same speed
-# undoes it, at any yaw. No pose, no frame math, no runaway.
+# Readiness is checked at "center" (after each mirror-back), so handoff to the
+# normal stack always happens from ~the start position, never mid-leg.
 #
-# Readiness is only checked at "center" (after each mirror-back), so handoff to
-# the normal stack always happens from ~the start position, never mid-leg.
-#
-# On timeout: zero-hold, log SLAM_INIT_FAILED, return False. Do NOT tear
-# anything down from here (run_stack_hil.sh's `stop` is host-only). Leave the
-# bag/sidecar running; the operator runs `./run_stack_hil.sh stop`.
+# On timeout: zero-hold, log SLAM_INIT_FAILED, return False. Do NOT tear anything
+# down here (run_stack_hil.sh stop is host-only) -- leave the bag/sidecar up.
 
 import time
 
-from init_gate.params import LEG_SPEED, LEG_DURATION_SEC, TIMEOUT_SEC
 
-
-def run_cycle(motion, readiness, log_state):
+def run_cycle(motion, readiness, log_state, legs, leg_speed,
+              leg_duration_sec, timeout_sec):
     t_start = time.monotonic()
-    legs = [
-        #('left',  0.0, +LEG_SPEED, 0.0),
-        #('right', 0.0, -LEG_SPEED, 0.0),
-        ('up',    0.0, 0.0, +LEG_SPEED),
-    ]
-    while time.monotonic() - t_start < TIMEOUT_SEC:
+    while time.monotonic() - t_start < timeout_sec:
         if readiness.ready():
-            log_state('SLAM_READY')
+            log_state("SLAM_READY")
             return True
-        for name, vx, vy, vz in legs:
-            motion.log(f'warmup: {name} (out + back)')
-            motion.run_leg(vx, vy, vz, LEG_DURATION_SEC)         # go out
-            motion.run_leg(-vx, -vy, -vz, LEG_DURATION_SEC)      # go back (mirror)
+        for name, ux, uy, uz in legs:
+            vx, vy, vz = ux * leg_speed, uy * leg_speed, uz * leg_speed
+            motion.log(f"warmup: {name} (out + back)")
+            motion.run_leg(vx, vy, vz, leg_duration_sec)          # go out
+            motion.run_leg(-vx, -vy, -vz, leg_duration_sec)       # go back (mirror)
             if readiness.ready():
-                log_state('SLAM_READY')
+                log_state("SLAM_READY")
                 return True
 
     motion.zero_hold()
-    log_state('SLAM_INIT_FAILED')
+    log_state("SLAM_INIT_FAILED")
     return False

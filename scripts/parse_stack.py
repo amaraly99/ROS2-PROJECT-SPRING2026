@@ -40,6 +40,22 @@ def as_bool(v, default=False):
     return str(v).strip().lower() in ("true", "1", "yes", "on")
 
 
+def get_num(d, path, caster):
+    """Dotted-path lookup that FORCES the given numeric type (float/int) before
+    emitting. Prevents a bare YAML int (e.g. `timeout_sec: 30`) from reaching ROS2
+    as an INTEGER param when the node declares a DOUBLE default -- rclpy's strict
+    param typing raises InvalidParameterTypeException and crashes the node before
+    it publishes anything (confirmed via repro, 2026-07-18). '' (unset) means:
+    let the node's profile DEFAULTS apply."""
+    v = get(d, path, None)
+    if v is None or v == "":
+        return ""
+    try:
+        return caster(v)
+    except (TypeError, ValueError):
+        return ""
+
+
 def emit(pairs):
     """Print KEY=<shlex-quoted value> lines."""
     out = []
@@ -105,6 +121,12 @@ def emit_env(cfg):
 
         # ── init_gate (SLAM-warmup gate, opt-in, ORB-SLAM2 only) ──
         ("INIT_GATE_ENABLED", as_bool(get(cfg, "init_gate.enabled"), False)),
+        ("INIT_GATE_MODULE",         get(cfg, "init_gate.module", "default")),
+        ("INIT_GATE_LEGS",           ",".join(get(cfg, "init_gate.params.legs", []) or [])),
+        ("INIT_GATE_LEG_SPEED",      get_num(cfg, "init_gate.params.leg_speed", float)),
+        ("INIT_GATE_LEG_DURATION",   get_num(cfg, "init_gate.params.leg_duration_sec", float)),
+        ("INIT_GATE_TIMEOUT",        get_num(cfg, "init_gate.params.timeout_sec", float)),
+        ("INIT_GATE_READY_DEBOUNCE", get_num(cfg, "init_gate.params.ready_debounce", int)),
     ]
     emit(pairs)
 

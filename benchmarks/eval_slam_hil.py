@@ -18,7 +18,8 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-VENV_PY = HERE / ".evo_venv" / "bin" / "python"
+VENV_BIN = HERE / ".evo_venv" / "bin"
+VENV_PY = VENV_BIN / "python"
 
 if not VENV_PY.exists():
     sys.exit(
@@ -31,4 +32,8 @@ if not VENV_PY.exists():
 # (so relative run-dir args like bags/run_... still resolve against the caller).
 env = dict(os.environ)
 env["PYTHONPATH"] = str(HERE) + os.pathsep + env.get("PYTHONPATH", "")
+# slam_eval shells out to the `evo_ape` CLI (base.py), which lives in the venv's
+# bin, not on the caller's PATH — prepend it so the subprocess resolves without
+# the caller having to activate the venv or export PATH manually.
+env["PATH"] = str(VENV_BIN) + os.pathsep + env.get("PATH", "")
 sys.exit(subprocess.call([str(VENV_PY), "-m", "slam_eval", *sys.argv[1:]], env=env))
