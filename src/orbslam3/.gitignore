@@ -1,0 +1,15 @@
+# Same convention as src/orbslam2/.gitignore: the vocabulary is a 47 MB blob that
+# never changes, so it lives on disk but stays out of git (.git is already ~1 GB).
+orb_slam3/Vocabulary/ORBvoc.txt
+orb_slam3/Vocabulary/*.txt.tar.gz
+
+# Vendored third-party dependency, 147 MB of source. Built inside the container;
+# not our code and not worth versioning here.
+Pangolin/
+
+# Build outputs
+build/
+install/
+log/
+__pycache__/
+*.pyc

@@ -1,0 +1,196 @@
+# ==============================================================================
+# Base Image
+# ==============================================================================
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+SHELL ["/bin/bash", "-lc"]
+
+# ==============================================================================
+# Locale Setup
+# ==============================================================================
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    locales \
+ && sed -i 's/^# *\(en_US\.UTF-8 UTF-8\)/\1/' /etc/locale.gen \
+ && locale-gen \
+ && update-locale LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 \
+ && rm -rf /var/lib/apt/lists/*
+
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
+
+# ==============================================================================
+# Base Tooling
+# ==============================================================================
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl ca-certificates gnupg lsb-release \
+    build-essential cmake git pkg-config \
+    python3-pip python3-setuptools python3-wheel \
+    libeigen3-dev \
+    figlet \
+    htop \
+    tmux \
+    nano \
+ && rm -rf /var/lib/apt/lists/*
+
+# ==============================================================================
+# ROS 2 Jazzy — Apt Repository
+# ==============================================================================
+RUN mkdir -p /etc/apt/keyrings \
+ && curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+    | gpg --dearmor -o /etc/apt/keyrings/ros-archive-keyring.gpg \
+ && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/ros-archive-keyring.gpg] \
+http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" \
+    > /etc/apt/sources.list.d/ros2.list
+
+# ==============================================================================
+# ROS 2 Jazzy — Core + Desktop (includes rviz2)
+# ==============================================================================
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ros-jazzy-desktop \
+    ros-dev-tools \
+    ros-jazzy-rmw-cyclonedds-cpp \
+    ros-jazzy-tf2-geometry-msgs \
+    ros-jazzy-nav-msgs \
+    ros-jazzy-image-transport \
+    ros-jazzy-cv-bridge \
+    ros-jazzy-sensor-msgs \
+    ros-jazzy-rclpy \
+    ros-jazzy-pcl-conversions \
+    ros-jazzy-pcl-ros \
+    ros-jazzy-foxglove-bridge \
+ && rm -rf /var/lib/apt/lists/*
+
+# ==============================================================================
+# Extra Libraries (SLAM / Vision / ViSP / Pangolin)
+# ==============================================================================
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgoogle-glog-dev \
+    libgflags-dev \
+    liblapack-dev \
+    libblas-dev \
+    libvisp-dev \
+    libepoxy-dev \
+    libglew-dev \
+    libgl1-mesa-dev \
+    libegl1-mesa-dev \
+    libwayland-dev \
+    wayland-protocols \
+    libxkbcommon-dev \
+    libjpeg-dev \
+    libpng-dev \
+    python3-dev \
+ && rm -rf /var/lib/apt/lists/*
+
+# ==============================================================================
+# Remove SuiteSparse (intentionally excluded)
+# ==============================================================================
+RUN apt-get update \
+ && apt-get purge -y 'libsuitesparse*' || true \
+ && apt-get autoremove -y || true \
+ && rm -rf /var/lib/apt/lists/*
+
+# ==============================================================================
+# System-wide Environment — ROS + Library Paths
+# ==============================================================================
+RUN cat > /etc/profile.d/ros2_jazzy.sh <<'EOF'
+# ROS 2 Jazzy
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+source /opt/ros/jazzy/setup.bash
+
+# OpenCV contrib (built from source)
+export LD_LIBRARY_PATH=/workspace/opencv/build/lib:$LD_LIBRARY_PATH
+
+# Pangolin (built from source under /workspace/src/Pangolin/build)
+export LD_LIBRARY_PATH=/workspace/src/Pangolin/build:$LD_LIBRARY_PATH
+
+# RViz2 / Ogre vendor libs
+export LD_LIBRARY_PATH=/opt/ros/jazzy/opt/rviz_ogre_vendor/lib:$LD_LIBRARY_PATH
+
+# Gazebo math vendor libs
+export LD_LIBRARY_PATH=/opt/ros/jazzy/opt/gz_math_vendor/lib:$LD_LIBRARY_PATH
+
+# Workspace overlay (sourced if built)
+if [ -f /workspace/install/setup.bash ]; then
+  source /workspace/install/setup.bash
+fi
+EOF
+RUN chmod +x /etc/profile.d/ros2_jazzy.sh
+
+# ==============================================================================
+# Startup Check Script
+# ==============================================================================
+RUN cat > /usr/local/bin/ros2_check.sh <<'EOF'
+#!/usr/bin/env bash
+set -e
+
+source /opt/ros/jazzy/setup.bash
+
+echo
+echo "which ros2: $(command -v ros2 || echo 'NOT FOUND')"
+
+pkgs=(
+  ros-jazzy-desktop
+  ros-dev-tools
+  ros-jazzy-rmw-cyclonedds-cpp
+  ros-jazzy-tf2-geometry-msgs
+  ros-jazzy-nav-msgs
+  ros-jazzy-image-transport
+  ros-jazzy-cv-bridge
+  ros-jazzy-sensor-msgs
+  ros-jazzy-rclpy
+  ros-jazzy-pcl-conversions
+  ros-jazzy-pcl-ros
+  ros-jazzy-foxglove-bridge
+  libgoogle-glog-dev
+  libgflags-dev
+  liblapack-dev
+  libblas-dev
+  libvisp-dev
+  nano
+)
+
+missing=()
+for p in "${pkgs[@]}"; do
+  dpkg -s "$p" >/dev/null 2>&1 || missing+=("$p")
+done
+
+ros_distro="${ROS_DISTRO:-unknown}"
+ros2_cli_ver="$(ros2 --version 2>/dev/null | awk '{print $2}' || echo 'unknown')"
+ros_pkg_ver="$(dpkg-query -W -f='${Version}' ros-jazzy-desktop 2>/dev/null || echo 'unknown')"
+suite_cnt="$(dpkg -l | awk '{print $2}' | grep -ci '^libsuitesparse' || true)"
+
+echo
+figlet "ROS2 CHECK"
+echo
+
+if ! command -v ros2 >/dev/null 2>&1; then
+  echo "❌ ros2 command not found in PATH"
+  exit 1
+fi
+
+if [ ${#missing[@]} -eq 0 ]; then
+  echo "✅ ROS2 distro        : ${ros_distro}"
+  echo "✅ ROS2 CLI version   : ${ros2_cli_ver}"
+  echo "✅ ros-desktop pkg ver: ${ros_pkg_ver}"
+  echo "✅ all packages installed"
+  [ "$suite_cnt" -eq 0 ] \
+    && echo "✅ SuiteSparse        : not installed" \
+    || echo "⚠️  SuiteSparse        : still present (${suite_cnt} pkgs)"
+else
+  echo "✅ ROS2 distro        : ${ros_distro}"
+  echo "✅ ROS2 CLI version   : ${ros2_cli_ver}"
+  echo "✅ ros-desktop pkg ver: ${ros_pkg_ver}"
+  echo "❌ missing packages:"
+  printf '   - %s\n' "${missing[@]}"
+  exit 2
+fi
+echo
+EOF
+RUN chmod +x /usr/local/bin/ros2_check.sh
+
+# ==============================================================================
+# Entrypoint
+# ==============================================================================
+WORKDIR /workspace
+ENTRYPOINT ["/bin/bash", "-lc", "/usr/local/bin/ros2_check.sh; exec bash"]

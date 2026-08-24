@@ -1,0 +1,58 @@
+%YAML:1.0
+
+# Rectified EuRoC stereo settings for benchmark streaming.
+# These intrinsics are derived from the raw EuRoC stereo calibration using
+# OpenCV stereoRectify with CALIB_ZERO_DISPARITY, matching ORB-SLAM3's own
+# internal rectification convention.
+
+#--------------------------------------------------------------------------------------------
+# System config
+#--------------------------------------------------------------------------------------------
+File.version: "1.0"
+
+#--------------------------------------------------------------------------------------------
+# Camera Parameters
+#--------------------------------------------------------------------------------------------
+Camera.type: "Rectified"
+
+Camera1.fx: 456.715000000000
+Camera1.fy: 456.715000000000
+Camera1.cx: 364.441234590402
+Camera1.cy: 256.951675423870
+
+Camera2.fx: 456.715000000000
+Camera2.fy: 456.715000000000
+Camera2.cx: 364.441234590402
+Camera2.cy: 256.951675423870
+
+Camera.width: 752
+Camera.height: 480
+Camera.fps: 20
+Camera.RGB: 1
+
+Stereo.b: 0.110077844334821
+Stereo.ThDepth: 60.0
+
+#--------------------------------------------------------------------------------------------
+# ORB Parameters
+#--------------------------------------------------------------------------------------------
+ORBextractor.nFeatures: 800
+ORBextractor.scaleFactor: 1.2
+ORBextractor.nLevels: 8
+ORBextractor.iniThFAST: 15
+ORBextractor.minThFAST: 5
+
+#--------------------------------------------------------------------------------------------
+# Viewer Parameters
+#--------------------------------------------------------------------------------------------
+Viewer.KeyFrameSize: 0.05
+Viewer.KeyFrameLineWidth: 1.0
+Viewer.GraphLineWidth: 0.9
+Viewer.PointSize: 2.0
+Viewer.CameraSize: 0.08
+Viewer.CameraLineWidth: 3.0
+Viewer.ViewpointX: 0.0
+Viewer.ViewpointY: -0.7
+Viewer.ViewpointZ: -1.8
+Viewer.ViewpointF: 500.0
+Viewer.imageViewScale: 1.0

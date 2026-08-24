@@ -1,0 +1,36 @@
+# Single-run validation config for RTAB-Map on EuRoC MH_01_easy.
+# This keeps the same algorithm settings as the full stereo benchmark but
+# limits execution to one sequence and one retry for fast verification.
+
+dataset:
+  base_path: /workspace/datasets/euroc
+  sequences_dir: "."
+  gt_dir: "."
+  sequences:
+    - MH_01_easy
+
+evaluation:
+  bag_rate: 0.5
+  t_max_diff: 0.01
+  n_retries: 1
+  results_dir: /workspace/results
+  log_dir: /workspace/run_logs
+
+rtabmap_params:
+  GFTT/MinDistance: "3"
+  GFTT/QualityLevel: "0.001"
+  Kp/MaxFeatures: "500"
+  Odom/KeyFrameThr: "0.3"
+  OdomF2M/MaxSize: "2000"
+  Vis/MaxFeatures: "1000"
+  Vis/MinInliers: "10"
+  Vis/CorNNDR: "0.6"
+  Rtabmap/TimeThr: "0"
+  Rtabmap/MemoryThr: "0"
+  Mem/STMSize: "30"
+  Rtabmap/DetectionRate: "2"
+  Rtabmap/CreateIntermediateNodes: "true"
+  RGBD/CreateOccupancyGrid: "false"
+  RGBD/LinearUpdate: "0"
+  RGBD/AngularUpdate: "0"
+  RGBD/OptimizeMaxError: "1"

@@ -1,0 +1,215 @@
+#!/usr/bin/env bash
+# =============================================================================
+# host_benchmarker_rtabmap
+# =============================================================================
+# Run the RTAB-Map EuRoC benchmark (F2M stereo) from the HOST without entering
+# Docker.  All benchmarking logic executes inside the rtabmap_jazzy container;
+# stdout/stderr stream live to this terminal for monitoring, tee, or cron logs.
+#
+# CycloneDDS is ENFORCED: RMW_IMPLEMENTATION=rmw_cyclonedds_cpp is injected
+# both as a docker exec env var AND sourced at the top of every bash command
+# so it takes effect before any ROS2 node starts.
+#
+# Usage (from the RTAB_Docker directory or anywhere):
+#   ./host_benchmarker_rtabmap [OPTIONS]
+#
+# Options:
+#   --container NAME     Docker container to use   (default: rtabmap_jazzy)
+#   --image NAME         Docker image to start if container is not running
+#                        (default: rtabmap-jazzy-arm64:latest)
+#   --config PATH        Host-side path to an experiment config YAML
+#                        (default: <script_dir>/experiment_config_stereo_mh01_single.yaml)
+#   --sequence NAME      Run only this one sequence (overrides config list)
+#   --start-container    Start the container from image before benchmarking,
+#                        then stop it when done
+#   --help               Show this help and exit
+#
+# Cron example (runs nightly at 00:30, logs to dated file):
+#   30 0 * * * /home/amaraly/RTAB_Docker/host_benchmarker_rtabmap \
+#       --start-container \
+#       >> /home/amaraly/RTAB_Docker/run_logs/cron_$(date +\%Y\%m\%d).log 2>&1
+# =============================================================================
+
+set -euo pipefail
+
+# ── Script location ────────────────────────────────────────────────────────────
+SCRIPT_PATH="$(realpath "${BASH_SOURCE[0]}")"
+HOST_WS="$(dirname "$SCRIPT_PATH")"
+
+# ── Defaults ───────────────────────────────────────────────────────────────────
+CONTAINER_NAME="rtabmap_jazzy"
+IMAGE_NAME="rtabmap-jazzy-arm64:latest"
+CONTAINER_WS="/workspace"
+EVAL_SCRIPT="${CONTAINER_WS}/eval.py"
+DEFAULT_CONFIG="${HOST_WS}/experiment_config_stereo_mh01_single.yaml"
+START_CONTAINER=false
+
+# ── EuRoC dataset bind-mount ───────────────────────────────────────────────────
+# Host path: actual dataset lives in the ROS2-PROJECT directory (no copy needed).
+# Container path: mounted as /datasets/euroc (rw so RTAB-Map can write indexes).
+HOST_DATASET="/home/amaraly/ROS2-PROJECT-SPRING2026/datasets/euroc"
+CONTAINER_DATASET="/workspace/datasets/euroc"
+
+# ── Colour helpers ─────────────────────────────────────────────────────────────
+RED='\033[91m'; GREEN='\033[92m'; YELLOW='\033[93m'
+CYAN='\033[96m'; BOLD='\033[1m'; RESET='\033[0m'
+
+log()  { printf "${BOLD}${CYAN}[host_benchmarker_rtabmap]${RESET} %s\n" "$*"; }
+warn() { printf "${YELLOW}[host_benchmarker_rtabmap] WARN:${RESET} %s\n" "$*" >&2; }
+die()  { printf "${RED}[host_benchmarker_rtabmap] ERROR:${RESET} %s\n" "$*" >&2; exit 1; }
+ok()   { printf "${GREEN}[host_benchmarker_rtabmap]${RESET} ✓ %s\n" "$*"; }
+
+# ── Argument parsing ───────────────────────────────────────────────────────────
+CONFIG_HOST=""
+SEQUENCE=""
+EXTRA_ARGS=()
+
+usage() {
+    grep '^#' "$SCRIPT_PATH" | grep -v '^#!/' | sed 's/^# \?//'
+    exit 0
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --help|-h)           usage ;;
+        --container)         CONTAINER_NAME="$2"; shift 2 ;;
+        --container=*)       CONTAINER_NAME="${1#*=}"; shift ;;
+        --image)             IMAGE_NAME="$2"; shift 2 ;;
+        --image=*)           IMAGE_NAME="${1#*=}"; shift ;;
+        --config)            CONFIG_HOST="$2"; shift 2 ;;
+        --config=*)          CONFIG_HOST="${1#*=}"; shift ;;
+        --sequence)          SEQUENCE="$2"; shift 2 ;;
+        --sequence=*)        SEQUENCE="${1#*=}"; shift ;;
+        --start-container)   START_CONTAINER=true; shift ;;
+        *)                   EXTRA_ARGS+=("$1"); shift ;;
+    esac
+done
+
+# ── Resolve host config → container path ──────────────────────────────────────
+if [[ -z "$CONFIG_HOST" ]]; then
+    CONFIG_HOST="$DEFAULT_CONFIG"
+fi
+if [[ ! -f "$CONFIG_HOST" ]]; then
+    die "Config file not found on host: ${CONFIG_HOST}"
+fi
+
+config_realpath="$(realpath "$CONFIG_HOST")"
+if [[ "$config_realpath" == "${HOST_WS}"/* ]]; then
+    CONFIG_CONTAINER="${CONTAINER_WS}/${config_realpath#${HOST_WS}/}"
+else
+    tmpname="host_bench_rtab_config_$(date +%s).yaml"
+    sudo docker cp "$config_realpath" "${CONTAINER_NAME}:${CONTAINER_WS}/${tmpname}"
+    CONFIG_CONTAINER="${CONTAINER_WS}/${tmpname}"
+    _cleanup_tmp() { sudo docker exec "$CONTAINER_NAME" rm -f "${CONTAINER_WS}/${tmpname}" 2>/dev/null || true; }
+    trap _cleanup_tmp EXIT
+fi
+
+# ── Optionally start container ────────────────────────────────────────────────
+CONTAINER_WAS_STARTED=false
+if $START_CONTAINER; then
+    if ! sudo docker inspect --format='{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null | grep -q 'true'; then
+        log "Starting container '${CONTAINER_NAME}' from image '${IMAGE_NAME}' ..."
+        # Validate host dataset path before starting
+        if [[ ! -d "$HOST_DATASET" ]]; then
+            die "EuRoC dataset not found on host: ${HOST_DATASET}"
+        fi
+        sudo docker run --rm -dit \
+            --name "$CONTAINER_NAME" \
+            -v "${HOST_WS}:${CONTAINER_WS}" \
+            -v "${HOST_DATASET}:${CONTAINER_DATASET}:rw" \
+            -w "${CONTAINER_WS}" \
+            --net=host --ipc=host --privileged \
+            --entrypoint /bin/bash \
+            "$IMAGE_NAME" \
+            -lc "while true; do sleep 3600; done" > /dev/null
+        CONTAINER_WAS_STARTED=true
+        ok "Container '${CONTAINER_NAME}' started."
+        ok "Dataset mounted:  ${HOST_DATASET}  →  ${CONTAINER_DATASET}"
+    fi
+fi
+
+# ── Ensure CycloneDDS is installed in the container ───────────────────────────
+CYCLONE_CHECK=$(sudo docker exec "$CONTAINER_NAME" bash -c \
+    "dpkg -l ros-jazzy-rmw-cyclonedds-cpp 2>/dev/null | grep -c '^ii' || echo 0")
+if [[ "$CYCLONE_CHECK" -eq 0 ]]; then
+    log "CycloneDDS not found — installing ros-jazzy-rmw-cyclonedds-cpp ..."
+    sudo docker exec "$CONTAINER_NAME" bash -c \
+        "apt-get update -qq && apt-get install -y --no-install-recommends \
+         ros-jazzy-rmw-cyclonedds-cpp ros-jazzy-cyclonedds" \
+        > /dev/null 2>&1 \
+        && ok "CycloneDDS installed." \
+        || warn "CycloneDDS install failed — falling back to FastRTPS."
+fi
+
+# ── Ensure image_proc is installed in the container ──────────────────────────
+IMGPROC_CHECK=$(sudo docker exec "$CONTAINER_NAME" bash -c \
+    "dpkg -l ros-jazzy-image-proc 2>/dev/null | grep -c '^ii' || echo 0")
+if [[ "$IMGPROC_CHECK" -eq 0 ]]; then
+    log "image_proc not found — installing ros-jazzy-image-proc ..."
+    sudo docker exec "$CONTAINER_NAME" bash -c \
+        "apt-get update -qq && apt-get install -y --no-install-recommends \
+         ros-jazzy-image-proc" \
+        > /dev/null 2>&1 \
+        && ok "image_proc installed." \
+        || warn "image_proc install failed."
+fi
+
+# ── Ensure evo (trajectory evaluator) is installed in the container ───────────
+EVO_CHECK=$(sudo docker exec "$CONTAINER_NAME" bash -c \
+    "command -v evo_ape >/dev/null 2>&1 && echo 1 || echo 0")
+if [[ "$EVO_CHECK" -eq 0 ]]; then
+    log "evo not found — installing python3-pip + evo ..."
+    sudo docker exec "$CONTAINER_NAME" bash -c \
+        "apt-get update -qq && apt-get install -y --no-install-recommends python3-pip \
+         && pip3 install evo --break-system-packages -q" \
+        > /dev/null 2>&1 \
+        && ok "evo installed." \
+        || warn "evo install failed — evo_ape/evo_traj will not be available."
+fi
+
+# ── Pre-flight: container must be running ──────────────────────────────────────
+log "Checking container '${CONTAINER_NAME}' ..."
+if ! sudo docker inspect --format='{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null | grep -q 'true'; then
+    die "Container '${CONTAINER_NAME}' is not running.
+       Either run:  sudo docker start ${CONTAINER_NAME}
+       Or use:      $SCRIPT_PATH --start-container"
+fi
+ok "Container is running."
+
+# ── Build the in-container command ────────────────────────────────────────────
+# eval.py detects it's running inside a container (/.dockerenv) and runs directly.
+CMD=(python3 "$EVAL_SCRIPT" --config "$CONFIG_CONTAINER")
+[[ -n "$SEQUENCE" ]] && CMD+=(--sequence "$SEQUENCE")
+[[ ${#EXTRA_ARGS[@]} -gt 0 ]] && CMD+=("${EXTRA_ARGS[@]}")
+
+# ── Run with CycloneDDS enforced ──────────────────────────────────────────────
+log "Enforcing RMW_IMPLEMENTATION=rmw_cyclonedds_cpp"
+log "Launching RTAB-Map benchmark inside '${CONTAINER_NAME}' ..."
+log "Command: ${CMD[*]}"
+printf "%s\n" "$(printf '─%.0s' {1..70})"
+
+DOCKER_EXEC_OPTS=(-e RMW_IMPLEMENTATION=rmw_cyclonedds_cpp)
+
+if [ -t 1 ]; then
+    sudo docker exec -it "${DOCKER_EXEC_OPTS[@]}" "$CONTAINER_NAME" "${CMD[@]}"
+else
+    sudo docker exec -i  "${DOCKER_EXEC_OPTS[@]}" "$CONTAINER_NAME" "${CMD[@]}"
+fi
+
+EXIT_CODE=$?
+printf "%s\n" "$(printf '─%.0s' {1..70})"
+
+# ── Optional container teardown ───────────────────────────────────────────────
+if $CONTAINER_WAS_STARTED; then
+    log "Stopping container '${CONTAINER_NAME}' (was started by this script) ..."
+    sudo docker stop "$CONTAINER_NAME" > /dev/null 2>&1 || true
+    ok "Container stopped."
+fi
+
+if [[ $EXIT_CODE -eq 0 ]]; then
+    ok "RTAB-Map benchmark finished successfully."
+else
+    warn "RTAB-Map benchmark exited with code ${EXIT_CODE}."
+fi
+
+exit $EXIT_CODE

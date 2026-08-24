@@ -1,0 +1,63 @@
+%YAML:1.0
+#
+# HIL_SIM -- MATLAB/Unreal synthetic camera used by the ROS2-PROJECT HIL bench.
+#
+# Intrinsics are taken from matlab/sim_camera_publisher_timer_LT.m and match
+# camera_calib/hil_sim_ov2slam_accurate.yaml byte-for-byte, so ORB-SLAM3,
+# OV2SLAM and ORB-SLAM2 all see an identical camera model. Verified
+# self-consistent: 320 / tan(30 deg) = 554.3 for a 60 deg horizontal FOV.
+# Zero distortion -- it is a rendered pinhole, not a real lens.
+#
+# Camera.fps is the NOMINAL 20 Hz publish rate. Measured end-to-end delivery is
+# ~13 Hz because of the MATLAB->Pi link, identical for every backend, so the
+# comparison stays fair even though neither runs at 20.
+
+File.version: "1.0"
+
+Camera.type: "PinHole"
+
+Camera1.fx: 554.0
+Camera1.fy: 554.0
+Camera1.cx: 320.0
+Camera1.cy: 240.0
+
+Camera1.k1: 0.0
+Camera1.k2: 0.0
+Camera1.p1: 0.0
+Camera1.p2: 0.0
+
+Camera.width: 640
+Camera.height: 480
+
+Camera.newWidth: 640
+Camera.newHeight: 480
+
+Camera.fps: 20
+
+# sim_camera_publisher_timer_LT publishes rgb8
+Camera.RGB: 1
+
+#--------------------------------------------------------------------------------------------
+# ORB Parameters -- left at the upstream EuRoC defaults on purpose.
+# Tuning these per-backend would break the controlled-ablation premise of the
+# benchmark: the only thing that may differ between arms is the SLAM system.
+#--------------------------------------------------------------------------------------------
+ORBextractor.nFeatures: 800
+ORBextractor.scaleFactor: 1.2
+ORBextractor.nLevels: 8
+ORBextractor.iniThFAST: 15
+ORBextractor.minThFAST: 5
+
+#--------------------------------------------------------------------------------------------
+# Viewer -- headless on the Pi, but the keys must exist or the parser errors out.
+#--------------------------------------------------------------------------------------------
+Viewer.KeyFrameSize: 0.05
+Viewer.KeyFrameLineWidth: 1.0
+Viewer.GraphLineWidth: 0.9
+Viewer.PointSize: 2.0
+Viewer.CameraSize: 0.08
+Viewer.CameraLineWidth: 3.0
+Viewer.ViewpointX: 0.0
+Viewer.ViewpointY: -0.7
+Viewer.ViewpointZ: -3.5
+Viewer.ViewpointF: 500.0

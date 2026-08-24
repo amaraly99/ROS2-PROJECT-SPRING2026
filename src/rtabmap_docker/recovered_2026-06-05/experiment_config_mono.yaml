@@ -1,0 +1,95 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# RTAB-Map Benchmark Experiment Configuration
+# ─────────────────────────────────────────────────────────────────────────────
+# Edit this file to control every aspect of an eval run, then execute:
+#   python3 /workspace/eval.py --config /workspace/experiment_config.yaml
+#
+# Parameter names under `rtabmap_params` are RTAB-Map's own internal names
+# (the same strings you see in the RTAB-Map GUI / source code). They OVERRIDE
+# the defaults that live in euroc_offline_f2m.launch.py.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+# ── Dataset ───────────────────────────────────────────────────────────────────
+dataset:
+  # Root path (inside the container).  bags live in <base_path>/<sequences_dir>/
+  base_path: /workspace/datasets
+
+  # Folder that holds the ROS2 bag files (*.db3 or bag directories).
+  sequences_dir: sequences
+
+  # Folder that holds the ground-truth TUM files (<name>.txt).
+  gt_dir: gt
+
+  # Which sequences to run.
+  #   "all"  → every *.db3 / bag-directory found in sequences_dir.
+  #   list   → run only the named sequences (without extension).
+  sequences:
+    - MH_05_difficult
+    - V1_02_medium
+
+# ── Playback & evaluation ──────────────────────────────────────────────────────
+evaluation:
+  # ros2 bag play --rate.  1.0 = real-time.
+  # Use 0.5 when the processor cannot keep up with 20 Hz stereo odometry
+  # (watch for "Trial with no guess still fail" in the launch log — that means
+  #  the CPU is dropping frames and you should slow the bag down).
+  bag_rate: 1.0
+
+  # evo_ape --t_max_diff: maximum timestamp difference (s) when associating
+  # estimated poses with ground-truth poses.
+  t_max_diff: 0.01
+
+  # How many times to repeat each sequence.  Results are averaged across retries.
+  # RMSE avg/std, timing averages, and CPU averages are all reported per sequence.
+  n_retries: 3
+
+  # Directory where per-sequence result plots (PNG) are saved.
+  results_dir: /workspace/results
+
+  # Directory where per-run log files (*.log) are saved.
+  log_dir: /workspace/run_logs
+
+
+# ── RTAB-Map algorithm parameters ─────────────────────────────────────────────
+# Values here OVERRIDE the matching defaults in euroc_offline_f2m.launch.py.
+# Both the stereo_odometry node and the rtabmap SLAM node receive every key.
+#
+# ⚠️  Vis/MinInliers and Vis/MaxFeatures are shared by BOTH loop-closure
+#     detection AND the odometry's no-guess recovery path.  Lowering them
+#     below the values below will degrade odometry, not just loop closure.
+#
+# Reference: Labbé & Michaud (2024) Table 2 — achieves 1.7 cm ATE on MH_01.
+rtabmap_params:
+
+  # ── Feature detector (GFTT + optical flow) ──────────────────────────────────
+  GFTT/MinDistance:   "4"      # slightly larger → fewer corners, faster detection
+  GFTT/QualityLevel:  "0.001"  # lower → more (weaker) corners detected
+  Kp/MaxFeatures:     "300"    # reduced from 500: biggest single lever for speed
+                               # (directly sets how many features optical flow tracks)
+
+  # ── F2M stereo odometry ───────────────────────────────────────────────────────
+  Odom/KeyFrameThr:   "0.3"    # create new keyframe when <30 % of features match
+  OdomF2M/MaxSize:    "1000"   # reduced from 2000: smaller local map = faster matching
+
+  # ── Visual matching (odometry recovery + loop closure) ────────────────────────
+  Vis/MaxFeatures:    "500"   # features compared per candidate pair
+  Vis/MinInliers:     "15"     # minimum RANSAC inliers to accept a match
+  Vis/CorNNDR:        "0.6"    # nearest-neighbour distance ratio (Lowe test)
+
+  # ── Memory management — DISABLED for offline evaluation ───────────────────────
+  # "TimeThr and MemoryThr set to 0" (paper §4, p. 17):
+  #   TimeThr  = 0 → no per-frame time budget; every odom frame is processed.
+  #   MemoryThr= 0 → no LTM eviction; full trajectory stays in working memory
+  #                  so loop-closure can fire over the entire map.
+  Rtabmap/TimeThr:    "0"
+  Rtabmap/MemoryThr:  "0"
+  Mem/STMSize:        "30"
+
+  # ── SLAM / graph node ────────────────────────────────────────────────────────
+  Rtabmap/DetectionRate:           "2"     # Hz — new SLAM nodes created at this rate
+  Rtabmap/CreateIntermediateNodes: "true"  # record every odom pose between SLAM nodes
+  RGBD/CreateOccupancyGrid:        "false" # no 2D grid needed for trajectory eval
+  RGBD/LinearUpdate:               "0"     # update map on every frame (not just motion)
+  RGBD/AngularUpdate:              "0"
+  RGBD/OptimizeMaxError:           "1"     # reject loop closures with graph error > 1 σ
