@@ -1,0 +1,2 @@
+model,backend,conf,images,subset,intra_op,inter_op,mAP50_95,mAP50,mAP75,stopsign_AP50_95,stopsign_AP50,preprocess_ms,inference_ms,postprocess_ms,total_ms,fps,n_detections,engine
+yolo26n,npu,0.2,5000,False,2,1,0.3061,0.4185,0.3367,0.5171,0.5633,0.633,27.153,1.219,29.017,29.28,22124,repo
