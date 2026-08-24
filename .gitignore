@@ -164,3 +164,55 @@ benchmarks/.evo_venv/
 # CMake config, so this symlink must exist for ORB-SLAM3 to build AND run.
 # Target is src/orbslam3/Pangolin (itself gitignored).
 src/Pangolin
+
+############################################################
+# RTAB-Map Docker benchmark harness (src/rtabmap_docker)
+# Migrated in from /home/amaraly/RTAB_Docker. Only the scripts,
+# launch files, configs, trajectory plots and small .tum files
+# are tracked. Everything below is bulk output data.
+#
+# NOTE: the dataset payload deliberately stays OUTSIDE the repo
+# at /home/amaraly/RTAB_Docker/ (datasets/euroc/*.mcap,
+# MH_01_easy.db3, MH_01_easy.txt), so it needs no rule here.
+############################################################
+src/rtabmap_docker/results/
+src/rtabmap_docker/tmp_lib/
+src/rtabmap_docker/run_logs/
+src/rtabmap_docker/*.pdf
+src/rtabmap_docker/tmp/
+src/rtabmap_docker/__pycache__/
+
+# mono probe: crash artifacts and extracted frames (regenerable)
+benchmarks/rtabmap_mono_probe/core.*
+benchmarks/rtabmap_mono_probe/mono_probe
+benchmarks/rtabmap_mono_probe/build/
+benchmarks/rtabmap_mono_probe/frames_*/
+
+############################################################
+# Added 2026-08-25. Bulk/regenerable only — nothing here is
+# original work. Ignoring does NOT delete: every byte stays
+# on disk. Paths needing judgment (patched/src, *.bak files)
+# are deliberately LEFT OUT so they stay visible.
+############################################################
+
+# 3.9 GB of overnight run output
+benchmarks/rtabmap_mono_probe/overnight/
+
+# build output of the patched probe (patched/src is NOT ignored)
+benchmarks/rtabmap_mono_probe/patched/bld/
+benchmarks/rtabmap_mono_probe/patched/build/
+
+# stock ORB vocabulary shipped with upstream ORB-SLAM3 (47 MB)
+# NOTE: orb_slam3/{src,include,config,Thirdparty} stay TRACKED
+src/orbslam3/orb_slam3/Vocabulary/
+
+# scratch bag from the CLAHE investigation
+tmp_clahe_bag/
+
+# matrix-runner logs (regenerated every campaign)
+scripts/hil_matrix/logs/
+
+# quarantine for anything being retired — never deleted, only moved here
+trash/
+
+__pycache__/
