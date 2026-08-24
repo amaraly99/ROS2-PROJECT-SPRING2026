@@ -38,6 +38,12 @@ import numpy as np
 # Canonical detection: bbox corners (source pixels) + class id + confidence.
 Detection = Tuple[float, float, float, float, int, float]
 
+# Deployed per-frame detection cap. Mirrors yolo_producer.YOLO_MAX_DETS and
+# include/yolo_shm.hpp's YOLO_MAX_DETS -- an SHM ABI constant (the detection
+# array is YOLO_MAX_DETS * 16 bytes), not a tuning knob. Duplicated rather than
+# imported so the CPU path carries no dependency on the ROS-side module.
+_YOLO_MAX_DETS = 64
+
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 # repo/models/model_registry.json  (this file lives in repo/src/yolo_producer/)
 _DEFAULT_REGISTRY = os.path.normpath(
@@ -184,12 +190,21 @@ class BaseYoloPredictor(ABC):
                  conf: float = 0.25,
                  iou: float = 0.45,
                  class_names: Optional[List[str]] = None,
+                 max_dets: Optional[int] = None,
+                 float_coords: bool = False,
                  **_opts):
         self.model_path = model_path
         self.input_size = int(input_size)
         self.num_classes = int(num_classes)
         self.conf = float(conf)
         self.iou = float(iou)
+        # Offline-accuracy knobs. max_dets=None means "leave each path as it
+        # is": the NPU paths keep yolo_producer's 64-detection cap, the CPU
+        # paths stay uncapped. That asymmetry is wrong for a controlled
+        # benchmark but is exactly what the deployed pipeline does, so it is
+        # the default and only the bench overrides it.
+        self.max_dets = None if max_dets is None else int(max_dets)
+        self.float_coords = bool(float_coords)
         self.class_names = class_names or COCO_NAMES
         self.load_model(model_path)
 
@@ -397,7 +412,7 @@ class ONNXYoloPredictor(BaseYoloPredictor):
                 dets.append((float(bx), float(by), float(bx + bw), float(by + bh),
                              int(c), float(cls_conf[k])))
         dets.sort(key=lambda d: -d[5])
-        return dets
+        return dets if self.max_dets is None else dets[:self.max_dets]
 
     def _postprocess_e2e(self, raw, scale, pad_left, pad_top,
                          src_w, src_h) -> List[Detection]:
@@ -431,7 +446,7 @@ class ONNXYoloPredictor(BaseYoloPredictor):
         dets = [(float(x1[i]), float(y1[i]), float(x2[i]), float(y2[i]),
                  int(class_ids[i]), float(confs[i])) for i in range(len(confs))]
         dets.sort(key=lambda d: -d[5])
-        return dets
+        return dets if self.max_dets is None else dets[:self.max_dets]
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -523,22 +538,39 @@ class HailoNPUYoloPredictor(BaseYoloPredictor):
         self._configured.run([self._bindings], timeout=2000)
         t["inf_done"] = _now_ns()
 
+        # max_dets=None means "keep the deployed behaviour", which for both NPU
+        # paths is yolo_producer's own YOLO_MAX_DETS default.
+        pp_kw = {"float_coords": self.float_coords}
+        if self.max_dets is not None:
+            pp_kw["max_dets"] = self.max_dets
+
         if self.use_ondevice_nms:
             # on-device path already rescales to source pixels.
             out_flat = list(self._output_buffers.values())[0].flatten()
             dd = self._pp_ondevice(
                 out_flat, img_w=src_w, img_h=src_h, input_size=self.input_w,
-                pad_left=pad_left, pad_top=pad_top, scale=scale, conf_thresh=self.conf)
+                pad_left=pad_left, pad_top=pad_top, scale=scale, conf_thresh=self.conf,
+                **pp_kw)
         else:
             # raw-tensor path returns boxes in letterboxed model space -> rescale.
             dd = self._pp(self._output_buffers, src_h, src_w,
                           input_size=self.input_w, conf_thresh=self.conf,
-                          iou_thresh=self.iou, grids=self._grids)
-            for d in dd:
-                d["x1"] = max(0, min(int((d["x1"] - pad_left) / scale), src_w - 1))
-                d["y1"] = max(0, min(int((d["y1"] - pad_top) / scale), src_h - 1))
-                d["x2"] = max(0, min(int((d["x2"] - pad_left) / scale), src_w - 1))
-                d["y2"] = max(0, min(int((d["y2"] - pad_top) / scale), src_h - 1))
+                          iou_thresh=self.iou, grids=self._grids, **pp_kw)
+            # Deployed path truncates to int here as well as inside postprocess:
+            # two truncations, each biasing the box inward. Keep that exactly as
+            # it is by default; skip both when float coords are requested.
+            if self.float_coords:
+                for d in dd:
+                    d["x1"] = max(0.0, min((d["x1"] - pad_left) / scale, float(src_w - 1)))
+                    d["y1"] = max(0.0, min((d["y1"] - pad_top) / scale, float(src_h - 1)))
+                    d["x2"] = max(0.0, min((d["x2"] - pad_left) / scale, float(src_w - 1)))
+                    d["y2"] = max(0.0, min((d["y2"] - pad_top) / scale, float(src_h - 1)))
+            else:
+                for d in dd:
+                    d["x1"] = max(0, min(int((d["x1"] - pad_left) / scale), src_w - 1))
+                    d["y1"] = max(0, min(int((d["y1"] - pad_top) / scale), src_h - 1))
+                    d["x2"] = max(0, min(int((d["x2"] - pad_left) / scale), src_w - 1))
+                    d["y2"] = max(0, min(int((d["y2"] - pad_top) / scale), src_h - 1))
         t["nms_done"] = _now_ns()
 
         # dict -> canonical tuple (caller is layout/backend blind)
@@ -578,6 +610,8 @@ def build_predictor(backend: str,
                     inter_threads: Optional[int] = None,
                     input_size: Optional[int] = None,
                     num_classes: Optional[int] = None,
+                    max_dets: Optional[int] = None,
+                    float_coords: bool = False,
                     **extra) -> BaseYoloPredictor:
     """Construct a predictor for `backend` ('cpu'|'npu').
 
@@ -596,6 +630,8 @@ def build_predictor(backend: str,
         num_classes=num_classes if num_classes is not None else meta.get("classes", 80),
         conf=conf if conf is not None else meta.get("conf", 0.25),
         iou=iou if iou is not None else meta.get("iou", 0.45),
+        max_dets=max_dets,
+        float_coords=float_coords,
     )
 
     if backend in _CPU_BACKENDS:

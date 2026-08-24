@@ -105,7 +105,8 @@ def log(m):
 class RepoPredictor:
     """Wraps the repo's own build_predictor() so accuracy reflects the deployed path."""
 
-    def __init__(self, repo_root, backend, model_id, conf, threads, inter_threads):
+    def __init__(self, repo_root, backend, model_id, conf, threads, inter_threads,
+                 iou=None, max_dets=None, float_coords=False):
         engine_dir = os.path.join(repo_root, "src", "yolo_producer")
         if engine_dir not in sys.path:
             sys.path.insert(0, engine_dir)
@@ -124,6 +125,21 @@ class RepoPredictor:
             kw["threads"] = threads
         if "inter_threads" in sig.parameters:
             kw["inter_threads"] = inter_threads
+        # Postprocess controls. Absent from the engine before 2026-08-24, so
+        # they are passed only when supported and an explicit request that the
+        # engine cannot honour is a hard error rather than a silent fallback --
+        # a run that quietly ignored --iou is exactly how the v1 sweep went
+        # wrong.
+        for name, val in (("iou", iou), ("max_dets", max_dets),
+                          ("float_coords", float_coords or None)):
+            if val is None:
+                continue
+            if name not in sig.parameters:
+                raise RuntimeError(
+                    f"build_predictor() has no '{name}' parameter, but {name}={val!r} "
+                    "was requested. The engine is older than this bench; update it "
+                    "rather than reporting numbers whose postprocess is unknown.")
+            kw[name] = val
         log(f"  build_predictor({', '.join(f'{k}={v!r}' for k, v in kw.items())})")
         self.pred = build_predictor(**kw)
 
@@ -258,7 +274,45 @@ def main():
     ap.add_argument("--inter-threads", type=int, default=1)
     ap.add_argument("--warmup", type=int, default=5)
     ap.add_argument("--out-dir", default=".")
+
+    # ---- postprocess controls (see PROFILES below) --------------------------
+    ap.add_argument("--profile", choices=["controlled", "deployed", "legacy"],
+                    default="legacy",
+                    help="controlled: IoU 0.70, max_det 300, float coords "
+                         "(literature-comparable). deployed: IoU 0.45, max_det 64, "
+                         "int coords (what the robot runs). legacy: whatever the "
+                         "registry/engine defaults are -- the v1 sweep's uncontrolled "
+                         "behaviour, kept only for regression checks.")
+    ap.add_argument("--iou", type=float, default=None,
+                    help="NMS IoU for host-side NMS. Overrides --profile. Has NO "
+                         "effect on v8/v11 HEFs, whose NMS runs on-device at a baked "
+                         "0.70 -- see the censoring note in the module docstring.")
+    ap.add_argument("--max-det", type=int, default=None,
+                    help="Detections kept per image. Overrides --profile. COCO "
+                         "evaluates at maxDets=100; the deployed cap is 64.")
+    ap.add_argument("--float-coords", action="store_true", default=None,
+                    help="Keep sub-pixel box coordinates. Overrides --profile. The "
+                         "deployed NPU path truncates with int(), biasing boxes "
+                         "inward and depressing mAP75/mAP50-95.")
     args = ap.parse_args()
+
+    # Profile sets the three together; individual flags win over the profile.
+    PROFILES = {
+        "controlled": dict(iou=0.70, max_det=300, float_coords=True),
+        "deployed":   dict(iou=0.45, max_det=64,  float_coords=False),
+        "legacy":     dict(iou=None, max_det=None, float_coords=False),
+    }
+    _p = PROFILES[args.profile]
+    if args.iou is None:
+        args.iou = _p["iou"]
+    if args.max_det is None:
+        args.max_det = _p["max_det"]
+    if args.float_coords is None:
+        args.float_coords = _p["float_coords"]
+    args.coord_mode = "float" if args.float_coords else "int"
+
+    log(f"  profile={args.profile}  iou={args.iou}  max_det={args.max_det}  "
+        f"coords={args.coord_mode}")
 
     import cv2
     from pycocotools.coco import COCO
@@ -281,7 +335,9 @@ def main():
             log("ERROR: pass --repo-root (or --standalone-onnx for a smoke test)")
             return 2
         pred = RepoPredictor(args.repo_root, args.backend, args.model,
-                             args.conf, args.threads, args.inter_threads)
+                             args.conf, args.threads, args.inter_threads,
+                             iou=args.iou, max_dets=args.max_det,
+                             float_coords=args.float_coords)
 
     # Release the backend on EVERY exit path (normal return, error, Ctrl-C).
     import atexit
@@ -355,7 +411,13 @@ def main():
         a = [v for v in a if v == v]
         return float(np.mean(a)) if a else float("nan")
 
-    tag = f"{args.model}_{args.backend}_conf{args.conf}"
+    # Profile and image budget are part of the identity of a run: two runs of
+    # the same model at the same threshold under different profiles are
+    # different measurements and must not collide on disk (nor be treated as
+    # "already done" by the sweep runner's resume check).
+    tag = f"{args.model}_{args.backend}_conf{args.conf}_{args.profile}"
+    if args.limit:
+        tag += f"_n{len(img_ids)}"
     os.makedirs(args.out_dir, exist_ok=True)
     det_json = os.path.join(args.out_dir, f"detections_{tag}.json")
     with open(det_json, "w") as f:
@@ -382,6 +444,12 @@ def main():
 
     row = dict(
         model=args.model, backend=args.backend, conf=args.conf,
+        # Postprocess configuration. RECORD THESE. The v1 sweep did not, and
+        # so could not show that YOLO26/NPU had been run at NMS IoU 0.45
+        # against v8/v11's baked 0.70 -- an uncontrolled comparison that read
+        # as a property of the model.
+        profile=args.profile, iou=args.iou, max_det=args.max_det,
+        coord_mode=args.coord_mode,
         images=len(img_ids), subset=bool(args.limit),
         intra_op=args.threads, inter_op=args.inter_threads,
         mAP50_95=round(mAP, 4), mAP50=round(mAP50, 4), mAP75=round(mAP75, 4),
