@@ -106,7 +106,8 @@ class RepoPredictor:
     """Wraps the repo's own build_predictor() so accuracy reflects the deployed path."""
 
     def __init__(self, repo_root, backend, model_id, conf, threads, inter_threads,
-                 iou=None, max_dets=None, float_coords=False):
+                 iou=None, max_dets=None, float_coords=False,
+                 model_path=None, onnx_layout=None):
         engine_dir = os.path.join(repo_root, "src", "yolo_producer")
         if engine_dir not in sys.path:
             sys.path.insert(0, engine_dir)
@@ -118,6 +119,14 @@ class RepoPredictor:
                 "Check --repo-root, and that you are on branch exp/detector-benchmarks."
             )
         kw = dict(backend=backend, model_id=model_id, conf=conf)
+        # An explicit model_path (+ optional onnx_layout) bypasses the registry
+        # entirely -- for one-off comparisons against an export the registry
+        # doesn't know about, e.g. a CPU ONNX built to match a HEF's raw-tensor
+        # layout instead of the model's usual end-to-end export.
+        if model_path is not None:
+            kw["model_path"] = model_path
+        if onnx_layout is not None:
+            kw["onnx_layout"] = onnx_layout
         # the engine's signature has varied; pass thread args only if accepted
         import inspect
         sig = inspect.signature(build_predictor)
@@ -260,7 +269,20 @@ def stage_ms(t):
 def main():
     ap = argparse.ArgumentParser(description="COCO accuracy + latency (Brief C)")
     ap.add_argument("--backend", choices=["cpu", "npu"], default="cpu")
-    ap.add_argument("--model", required=True, help="registry id, e.g. yolo26n")
+    ap.add_argument("--model", required=True,
+                    help="registry id, e.g. yolo26n. Used for the CSV/filename "
+                         "tag even when --model-path overrides the weights.")
+    ap.add_argument("--model-path", default=None,
+                    help="load these weights instead of the registry entry for "
+                         "--model. For CPU: an .onnx file. Pairs with "
+                         "--onnx-layout when the export isn't the registry's "
+                         "usual layout for this model (e.g. a raw-tensor export "
+                         "built to match a HEF's postprocess, for an "
+                         "architecture-matched CPU-vs-NPU comparison).")
+    ap.add_argument("--onnx-layout", default=None,
+                    choices=["v8_anchors", "yolo26_e2e", "raw_tensor"],
+                    help="force the CPU predictor's output layout instead of "
+                         "auto-detecting/using the registry hint.")
     ap.add_argument("--repo-root", default="",
                     help="checkout root (exp/detector-benchmarks) for the real engine")
     ap.add_argument("--standalone-onnx", default="",
@@ -337,7 +359,8 @@ def main():
         pred = RepoPredictor(args.repo_root, args.backend, args.model,
                              args.conf, args.threads, args.inter_threads,
                              iou=args.iou, max_dets=args.max_det,
-                             float_coords=args.float_coords)
+                             float_coords=args.float_coords,
+                             model_path=args.model_path, onnx_layout=args.onnx_layout)
 
     # Release the backend on EVERY exit path (normal return, error, Ctrl-C).
     import atexit
@@ -418,6 +441,8 @@ def main():
     tag = f"{args.model}_{args.backend}_conf{args.conf}_{args.profile}"
     if args.limit:
         tag += f"_n{len(img_ids)}"
+    if args.onnx_layout:
+        tag += f"_{args.onnx_layout}"
     os.makedirs(args.out_dir, exist_ok=True)
     det_json = os.path.join(args.out_dir, f"detections_{tag}.json")
     with open(det_json, "w") as f:
@@ -450,6 +475,7 @@ def main():
         # as a property of the model.
         profile=args.profile, iou=args.iou, max_det=args.max_det,
         coord_mode=args.coord_mode,
+        onnx_layout=args.onnx_layout or "",
         images=len(img_ids), subset=bool(args.limit),
         intra_op=args.threads, inter_op=args.inter_threads,
         mAP50_95=round(mAP, 4), mAP50=round(mAP50, 4), mAP75=round(mAP75, 4),

@@ -347,6 +347,11 @@ class ONNXYoloPredictor(BaseYoloPredictor):
         outputs = self.sess.run(self.output_names, {self.input_name: blob})
         t["inf_done"] = _now_ns()
 
+        if self.layout_hint == "raw_tensor":
+            dets = self._postprocess_raw_tensor(outputs, scale, pad_left, pad_top, src_w, src_h)
+            t["nms_done"] = _now_ns()
+            return dets
+
         arr = np.asarray(outputs[0])
         if self._decide_layout(arr) == "e2e":
             dets = self._postprocess_e2e(arr, scale, pad_left, pad_top, src_w, src_h)
@@ -413,6 +418,59 @@ class ONNXYoloPredictor(BaseYoloPredictor):
                              int(c), float(cls_conf[k])))
         dets.sort(key=lambda d: -d[5])
         return dets if self.max_dets is None else dets[:self.max_dets]
+
+    def _postprocess_raw_tensor(self, outputs, scale, pad_left, pad_top,
+                                src_w, src_h) -> List[Detection]:
+        """6-tensor raw-conv head (bbox + cls per scale), CPU-side.
+
+        Routes through yolo_producer.postprocess -- the SAME function the NPU
+        raw-tensor path calls -- so a model exported this way (see
+        benchmarks/yolo26_cpu_fastmode_ab.py:export_one2many, which produces
+        exactly this 6-tensor layout to match the deployed HEF) gets a CPU
+        comparison with an identical postprocess, not just an identical
+        conf/iou/max_dets. Without this, "CPU FP32 vs NPU INT8" for a model
+        whose HEF uses this head (YOLO26) would silently also be comparing an
+        NMS-free end-to-end graph against a conventional dense one -- two
+        variables, not one.
+        """
+        from yolo_producer import postprocess as _pp_raw
+
+        if not hasattr(self, "_grids"):
+            self._grids = {}
+            for H, W, s in [(80, 80, 8), (40, 40, 16), (20, 20, 32)]:
+                gy, gx = np.meshgrid(np.arange(H), np.arange(W), indexing="ij")
+                self._grids[(H, W)] = ((gx.flatten() + 0.5) * s,
+                                       (gy.flatten() + 0.5) * s)
+
+        # ONNX gives NCHW; postprocess() expects NHWC (matching the HEF's native
+        # layout), keyed by output name so it can sort bbox (C<=4 or C==64) from
+        # cls (C==80) tensors itself.
+        out_dict = {}
+        for name, arr in zip(self.output_names, outputs):
+            a = np.asarray(arr)
+            if a.ndim == 4:
+                a = np.transpose(a[0], (1, 2, 0))   # CHW -> HWC
+            out_dict[name] = a
+
+        pp_kw = {"float_coords": self.float_coords}
+        if self.max_dets is not None:
+            pp_kw["max_dets"] = self.max_dets
+        dd = _pp_raw(out_dict, src_h, src_w, input_size=self.input_size,
+                     conf_thresh=self.conf, iou_thresh=self.iou,
+                     grids=self._grids, **pp_kw)
+        for d in dd:
+            if self.float_coords:
+                d["x1"] = max(0.0, min((d["x1"] - pad_left) / scale, float(src_w - 1)))
+                d["y1"] = max(0.0, min((d["y1"] - pad_top) / scale, float(src_h - 1)))
+                d["x2"] = max(0.0, min((d["x2"] - pad_left) / scale, float(src_w - 1)))
+                d["y2"] = max(0.0, min((d["y2"] - pad_top) / scale, float(src_h - 1)))
+            else:
+                d["x1"] = max(0, min(int((d["x1"] - pad_left) / scale), src_w - 1))
+                d["y1"] = max(0, min(int((d["y1"] - pad_top) / scale), src_h - 1))
+                d["x2"] = max(0, min(int((d["x2"] - pad_left) / scale), src_w - 1))
+                d["y2"] = max(0, min(int((d["y2"] - pad_top) / scale), src_h - 1))
+        return [(float(d["x1"]), float(d["y1"]), float(d["x2"]), float(d["y2"]),
+                 int(d["class_id"]), float(d["confidence"])) for d in dd]
 
     def _postprocess_e2e(self, raw, scale, pad_left, pad_top,
                          src_w, src_h) -> List[Detection]:
@@ -612,6 +670,7 @@ def build_predictor(backend: str,
                     num_classes: Optional[int] = None,
                     max_dets: Optional[int] = None,
                     float_coords: bool = False,
+                    onnx_layout: Optional[str] = None,
                     **extra) -> BaseYoloPredictor:
     """Construct a predictor for `backend` ('cpu'|'npu').
 
@@ -644,7 +703,7 @@ def build_predictor(backend: str,
             path,
             intra_threads=threads if threads is not None else 2,
             inter_threads=inter_threads if inter_threads is not None else 1,
-            onnx_layout=meta.get("onnx_layout"),
+            onnx_layout=onnx_layout if onnx_layout is not None else meta.get("onnx_layout"),
             **common)
 
     if backend in _NPU_BACKENDS:
