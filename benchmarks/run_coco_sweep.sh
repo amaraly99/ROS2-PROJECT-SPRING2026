@@ -63,14 +63,36 @@ ANN="$HOME/datasets/coco/annotations/instances_val2017.json"
 LOG="$OUT/sweep.log"
 mkdir -p "$OUT"
 
+# Has this exact config already produced a CSV?
+#
+# The bench names files coco_accuracy_<model>_<backend>_conf<C>_<profile>[_n<N>]
+# _<host>_<stamp>.csv, where <C> is Python's float repr ("0.20" -> "0.2"). An
+# earlier version of this check globbed conf* and ended the tag with _*, so
+# conf0.001 satisfied the conf0.20 check and an _n1000 subset run satisfied a
+# full-val2017 check. It skipped 13 of 40 configs and still printed "finished".
+# Match the threshold exactly, and test the _n<N> segment explicitly.
+already_done() {  # backend model conf_tag limit
+    local backend=$1 model=$2 conf_tag=$3 limit=$4
+    local base="coco_accuracy_${model}_${backend}_conf${conf_tag}_${PROFILE}"
+    local f bn rest
+    for f in "$OUT/${base}"_*.csv; do
+        [ -e "$f" ] || continue
+        bn=$(basename "$f"); rest=${bn#"${base}_"}
+        if [ "$limit" -gt 0 ]; then
+            [[ "$rest" == n${limit}_* ]] && return 0
+        else
+            [[ "$rest" == n[0-9]* ]] || return 0
+        fi
+    done
+    return 1
+}
+
 run() {  # backend model conf limit
     local backend=$1 model=$2 conf=$3 limit=$4
-    # Mirror the tag the bench builds: model_backend_conf<conf>_<profile>[_n<N>].
-    # conf is globbed because argparse stores a float (0.20 -> "0.2").
-    local tag="${model}_${backend}_conf*_${PROFILE}"
-    [ "$limit" -gt 0 ] && tag="${tag}_n${limit}"
-    if compgen -G "$OUT/coco_accuracy_${tag}_*.csv" >/dev/null 2>&1; then
-        echo "[skip] ${model}/${backend}/conf${conf}/${PROFILE}/${limit:-full} (already done)" | tee -a "$LOG"
+    # Normalise exactly as argparse does, so the check matches the filename.
+    local conf_tag; conf_tag=$(python3 -c "print(float('$conf'))")
+    if already_done "$backend" "$model" "$conf_tag" "$limit"; then
+        echo "[skip] ${model}/${backend}/conf${conf_tag}/${PROFILE}/${limit:-full} (already done)" | tee -a "$LOG"
         return 0
     fi
     echo "" | tee -a "$LOG"
