@@ -20,11 +20,18 @@ axis** — see [What stereo does not change](#what-stereo-does-not-change).
 
 | Topic | Type | Notes |
 |---|---|---|
-| `/sim/camera/left/image_raw` | `sensor_msgs/msg/Image` | The **existing** mono camera, renamed. All prior mono results remain the left-eye baseline. |
-| `/sim/camera/right/image_raw` | `sensor_msgs/msg/Image` | New. |
+| `/sim/camera/image_raw` | `sensor_msgs/msg/Image` | The **existing** mono camera. **NOT renamed.** This is the left eye. |
+| `/sim/camera/right/image_raw` | `sensor_msgs/msg/Image` | New — the only addition. |
 
-Renaming rather than adding a third topic keeps mono and stereo runs comparable: the left eye
-is bit-identical to what every published mono result already used.
+> **Corrected 2026-08-25.** This document previously specified renaming the left topic to
+> `/sim/camera/left/image_raw` for symmetry. That was wrong and would have broken the running
+> system. `/sim/camera/image_raw` is hardcoded in `visp_servo_node.cpp:398` and appears in
+> `run_stack_hil.sh` (3x), `scripts/record_bag.sh:82`, `config/hil/bag_qos_overrides.yaml:26`
+> and `hil_simulation.launch.py:71` — and **every existing rosbag replays against it**, so a
+> rename would have silently invalidated the recorded-bag workflow too.
+>
+> Adding only the right eye is also the better experiment: the left eye stays *bit-identical* to
+> what produced every published mono result, so mono-vs-stereo differs in exactly one variable.
 
 ## 2. Encoding and geometry
 
@@ -108,15 +115,30 @@ orientation, no rotation.
 
 Already written: `camera_calib/hil_sim_ov2slam_stereo.yaml`.
 
-Both eyes are the same ideal pinhole, confirmed from the Simulink 3D Camera block's Parameters
-tab:
+Both eyes are the same ideal pinhole, verified against the running Simulink model:
 
 ```
-Focal length  : [554, 554] px      (HFOV 60deg -> fx = 320 / tan(30deg) ~= 554)
+Focal length  : [1200, 1200] px    (HFOV 29.9deg = 2*atan(320/1200))
 Optical center: [320, 240]
 Image size    : [480, 640]
 Distortion    : radial [0,0], tangential [0,0]
 ```
+
+> **Focal length corrected 2026-08-25 — this said 554, and 554 was wrong by 2.17x.**
+> 554 was never measured; it was derived from an *assumption* that the block was 60deg HFOV
+> (320/tan(30deg)). The block was never opened to check. It renders at fx = 1200 — a narrow
+> ~30deg lens. Verified two independent ways: a warp test (correlation 0.94 warped vs 0.41 raw)
+> and stereo triangulation against simulator ground-truth depth (fx = 1236, within 3% of 1200).
+> Use **1200**, the block's actual setting — not 1236, which is a noisy measurement of it.
+>
+> **Do not "fix" the Simulink block to match the old value.** The block produced every published
+> result and is the ground truth here; the config files were the description, and the description
+> was wrong. Correct the descriptions.
+>
+> Detector results are unaffected — a detector consumes pixels and never sees focal length — as
+> is the EuRoC SLAM benchmark, which uses a real dataset with its own calibration. What is
+> affected: HIL SLAM runs, where wrong intrinsics distort reconstructed trajectory shape and
+> inflate ATE in a way Umeyama alignment cannot remove, and any stated metric stand-off.
 
 `bdo_stereo_rect: 0` — two ideal pinholes with pure lateral offset and no relative rotation are
 **already rectified** (R = I, D = 0). Rectifying again would only add interpolation error.
@@ -130,12 +152,22 @@ Distortion    : radial [0,0], tangential [0,0]
 ## Pi-side pipeline (for reference)
 
 ```
-MATLAB  /sim/camera/left/image_raw  -> sim_camera_bridge(left)  -> /ovcam_frames_left  -> ovcam_bridge(left)  -> /ovcam/left/image_raw  --+
-                                                                                                                                          +-> OV2SLAM (stereo)
-MATLAB  /sim/camera/right/image_raw -> sim_camera_bridge(right) -> /ovcam_frames_right -> ovcam_bridge(right) -> /ovcam/right/image_raw --+
+MATLAB  /sim/camera/image_raw        -> sim_camera_bridge(left)  -> /ovcam_frames       -> ovcam_bridge(left)  -> /ovcam/image_raw        --+
+   (unchanged — all defaults)                                                                                                              +-> OV2SLAM (stereo)
+MATLAB  /sim/camera/right/image_raw  -> sim_camera_bridge(right) -> /ovcam_frames_right -> ovcam_bridge(right) -> /ovcam/right/image_raw  --+
+   (the only new chain)
 
-                                        /ovcam_frames_left is ALSO consumed by yolo_producer (detector stays mono)
+                                        /ovcam_frames is ALSO consumed by yolo_producer (detector stays mono, left eye)
 ```
+
+**The entire left chain keeps its current defaults — no parameters set, nothing renamed.** Only
+the right chain is new and parameterised. Besides being the smaller diff, this keeps
+`benchmarks/e2e_latency_probe.py` working untouched in stereo mode: it subscribes to
+`/ovcam/image_raw` (`e2e_latency_probe.py:130`) and matches detector output against that topic's
+`header.stamp`. A rename would have made it match nothing and silently report
+`t_cam_stamp_ns = 0` rather than fail. Because it keeps working, the mono-vs-stereo detector
+latency delta comes straight out of the stereo SLAM run with the same tool and no
+reconfiguration — see [What stereo does not change](#what-stereo-does-not-change).
 
 Stereo runs **two instances of each existing node** — no new node type is needed. Parameter
 status, verified against the source:
@@ -148,10 +180,15 @@ status, verified against the source:
 Until `output_topic` lands, two `ovcam_bridge` instances would both publish to the same topic.
 The MATLAB side can be built and verified independently in the meantime.
 
-| Instance | shm_name | sem_name |
-|---|---|---|
-| left | `/ovcam_frames_left` | `/ovcam_left_ready` |
-| right | `/ovcam_frames_right` | `/ovcam_right_ready` |
+The two `sim_camera_bridge` instances **must** get distinct `shm_name` *and* `sem_name`, or they
+write into the same shared-memory ring and the two eyes overwrite each other's slots:
+
+| Instance | input_topic | shm_name | sem_name | ovcam_bridge output_topic |
+|---|---|---|---|---|
+| left | `/sim/camera/image_raw` *(default)* | `/ovcam_frames` *(default)* | `/ovcam_ready` *(default)* | `/ovcam/image_raw` *(default)* |
+| right | `/sim/camera/right/image_raw` | `/ovcam_frames_right` | `/ovcam_ready_right` | `/ovcam/right/image_raw` |
+
+Left is entirely defaults; every value that has to be set is on the right instance.
 
 ## What stereo does not change
 
@@ -173,7 +210,7 @@ telemetry rather than by re-running the sweep.
 
 Before trusting any stereo result:
 
-1. `ros2 topic hz /ovcam/left/image_raw` and `/ovcam/right/image_raw` — both at the expected rate.
+1. `ros2 topic hz /ovcam/image_raw` and `/ovcam/right/image_raw` — both at the expected rate.
 2. Left and right `header.stamp` **match per pair** (not merely close).
 3. OV2SLAM reaches stereo initialisation and publishes `/vo_pose`.
 4. **Re-run one mono config and confirm it is unchanged** — proof the `_pad` change and the

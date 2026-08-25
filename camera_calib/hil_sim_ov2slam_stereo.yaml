@@ -4,16 +4,26 @@
 #--------------------------------------------------------------------------------------------
 # Camera Parameters  (Simulink 3D Camera — synthetic, ideal pinhole, 640x480)
 #
-# CONFIRMED Simulink block settings (Parameters tab):
-#   Focal length : [554, 554] px   (corrected from Simulink-default 1109 that was for 1280x720)
+# Simulink block settings, VERIFIED against the running model 2026-08-25:
+#   Focal length : [1200, 1200] px
 #   Optical center: [320, 240]     (corrected from 640,360 — was 1280x720 centre)
 #   Image size   : [480, 640]      rows x cols = 480x640
 #   Radial dist  : [0, 0]
 #   Tangential   : [0, 0]
-#   HFOV         : 60°   (fx = 320 / tan(30°) ≈ 554)
+#   HFOV         : 29.9°   (2*atan(320/1200))
+#
+# FOCAL LENGTH CORRECTION, 2026-08-25 — previously 554, which was never measured
+# but derived from an assumption that the block was 60° HFOV. It is not; it
+# renders at fx = 1200 (~30°), so 554 was wrong by 2.17x. Verified by a warp
+# test (correlation 0.94 warped vs 0.41 raw) and by stereo triangulation against
+# simulator ground-truth depth (fx = 1236, within 3% of 1200). Use 1200, the
+# block's actual setting, not 1236, a noisy measurement of it. Do NOT change the
+# Simulink block to match the old value — it produced every published result.
+# See camera_calib/hil_sim_ov2slam.yaml for the full blast radius.
 #
 # STEREO variant of hil_sim_ov2slam.yaml. Requires the MATLAB model running with
-# STEREO_ON = 1 and both /sim/camera/{left,right}/image_raw publishing with a
+# STEREO_ON = 1, publishing /sim/camera/image_raw (left — the ORIGINAL topic,
+# deliberately NOT renamed) and /sim/camera/right/image_raw (new), with a
 # SHARED header.stamp per pair.
 #
 # bdo_stereo_rect stays 0: two ideal pinholes with pure lateral offset and no
@@ -23,8 +33,8 @@
 # DO NOT USE for the real OV5647 path — see ov5647_ov2slam.yaml.
 #
 # Diff from ov5647_ov2slam.yaml:
-#   fxl  543.097664 → 554.0
-#   fyl  539.701638 → 554.0
+#   fxl  543.097664 → 1200.0
+#   fyl  539.701638 → 1200.0
 #   cxl  310.686570 → 320.0
 #   cyl  222.928406 → 240.0
 #   k1l … p2l      → 0.0 (synthetic camera, no lens distortion)
@@ -32,7 +42,14 @@
 #   debug           0   → 1   (verbose for bring-up; set to 0 once stable)
 #--------------------------------------------------------------------------------------------
 
-Camera.topic_left:  /ovcam/left/image_raw
+# The LEFT eye keeps the existing mono topic, deliberately. /ovcam/image_raw is
+# consumed by benchmarks/e2e_latency_probe.py, which matches detector output
+# against camera header.stamp; renaming it would make the probe silently match
+# nothing (t_cam_stamp_ns = 0) rather than fail. Keeping it also means the
+# mono-vs-stereo detector-latency delta can be measured with the SAME tool and
+# no reconfiguration, which is how that number is obtained for free from the
+# stereo SLAM run. Only the right eye is new.
+Camera.topic_left:  /ovcam/image_raw
 Camera.topic_right: /ovcam/right/image_raw
 
 Camera.model_left:  pinhole
@@ -44,9 +61,9 @@ Camera.left_nheight: 480
 Camera.right_nwidth:  640
 Camera.right_nheight: 480
 
-# Intrinsics — Simulink 3D Camera, 60° HFOV, 640x480
-Camera.fxl: 554.0
-Camera.fyl: 554.0
+# Intrinsics — Simulink 3D Camera, 29.9° HFOV, 640x480 (see header: 554 was wrong)
+Camera.fxl: 1200.0
+Camera.fyl: 1200.0
 Camera.cxl: 320.0
 Camera.cyl: 240.0
 
@@ -60,8 +77,8 @@ Camera.p2l: 0.0
 # so both eyes are the same ideal pinhole; only the position differs.
 # (The mono file carried EuRoC values here. They were inert in mono mode but
 #  are actively wrong in stereo — do not copy them back.)
-Camera.fxr: 554.0
-Camera.fyr: 554.0
+Camera.fxr: 1200.0
+Camera.fyr: 1200.0
 Camera.cxr: 320.0
 Camera.cyr: 240.0
 
