@@ -1,0 +1,11 @@
+% The thesis result: component benchmark and deployed configuration rank the
+% same models in OPPOSITE orders, on the same hardware.
+%   Component = CPU FP32, conf=0.001 (standard mAP), 1000-image subset
+%   Deployed  = NPU INT8, conf=0.20, full val2017, controlled postprocess
+% Source: benchmarks/paper_data/accuracy/coco_v2_all_runs.csv
+\textbf{Model} & \multicolumn{2}{c|}{\textbf{Component (CPU FP32)}} & \multicolumn{2}{c}{\textbf{Deployed (NPU INT8)}} \\
+         & mAP50-95 & rank & mAP50-95 & rank \\
+\hline
+YOLO26n  & \textbf{0.4247} & \textbf{1} & 0.3124 & 3 \\
+YOLOv11n & 0.4111 & 2 & \textbf{0.3364} & \textbf{1} \\
+YOLOv8n  & 0.3889 & 3 & 0.3216 & 2 \\

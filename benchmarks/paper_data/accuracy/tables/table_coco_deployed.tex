@@ -1,0 +1,19 @@
+% Detector accuracy at the deployed operating point.
+% NPU INT8, conf=0.20, full COCO val2017 (5000 images), controlled postprocess
+% (NMS IoU 0.70, max_det 300, float box coords) applied identically to all nine.
+% Source: benchmarks/paper_data/accuracy/coco_v2_all_runs.csv
+% NOTE: YOLOv8/v11 NPU values are CENSORED LOWER BOUNDS -- their HEFs bake a
+% 0.200 on-device score floor, so standard mAP is structurally unobtainable.
+\textbf{Model} & \textbf{mAP50-95} & \textbf{mAP50} & \textbf{Stop sign AP} & \textbf{Infer.\ (ms)} \\
+\hline
+YOLO26n  & 0.3124 & 0.4269 & 0.5251 & 27.16 \\
+YOLOv8n  & 0.3216 & 0.4421 & \textbf{0.5779} & \textbf{15.34} \\
+YOLOv11n & \textbf{0.3364} & \textbf{0.4623} & 0.5403 & 16.09 \\
+\hline
+YOLO26s  & 0.3838 & 0.5166 & 0.5188 & 30.30 \\
+YOLOv8s  & 0.4015 & 0.5448 & \textbf{0.6411} & \textbf{18.62} \\
+YOLOv11s & \textbf{0.4111} & \textbf{0.5552} & 0.6183 & 19.53 \\
+\hline
+YOLO26m  & 0.4258 & 0.5595 & 0.6190 & 38.63 \\
+YOLOv8m  & 0.4524 & 0.6009 & 0.6536 & \textbf{25.00} \\
+YOLOv11m & \textbf{0.4570} & \textbf{0.6031} & \textbf{0.6579} & 26.89 \\

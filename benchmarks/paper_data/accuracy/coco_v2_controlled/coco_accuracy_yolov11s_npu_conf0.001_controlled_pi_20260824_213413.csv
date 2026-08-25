@@ -1,0 +1,2 @@
+model,backend,conf,profile,iou,max_det,coord_mode,images,subset,intra_op,inter_op,mAP50_95,mAP50,mAP75,stopsign_AP50_95,stopsign_AP50,preprocess_ms,inference_ms,postprocess_ms,total_ms,fps,n_detections,engine
+yolov11s,npu,0.001,controlled,0.7,300,float,5000,False,2,1,0.4111,0.549,0.4468,0.6183,0.6624,0.63,19.514,0.174,20.333,39.21,36131,repo

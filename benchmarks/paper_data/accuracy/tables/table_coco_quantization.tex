@@ -1,0 +1,18 @@
+% INT8 quantization penalty, architecture- and budget-matched.
+% conf=0.20, 1000-image subset both backends, controlled postprocess.
+% YOLO26 CPU uses the one2many raw-tensor export (benchmarks/export_yolo26_raw_tensor.py)
+% so it runs the SAME head as its HEF -- precision is the only variable.
+% Source: benchmarks/paper_data/accuracy/coco_v2_all_runs.csv
+\textbf{Model} & \textbf{CPU FP32} & \textbf{NPU INT8} & \textbf{$\Delta$ (\%)} \\
+\hline
+YOLO26n  & 0.3762 & 0.3378 & $-10.2$ \\
+YOLO26s  & 0.4528 & 0.4028 & $-11.0$ \\
+YOLO26m  & 0.5061 & 0.4539 & $-10.3$ \\
+\hline
+YOLOv8n  & 0.3417 & 0.3402 & $-0.4$ \\
+YOLOv8s  & 0.4354 & 0.4300 & $-1.2$ \\
+YOLOv8m  & 0.4917 & 0.4893 & $-0.5$ \\
+\hline
+YOLOv11n & 0.3647 & 0.3584 & $-1.7$ \\
+YOLOv11s & 0.4501 & 0.4477 & $-0.5$ \\
+YOLOv11m & 0.4906 & 0.4842 & $-1.3$ \\
