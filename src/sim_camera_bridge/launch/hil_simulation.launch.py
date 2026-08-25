@@ -27,6 +27,7 @@ from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch.substitutions import EnvironmentVariable
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
@@ -38,6 +39,12 @@ def generate_launch_description():
     calib_yaml    = LaunchConfiguration('calib_yaml')
     slam_cores    = LaunchConfiguration('slam_cores')
     node_cores    = LaunchConfiguration('node_cores')
+    stereo        = LaunchConfiguration('stereo')
+
+    # When stereo is on, BOTH eyes must republish from the source timestamp so a
+    # left/right pair carries one identical stamp. Passed as a typed bool because
+    # a LaunchConfiguration is a string and the node declares a bool parameter.
+    use_src_stamp = ParameterValue(stereo, value_type=bool)
     class_name_map = LaunchConfiguration('class_name_map')
     cam_stamp_log  = LaunchConfiguration('cam_stamp_log')
     visp_telemetry_csv = LaunchConfiguration('visp_telemetry_csv')
@@ -81,13 +88,23 @@ def generate_launch_description():
             'debug_image', default_value='false',
             description='Publish /visp/debug_image back to MATLAB (expensive — 921 KB/frame)'),
         DeclareLaunchArgument(
+            'stereo', default_value='false',
+            description='Set true to run the RIGHT-eye chain alongside the left, for stereo '
+                        'SLAM. Requires MATLAB running with STEREO_ON=1 so that '
+                        '/sim/camera/right/image_raw is published, paired with the left eye on '
+                        'one simulation timestamp. Default false = mono, byte-identical to '
+                        'every published mono result. NOTE: stereo doubles the inbound stream '
+                        'to ~295 Mbit/s and requires wired Ethernet.'),
+        DeclareLaunchArgument(
             'calib_yaml',
             default_value=PathJoinSubstitution(
                 [EnvironmentVariable('WORKSPACE_DIR', default_value='/workspace'),
                  'camera_calib', 'hil_sim_ov2slam.yaml']),
             description='OV2SLAM calibration YAML path — override to swap configs without editing this file'),
 
-        # 1. SHM filler — replaces ovcam_producer in HIL
+        # 1. SHM filler — replaces ovcam_producer in HIL.
+        #    LEFT eye. Every value here is the node's own default; they are
+        #    spelled out only for contrast with the right-eye block below.
         Node(
             package='sim_camera_bridge',
             executable='sim_camera_bridge_node',
@@ -102,6 +119,7 @@ def generate_launch_description():
                 'shm_name': '/ovcam_frames',
                 'sem_name': '/ovcam_ready',
                 'stamp_log': cam_stamp_log,
+                'use_source_stamp': use_src_stamp,
             }],
         ),
 
@@ -114,6 +132,55 @@ def generate_launch_description():
             output='screen',
             prefix=['taskset -c ', node_cores],
             condition=IfCondition(ovcam),
+            parameters=[{'use_source_stamp': use_src_stamp}],
+        ),
+
+        # ── RIGHT EYE (stereo only) ──────────────────────────────────────────
+        # A second instance of each node above. No new node type is needed.
+        #
+        # The left chain deliberately keeps every default — including the topic
+        # name /ovcam/image_raw, which benchmarks/e2e_latency_probe.py matches
+        # detector output against. Renaming it would make that probe silently
+        # match nothing rather than fail, and keeping it means the mono-vs-stereo
+        # detector-latency delta comes free from a stereo run with no extra
+        # instrumentation.
+        #
+        # shm_name AND sem_name must both differ from the left, or the two
+        # bridges write into the same ring and the eyes overwrite each other.
+        #
+        # The detector is NOT duplicated: yolo_producer reads /ovcam_frames, the
+        # left ring, so detection stays monocular by construction.
+        Node(
+            package='sim_camera_bridge',
+            executable='sim_camera_bridge_node',
+            name='sim_camera_bridge_right',
+            output='screen',
+            prefix=['taskset -c ', node_cores],
+            condition=IfCondition(stereo),
+            parameters=[{
+                'input_topic': '/sim/camera/right/image_raw',
+                'width':  640,
+                'height': 480,
+                'slots':  4,
+                'shm_name': '/ovcam_frames_right',
+                'sem_name': '/ovcam_ready_right',
+                'use_source_stamp': True,
+            }],
+        ),
+        Node(
+            package='ovcam_bridge',
+            executable='ovcam_bridge_node',
+            name='ovcam_bridge_right',
+            output='screen',
+            prefix=['taskset -c ', node_cores],
+            condition=IfCondition(stereo),
+            parameters=[{
+                'shm_name': '/ovcam_frames_right',
+                'sem_name': '/ovcam_ready_right',
+                'output_topic': '/ovcam/right/image_raw',
+                'frame_id': 'camera_right',
+                'use_source_stamp': True,
+            }],
         ),
 
         # 3. yolo_bridge — unchanged from main; reads /yolo_shm, publishes /yolo/detections
