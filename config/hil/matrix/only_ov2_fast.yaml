@@ -1,0 +1,40 @@
+# Single-arm scrutiny config: OV2SLAM-fast only.
+#
+# Copied from without_ov2fast.yaml with the arms list reduced to one backend,
+# so each model can be run, inspected and debugged in isolation before its
+# numbers go in the paper. Everything else is identical to the full matrix, so
+# a per-model run and a full run measure the same thing.
+#
+# NOTE: OV2SLAM-fast initialises ~10.7 m into the flight, well past the 3 m
+# init leg, so it is EXPECTED to abort every trial ("did not initialise during
+# the init cycle, tracking_state=1") and record 0/N. That abort is the finding,
+# not a harness failure -- the runner records it and stops that trial cleanly.
+#
+#   py scripts\hil_matrix\run_matrix.py --config only_ov2_fast --trials 1   # see it abort
+#   py scripts\hil_matrix\run_matrix.py --config only_ov2_fast             # 10 abort records
+
+# --- what to fly ----------------------------------------------------------
+arms:
+  - {name: ov2_fast, config: ov2slam_oracle_fast, scene: parking_lot_far}
+
+trials: 10          # trials PER ARM
+vx: 2.0            # mission cruise speed, m/s
+run_tag: ''        # bag name prefix; the arm name is appended automatically
+
+# --- evaluation -----------------------------------------------------------
+end_pad: 3
+
+# --- gates ----------------------------------------------------------------
+min_free_mb: 8000      # below this Simulink stops holding real time
+min_poses: 20          # non-zero /slam/pose in the bag; fewer means no map
+pacing_lo: 0.85        # sim-time advance per wall second
+pacing_hi: 1.15
+respawn_tol_m: 2.0     # drone must be back at spawn before a trial starts
+
+# --- hosts and paths ------------------------------------------------------
+pi: amaraly@192.168.137.10
+pi_repo: ~/ROS2-PROJECT-SPRING2026
+matlab_dir: c:\Users\homie\Desktop\ROS2-PROJECT-SPRING2026\matlab
+calib: camera_calib/hil_sim_ov2slam_accurate.yaml
+desktop: true
+probe_timeout: 400

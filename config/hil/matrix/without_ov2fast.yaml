@@ -1,0 +1,54 @@
+# Default SLAM benchmark matrix.
+#
+#   py scripts\hil_matrix\run_matrix.py --config default --dry-run
+#   py scripts\hil_matrix\run_matrix.py --config default
+#
+# Every key here can be overridden on the command line for a one-off, but the
+# file is the reproducible record: the resolved configuration is printed at the
+# top of every run and saved to <outdir>/manifest.json with the results. To
+# change what a published number means, change it HERE and commit it, so the
+# change is reviewable. An unknown key is a hard error, not a warning.
+
+# --- what to fly ----------------------------------------------------------
+# Round robin across arms: A1,B1,C1,D1, A2,B2,... so session drift spreads
+# evenly instead of landing on whichever backend runs last.
+#
+# `config` must name a config/hil/stack/<config>.yaml with init_gate.enabled
+# false and startup_delay_sec 2. Preflight asserts both and refuses to start
+# otherwise; see README.md for why each of those ruined a previous matrix.
+arms:
+  - {name: orbslam2,     config: orbslam2_probe,          scene: parking_lot_far}
+  - {name: ov2_accurate, config: ov2slam_oracle_accurate, scene: parking_lot_far}
+  - {name: orbslam3,     config: orbslam3_probe,          scene: parking_lot_far}
+
+trials: 10          # trials PER ARM
+vx: 2.0            # mission cruise speed, m/s
+run_tag: ''        # bag name prefix; the arm name is appended automatically
+
+# --- evaluation -----------------------------------------------------------
+# Passed straight through to aggregate_matrix.py. Changing it changes every
+# reported number, so it belongs in the config file and not in muscle memory.
+end_pad: 3
+
+# --- gates ----------------------------------------------------------------
+# A trial that violates any of these is a FAILED trial, not a valid one with a
+# bad score. Loosening one silently changes what the benchmark measures.
+min_free_mb: 8000      # below this Simulink stops holding real time
+min_poses: 20          # non-zero /slam/pose in the bag; fewer means no map
+pacing_lo: 0.85        # sim-time advance per wall second
+pacing_hi: 1.15
+respawn_tol_m: 2.0     # drone must be back at spawn before a trial starts
+
+# --- hosts and paths ------------------------------------------------------
+pi: amaraly@192.168.137.10
+pi_repo: ~/ROS2-PROJECT-SPRING2026
+matlab_dir: c:\Users\homie\Desktop\ROS2-PROJECT-SPRING2026\matlab
+calib: camera_calib/hil_sim_ov2slam_accurate.yaml
+
+# Launch MATLAB with its desktop. Every result recorded so far was produced
+# this way; headless is available but the two must not be mixed in one matrix.
+desktop: true
+
+# Hard ceiling on a single probe phase. The probe is displacement-gated, so
+# hitting this means the flight stalled, not that it was slow.
+probe_timeout: 400

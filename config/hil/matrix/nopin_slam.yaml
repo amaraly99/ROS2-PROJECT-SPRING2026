@@ -1,0 +1,52 @@
+# SLAM-ONLY unpinning experiment.
+#
+# Same 4 arms as the SLAM-HIL results section, each pointed at a "_nopin"
+# stack config (config/hil/stack/<name>_nopin.yaml on the Pi) that is a
+# byte-for-byte clone of the arm's real baseline config with ONE line changed:
+# slam.cpu "2,3" -> "". controller.cpu / detector.cpu are UNCHANGED from the
+# baseline (still pinned) -- deliberately not "unpin everything":
+#   - FIX-008 (docs/fixlog/008-cpu-pinning-regression.md) documents a real,
+#     measured regression from detector/controller core contention (12-17 Hz
+#     jittery detection vs a stable ~20 Hz) when they weren't kept apart.
+#   - Every "_probe"/"_accurate"/"_diag" parent config carries an unexplained
+#     "# NEVER PUT \"\"" warning on detector.cpu and controller.cpu that could
+#     not be verified this session (no fixlog/TODO/git-history hit). Left as-is
+#     until that warning is actually investigated.
+# This isolates ONE variable: does SLAM's own tail latency/CPU change when it
+# can roam across all 4 cores instead of being confined to 2,3 -- without also
+# reopening the FIX-008 failure mode.
+#
+#   py scripts\hil_matrix\run_matrix.py --config nopin_slam --dry-run
+#   py scripts\hil_matrix\run_matrix.py --config nopin_slam --trials 1   # debug one flight per arm
+#   py scripts\hil_matrix\run_matrix.py --config nopin_slam             # the full 10/arm
+
+# --- what to fly ----------------------------------------------------------
+arms:
+  - {name: orbslam2_nopin,       config: orbslam2_probe_nopin,          scene: parking_lot_far}
+  - {name: orbslam3_nopin,       config: orbslam3_probe_nopin,          scene: parking_lot_far}
+  - {name: ov2_accurate_nopin,   config: ov2slam_oracle_accurate_nopin, scene: parking_lot_far}
+  - {name: ov2_fast_clahe_nopin, config: ov2slam_fast_clahe_diag_nopin, scene: parking_lot_far}
+
+trials: 10          # trials PER ARM -- matches the pinned baseline for a fair comparison
+vx: 2.0            # mission cruise speed, m/s -- unchanged from baseline
+run_tag: 'nopin'   # bag name prefix; the arm name is appended automatically
+
+# --- evaluation -----------------------------------------------------------
+end_pad: 3
+
+# --- gates ----------------------------------------------------------------
+# Identical to the pinned baseline matrices -- a nopin run must clear the same
+# bar to count as a valid trial, or the comparison isn't apples-to-apples.
+min_free_mb: 8000
+min_poses: 20
+pacing_lo: 0.85
+pacing_hi: 1.15
+respawn_tol_m: 2.0
+
+# --- hosts and paths ------------------------------------------------------
+pi: amaraly@192.168.137.10
+pi_repo: ~/ROS2-PROJECT-SPRING2026
+matlab_dir: c:\Users\homie\Desktop\ROS2-PROJECT-SPRING2026\matlab
+calib: camera_calib/hil_sim_ov2slam_accurate.yaml
+desktop: true
+probe_timeout: 400
