@@ -1,0 +1,47 @@
+# SLAM RMSE capture — OV2SLAM (FAST profile) + ORACLE detector + Proportional (BENCHMARK).
+# Same as ov2slam_oracle.yaml but pins OV2SLAM's FAST feature-extractor profile
+# (calib: hil_sim_ov2slam_fast_clahe.yaml). Pair with ov2slam_oracle_accurate.yaml to
+# benchmark fast vs accurate — the same split the offline EuRoC study drew
+# (ov2_accurate vs ov2_fast). Eval infers the mode from this config's name.
+mode: benchmark
+
+network:
+  matlab_host_ip: 192.168.137.1
+  interface:      eth0
+  dds:            cyclonedds
+  ros_domain_id:  0
+
+detector:
+  type: oracle
+  cpu:  "0"
+
+controller:
+  type: proportional
+  cpu:  "0"
+
+slam:
+  enabled:           true
+  type:              ov2slam
+  image:             ros2_perception_stack
+  container_name:    slam_ov2slam
+  cpu:               "2,3"
+  # 15 -> 1 (2026-07-21): matched to ov2slam_oracle_accurate + orbslam2_scout so
+  # fast-vs-accurate differs ONLY by the calib profile below.
+  startup_delay_sec: 2
+  restart:           unless-stopped
+  command:           "ros2 run ov2slam ov2slam_node /workspace/camera_calib/hil_sim_ov2slam_fast_clahe.yaml"
+  topics:
+    image_in: /ovcam/image_raw
+    pose_out: /slam/pose
+  remap:
+    - "/ovcam/image_raw:=/ovcam/image_raw"
+    - "vo_pose:=/slam/pose"
+    - "slam_tracking_state:=/slam/tracking_state"
+
+init_gate:
+  # SLAM-warmup gate — see ov2slam_oracle.yaml for the full rationale. Readiness
+  # is OV2SLAM's bvision_init_ republished as /slam/tracking_state (2=ready).
+  # Disabled (2026-07-21): the gate drifts the drone 2-3m off-start and wrecks the
+  # approach; all comparison runs (orbslam2_scout, ov2slam_oracle_accurate) run
+  # gate-off, so this matches them.
+  enabled: false

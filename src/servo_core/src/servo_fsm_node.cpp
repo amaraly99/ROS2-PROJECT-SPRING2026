@@ -99,6 +99,7 @@ void ServoFsmNode::declare_parameters() {
     declare_parameter("lockon_consec",      2);
     declare_parameter("lockon_ex_tol",      0.5);
     declare_parameter("k_lockon_bias",      0.5);
+    declare_parameter("image_x_yaw_sign",   -1.0);
 
     declare_parameter("search_yaw_target_deg",     60.0);
     declare_parameter("k_search_yaw",              1.0);
@@ -169,6 +170,7 @@ void ServoFsmNode::load_parameters() {
     lockon_consec_ = get_parameter("lockon_consec").as_int();
     lockon_ex_tol_ = get_parameter("lockon_ex_tol").as_double();
     k_lockon_bias_ = get_parameter("k_lockon_bias").as_double();
+    image_x_yaw_sign_ = get_parameter("image_x_yaw_sign").as_double();
 
     search_yaw_target_deg_     = get_parameter("search_yaw_target_deg").as_double();
     k_search_yaw_              = get_parameter("k_search_yaw").as_double();
@@ -198,6 +200,17 @@ void ServoFsmNode::load_parameters() {
     RCLCPP_INFO(get_logger(), "Mode: %s (have_fresh_sim_=%s at boot)",
         benchmark_mode_ ? "BENCHMARK (waits for sim reset)" : "SCOUT (engages on boot)",
         have_fresh_sim_ ? "true" : "false");
+    // Only ±1.0 is meaningful; the param is a double only because ROS2 has no signed-
+    // enum type. Any other value SCALES the 30 deg bearing step instead of flipping it,
+    // and 0.0 would silently disable image-x yaw steering while still logging a verdict.
+    if (image_x_yaw_sign_ != 1.0 && image_x_yaw_sign_ != -1.0) {
+        RCLCPP_WARN(get_logger(),
+            "image_x_yaw_sign=%+.2f is neither +1.0 nor -1.0 — forcing -1.0 (corrected).",
+            image_x_yaw_sign_);
+        image_x_yaw_sign_ = -1.0;
+    }
+    RCLCPP_INFO(get_logger(), "image_x_yaw_sign=%+.1f (%s)",
+        image_x_yaw_sign_, image_x_yaw_sign_ < 0 ? "CORRECTED" : "LEGACY (inverted)");
 
     safety_min_altitude_ = get_parameter("safety_min_altitude").as_double();
     safety_pose_max_age_ = get_parameter("safety_pose_max_age").as_double();
@@ -468,7 +481,21 @@ void ServoFsmNode::on_detections(const DetectionArray::SharedPtr msg) {
     double ex_norm = (cx - image_width_  / 2.0) / (image_width_  / 2.0);
     double ey_norm = (cy - image_height_ / 2.0) / (image_height_ / 2.0);
 
-    double bearing_offset_rad = ex_norm * (30.0 * M_PI / 180.0);
+    // image-x -> yaw sign. ex_norm > 0 means the sign sits RIGHT of image centre
+    // (line 481), but drone_yaw_rad_ uses the body convention where positive is
+    // yaw-LEFT (servo_controller.hpp:56-57; cf. ibvs_law.cpp:43). A target on the
+    // right therefore needs a NEGATIVE yaw offset — that is why the default is -1.0.
+    // The pre-fix code omitted this factor entirely and yawed AWAY from the target;
+    // image_x_yaw_sign=+1.0 reproduces that legacy behaviour exactly for A/B runs.
+    //
+    // 30 deg is the half-FOV implied by cam_fx=554 / image_width=640
+    // (atan(320/554) = 30.01 deg), i.e. ex_norm=1 at the image edge maps to the edge
+    // of the frustum. It is hardcoded, NOT derived — it goes stale if either changes.
+    //
+    // Reaches further than these two lines: this writes last_bearing_to_sign_rad_,
+    // which seed_search_from_last_bearing() (~line 749) uses as the SEARCH yaw target,
+    // and that target drives a LIVE yaw servo at line 689 (k_search_yaw * err).
+    double bearing_offset_rad = image_x_yaw_sign_ * ex_norm * (30.0 * M_PI / 180.0);
     last_bearing_to_sign_rad_ = wrap_to_pi(drone_yaw_rad_ + bearing_offset_rad);
     have_last_bearing_ = true;
 
@@ -504,7 +531,14 @@ void ServoFsmNode::update_state_on_detection(double bbox_ratio, double ex_norm,
             approach_start_time_ = now();
             reach_ticks_ = 0;
         } else if (consecutive_dets_ >= 1 && std::abs(ex_norm) >= lockon_ex_tol_) {
-            double yaw_bias = k_lockon_bias_ * ex_norm * (30.0 * M_PI / 180.0);
+            // Same image-x -> yaw sign correction as line 498 (derivation there).
+            // This one aims the SEARCHING yaw target at an off-centre sign, so an
+            // inverted sign does not merely slow lock-on — it sweeps the sign further
+            // out of the lockon_ex_tol window and lock-on never fires.
+            double yaw_bias = image_x_yaw_sign_ * k_lockon_bias_ * ex_norm * (30.0 * M_PI / 180.0);
+            RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 1000,
+                "[lockon-bias] ex=%+.3f -> yaw_bias=%+.3f rad (sign=%+.1f)",
+                ex_norm, yaw_bias, image_x_yaw_sign_);
             yaw_target_rad_ = wrap_to_pi(drone_yaw_rad_ + yaw_bias);
             search_arrived_ = false;
         }

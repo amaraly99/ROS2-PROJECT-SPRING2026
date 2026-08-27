@@ -59,6 +59,7 @@ visp_servo_node:
     lockon_consec:  2
     lockon_ex_tol:  0.5
     k_lockon_bias:  0.5
+    image_x_yaw_sign:  -1.0   # image-x -> yaw sign; see bench_fsm.yaml for the full derivation.
 
     # ── Search behavior (yaw-to-angle using ground-truth yaw) ─
     # Sequence: anchor at startup yaw; target_R(-60°) → target_L(+60°)

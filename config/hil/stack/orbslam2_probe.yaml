@@ -1,0 +1,75 @@
+# HIL Stack Config -- orbslam2_probe (scripted-probe variant of orbslam2_eval)
+# init_gate DISABLED: it overrides --hold-fsm (gate declares SLAM_READY then
+# launches the detector+controller stack itself), so the controller fights the
+# MATLAB probe for cmd_vel. Only difference from orbslam2_eval.
+# Oracle detector + proportional controller + ORB-SLAM2 monocular sidecar.
+# benchmark mode: records /slam_pose + /sim/drone_pose for offline ATE RMSE.
+# Paths inside container: /workspace = $WS (ROS2-PROJECT root), not src/orbslam2/.
+mode: benchmark
+
+network:
+  matlab_host_ip: 192.168.137.1
+  interface:      eth0
+  dds:            cyclonedds
+  ros_domain_id:  0
+
+detector:
+  type:     oracle
+  cpu:      "0" # NEVER PUT ""
+  topics:
+    image_in: /ovcam/image_raw
+    out:      /yolo/detections
+
+controller:
+  type:       proportional
+  cpu:        "1" # NEVER PUT ""
+  gains_file: bench_proportional.yaml
+  topics:
+    detections_in: /yolo/detections
+    cmd_out:       /cmd_vel
+
+slam:
+  enabled:           true
+  type:              orbslam2
+  image:             orbslam2_fixed
+  container_name:    slam_orbslam2
+  cpu:               "2,3"
+  startup_delay_sec: 2
+  restart:           unless-stopped
+
+  # orbslam2_fixed image lacks ldconfig for ROS2 libs -- must set LD_LIBRARY_PATH.
+  setup_overlay: /workspace/src/orbslam2/install_stereo/setup.bash
+  ld_prefix:     /workspace/src/orbslam2/lib:/usr/local/lib:/opt/ros/jazzy/lib
+
+  # FIX 5 (2026-07-18): ros2 run, not a raw binary. Verified on the Pi: it works AND
+  # preserves taskset affinity on the real child binary. The old 'rclpy missing
+  # librcl_action.so' claim was FALSE (that lib IS present at /opt/ros/jazzy/lib).
+  # ros2 run resolves 'orbslam' via slam.setup_overlay below.
+  command: >-
+    ros2 run orbslam mono
+    /workspace/src/orbslam2/Vocabulary/ORBvoc.txt
+    /workspace/src/orbslam2/ros2-ORB_SLAM2/src/monocular/hil_sim.yaml
+
+  topics:
+    image_in: /ovcam/image_raw
+    pose_out: /slam/pose
+  remap:
+    - "camera:=/ovcam/image_raw"
+    - "slam_pose:=/slam/pose"
+    - "slam_tracking_state:=/slam/tracking_state"
+
+init_gate:
+  # SLAM-warmup gate: runs before the FSM/detector/controller stack launches,
+  # does a translation-only warmup (left/right/up, elapsed-time legs only, no
+  # arrival-tolerance chasing) so ORB-SLAM2 gets real parallax before the drone
+  # commits to the normal approach. Also supported for OV2SLAM (see
+  # ov2slam_oracle.yaml, src/ov2slam_ros/src/ov2slam_node.cpp) -- both
+  # backends publish the same /slam/tracking_state contract. See src/init_gate/.
+  enabled: false
+  module: orbslam2         # WS2 (2026-07-18): which init_gate/profiles/<name>.py cycle to run
+  params:     
+    legs: [left, right, up_slow]           # optional per-run overrides of that profile's DEFAULTS:
+    leg_speed: 1.0        #   Julien-exact was 0.6; bumped per user request 2026-07-19
+    leg_duration_sec: 0.50
+    timeout_sec: 30
+    ready_debounce: 2

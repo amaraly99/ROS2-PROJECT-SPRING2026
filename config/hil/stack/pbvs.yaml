@@ -1,11 +1,26 @@
-# PBVS (TS3) scouting — YOLO + ViSP 4-corner PBVS, no SLAM.
-# Fastest settle (~20 s). Requires Hailo HAT.
-matlab_host_ip: 192.168.137.1
-dds: cyclonedds
-ros_domain_id: 0
-controller: pbvs
-detector: oracle
-slam: false
+# PBVS (TS4) scouting — ORACLE detector + depth-scaled lateral servoing, no SLAM.
+# No Hailo HAT needed (oracle synthesises the bbox from sim ground truth).
+# (Nested schema; see ibvs.yaml.)
+mode: scout
+
+network:
+  matlab_host_ip: 192.168.137.1
+  interface:      eth0
+  dds:            cyclonedds
+  ros_domain_id:  0
+
+detector:
+  type: oracle
+
+controller:
+  type: pbvs
+
+slam:
+  enabled: false
+
+# No consumer reads these two: parse_stack.py emits neither, run_stack_hil.sh
+# takes debug_image from the --debug-image CLI flag, and sign_width appears
+# nowhere else in the repo. ibvs.yaml has no equivalent key path, so they stay
+# top-level exactly as they were.
 debug_image: false
-interface: eth0
 sign_width: 0.6

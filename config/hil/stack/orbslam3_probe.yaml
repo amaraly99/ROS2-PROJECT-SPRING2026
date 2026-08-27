@@ -1,0 +1,75 @@
+# HIL Stack Config -- orbslam3_probe
+# Oracle detector + proportional controller + ORB-SLAM3 monocular sidecar.
+# Scripted-probe variant: init_gate DISABLED because it overrides --hold-fsm
+# (the gate declares SLAM_READY then launches the detector+controller stack
+# itself, which then fights the MATLAB probe for cmd_vel).
+#
+# Backend: Mechazo11/ros2_orb_slam3 v2.0.0 (Jazzy) wrapping ORB-SLAM3 V1.0,
+# vendored at src/orbslam3/. See that README for local modifications -- upstream
+# publishes no pose at all, so /slam/pose had to be added.
+mode: benchmark
+
+network:
+  matlab_host_ip: 192.168.137.1
+  interface:      eth0
+  dds:            cyclonedds
+  ros_domain_id:  0
+
+detector:
+  type:     oracle
+  cpu:      "0"
+  topics:
+    image_in: /ovcam/image_raw
+    out:      /yolo/detections
+
+controller:
+  type:       proportional
+  cpu:        "1"
+  gains_file: bench_proportional.yaml
+  topics:
+    detections_in: /yolo/detections
+    cmd_out:       /cmd_vel
+
+slam:
+  enabled:           true
+  type:              orbslam3
+  image:             orbslam3_container
+  container_name:    slam_orbslam3
+  cpu:               "2,3"
+  # Unified across ALL benchmark arms. A backend that starts later misses more of
+  # the probe's sideways init leg and is then scored over a shorter path --
+  # measured with ORB-SLAM2 at 8 s, which did not initialise until 19.7 m in.
+  startup_delay_sec: 2
+  restart:           unless-stopped
+
+  setup_overlay: /workspace/src/orbslam3/install/setup.bash
+  # Pangolin is built in-tree and never installed to a system prefix, so its
+  # .so files live in the build dir. Without this the node dies at startup with
+  # libpango_display.so.0: cannot open shared object file and the container
+  # restart-loops on exit code 127.
+  ld_prefix:     /workspace/src/orbslam3/Pangolin/build:/usr/local/lib:/opt/ros/jazzy/lib
+
+  # Two processes in one sidecar:
+  #  1. hil_handshake_node -- upstream's C++ node drops every frame until a String
+  #     naming the settings YAML arrives on /mono_py_driver/experiment_settings.
+  #     Backgrounded; it publishes until ACKed then idles.
+  #  2. mono_node_cpp in the FOREGROUND so it owns PID 1 and docker stop reaches it.
+  # voc/settings paths are passed explicitly: the node hard-codes packagePath to
+  # /workspace/src/, which is wrong for our vendored layout (src/orbslam3/...).
+  command: >-
+    bash -c "python3 /workspace/src/orbslam3/scripts/hil_handshake_node.py
+    --ros-args -p settings_name:=HIL_SIM &
+    exec ros2 run ros2_orb_slam3 mono_node_cpp --ros-args
+    -p voc_file_arg:=/workspace/src/orbslam3/orb_slam3/Vocabulary/ORBvoc.txt.bin
+    -p settings_file_path_arg:=/workspace/src/orbslam3/orb_slam3/config/Monocular/
+    -r /mono_py_driver/img_msg:=/ovcam/image_raw
+    -r slam_pose:=/slam/pose
+    -r slam_tracking_state:=/slam/tracking_state"
+
+  topics:
+    image_in: /ovcam/image_raw
+    pose_out: /slam/pose
+
+init_gate:
+  enabled: false
+  module: none

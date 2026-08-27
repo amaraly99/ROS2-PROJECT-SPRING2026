@@ -136,6 +136,7 @@ private:
     int    lockon_consec_;
     double lockon_ex_tol_;
     double k_lockon_bias_;
+    double image_x_yaw_sign_;   // +1.0 = legacy (inverted); -1.0 = corrected
 
     double search_yaw_target_deg_;
     double k_search_yaw_;

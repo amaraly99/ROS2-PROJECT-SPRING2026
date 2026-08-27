@@ -1,0 +1,76 @@
+# HIL Stack Config -- orbslam2_scout
+# Sibling of orbslam2_eval.yaml: SAME detector/controller/SLAM, but
+#   mode: scout        -> no recording (no bag, no timing CSVs, no CPU sampler)
+#   init_gate.enabled  -> false, so no SLAM-warmup wiggle before the approach
+# Everything comes up at once and the FSM engages on boot.
+#
+# NOTE (post-Phase-2A KISS, run_stack_hil.sh:639-646): mode controls RECORDING
+# ONLY. benchmark_mode is hardcoded false either way, so the FSM engages
+# scout-style in BOTH modes -- scout vs benchmark is purely "do I write a bag".
+# To get a bag out of this exact stack, run it with --mode benchmark.
+#
+# Paths inside container: /workspace = $WS (ROS2-PROJECT root), not src/orbslam2/.
+mode: scout
+
+network:
+  matlab_host_ip: 192.168.137.1
+  interface:      eth0
+  dds:            cyclonedds
+  ros_domain_id:  0
+
+detector:
+  type:     oracle
+  cpu:      "0" # NEVER PUT ""
+  topics:
+    image_in: /ovcam/image_raw
+    out:      /yolo/detections
+
+controller:
+  type:       proportional
+  cpu:        "1" # NEVER PUT ""
+  gains_file: bench_proportional.yaml
+  topics:
+    detections_in: /yolo/detections
+    cmd_out:       /cmd_vel
+
+slam:
+  enabled:           true
+  type:              orbslam2
+  image:             orbslam2_fixed
+  container_name:    slam_orbslam2
+  cpu:               "2,3"
+  # With no gate the sidecar starts at its normal position (step 4) and the FSM
+  # engages immediately -- ORB-SLAM2 gets no warmup parallax before the approach.
+  # 8 -> 1 (2026-07-21): matched to ov2slam_oracle_accurate so the ORB-SLAM2 vs
+  # OV2SLAM init-time comparison is like-for-like. The old 15/8 values predate the
+  # gate and were meant to let the drone accumulate parallax BEFORE the node came
+  # online (HANDOFF 5 / FIX-011); that rationale does not apply with no gate.
+  startup_delay_sec: 1
+  restart:           unless-stopped
+
+  # orbslam2_fixed image lacks ldconfig for ROS2 libs -- must set LD_LIBRARY_PATH.
+  setup_overlay: /workspace/src/orbslam2/install_stereo/setup.bash
+  ld_prefix:     /workspace/src/orbslam2/lib:/usr/local/lib:/opt/ros/jazzy/lib
+
+  # ros2 run, not a raw binary (FIX 5, 2026-07-18) -- preserves taskset affinity
+  # and resolves the orbslam package via slam.setup_overlay above.
+  command: >-
+    ros2 run orbslam mono
+    /workspace/src/orbslam2/Vocabulary/ORBvoc.txt
+    /workspace/src/orbslam2/ros2-ORB_SLAM2/src/monocular/hil_sim.yaml
+
+  topics:
+    image_in: /ovcam/image_raw
+    pose_out: /slam/pose
+  remap:
+    - "camera:=/ovcam/image_raw"
+    - "slam_pose:=/slam/pose"
+    - "slam_tracking_state:=/slam/tracking_state"
+
+init_gate:
+  # Deliberately OFF for this config -- this is the whole point of orbslam2_scout.
+  # Consequence beyond "no warmup wiggle": the launch topology changes. With the
+  # gate on, run_stack_hil.sh brings up bridge nodes only (stack_nodes:=false),
+  # starts SLAM early, then launches detector+controller after the gate releases.
+  # With it off, all of them launch together at boot. See run_stack_hil.sh 707-724.
+  enabled: false

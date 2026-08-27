@@ -42,9 +42,15 @@
     reach_consec_ticks: 8
 
     # ── Lock-on (SEARCHING → APPROACHING) ──
-    lockon_consec:  2
-    lockon_ex_tol:  0.5
-    k_lockon_bias:  0.5
+    lockon_consec:     2
+    lockon_ex_tol:     0.5
+    k_lockon_bias:     0.5
+    image_x_yaw_sign:  -1.0   # image-x -> yaw mapping. -1.0 = CORRECTED.
+                              # Set to +1.0 to restore the legacy inverted behaviour
+                              # exactly (arithmetically identical to the pre-fix code).
+                              # Consumed at servo_fsm_node.cpp:498 (bearing_offset_rad,
+                              # which also seeds SEARCH via last_bearing_to_sign_rad_)
+                              # and :538 (lock-on yaw_bias). Only ±1.0 is accepted.
 
     # ── Search behavior ──
     search_yaw_target_deg:     60.0
