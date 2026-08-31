@@ -35,9 +35,23 @@ public:
         sem_name_ = declare_parameter("sem_name", std::string("/ovcam_ready"));
         frame_id_ = declare_parameter("frame_id", std::string("camera"));
 
+        // output_topic: needed for stereo, where two instances of this node run
+        // side by side and must not publish to the same topic. Default is the
+        // original hardcoded name, so the mono path and every existing consumer
+        // are untouched -- notably benchmarks/e2e_latency_probe.py, which
+        // matches detector output against /ovcam/image_raw header stamps and
+        // would silently match nothing rather than fail if this were renamed.
+        output_topic_ = declare_parameter("output_topic", std::string("/ovcam/image_raw"));
+
+        // use_source_stamp: publish SlotHeader::t_src_ns (the original capture /
+        // simulation timestamp) instead of t_ns (this Pi's arrival time). For
+        // stereo both eyes MUST carry the identical stamp or the matcher pairs
+        // frames that do not correspond. Default false = existing behaviour.
+        use_source_stamp_ = declare_parameter("use_source_stamp", false);
+
         // ── Publisher ─────────────────────────────────────────────
         // mono8 for OV2SLAM: reliable, KeepLast(2)
-        pub_ = create_publisher<Image>("/ovcam/image_raw",
+        pub_ = create_publisher<Image>(output_topic_,
                                        rclcpp::QoS(2).reliable());
 
         // ── Open shared memory ────────────────────────────────────
@@ -166,11 +180,19 @@ private:
             // ── Build ROS2 Image message ──────────────────────────
             const uint32_t y_bytes = slot->stride * slot->height;
 
+            // Prefer the source stamp when asked for it, but fall back to t_ns
+            // if it is absent (0). A silent fallback is right here: a 0 stamp
+            // would look like 1970 and break any downstream time arithmetic,
+            // whereas t_ns is always valid and is what mono has always used.
+            const uint64_t stamp_ns =
+                (use_source_stamp_ && slot->t_src_ns != 0ULL) ? slot->t_src_ns
+                                                              : slot->t_ns;
+
             auto msg             = std::make_unique<Image>();
             msg->header.frame_id = frame_id_;
             msg->header.stamp    = rclcpp::Time(
-                (int32_t)(slot->t_ns / 1000000000ULL),
-                (uint32_t)(slot->t_ns % 1000000000ULL));
+                (int32_t)(stamp_ns / 1000000000ULL),
+                (uint32_t)(stamp_ns % 1000000000ULL));
             msg->width    = slot->width;
             msg->height   = slot->height;
             msg->encoding = "mono8";
@@ -193,7 +215,8 @@ private:
     }
 
     // ── Member variables ──────────────────────────────────────────
-    std::string shm_name_, sem_name_, frame_id_;
+    std::string shm_name_, sem_name_, frame_id_, output_topic_;
+    bool use_source_stamp_{false};
 
     void*            base_      = MAP_FAILED;
     size_t           shm_total_ = 0;

@@ -1,0 +1,59 @@
+% =====================================================================
+%  standalone.tex -- compile the SLAM ablation section on its own.
+%
+%      cd PAPER_IMAGES_HIL && pdflatex standalone.tex && pdflatex standalone.tex
+%
+%  (twice: the second pass resolves \ref to tables/figures)
+%
+%  This is a REVIEW wrapper only. The section body lives in
+%  section_hil_slam.tex and is \input unchanged, so whatever you approve
+%  here is exactly what drops into the thesis/paper.
+% =====================================================================
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=2.4cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}      % \toprule \midrule \bottomrule used by the tables
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage[hidelinks]{hyperref}
+\usepackage{microtype}
+
+% The section \input{PAPER_IMAGES_HIL/tables/...} using paths relative to the
+% PROJECT ROOT, so it drops into the main document unchanged. When compiling
+% standalone from inside PAPER_IMAGES_HIL/, tell LaTeX to also look one level
+% up -- that way the same file works in both places with no edits.
+\makeatletter
+\providecommand*{\input@path}{}
+\edef\input@path{{../}{./}}
+\makeatother
+\graphicspath{{../}{./}}
+
+% The section cites Umeyama; stub it so a standalone build does not need a .bib.
+\providecommand{\cite}[1]{[#1]}
+
+\title{\vspace{-1.5cm}SLAM Algorithm Selection and Pareto Ablation\\
+       \large Standalone draft for review}
+\author{}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\noindent
+\textbf{Reviewer note.} Every number in the tables and figures below is computed
+directly from the recorded bags by \texttt{PAPER\_IMAGES\_HIL/generate.py};
+none is typed by hand. Re-running that script after further trials updates this
+document. Known gaps are listed at the end of \texttt{README.md} and are
+deliberately left as gaps rather than filled with estimates: the offline EuRoC
+results are an outline only, ORB-SLAM3 has no front-end latency figure, and the
+OV2SLAM fast profile is scored over a shorter path than the other arms because
+it does not initialise within the initialisation leg.
+
+\vspace{0.6em}
+\hrule
+\vspace{1.2em}
+
+\input{PAPER_IMAGES_HIL/section_hil_slam}
+
+\end{document}

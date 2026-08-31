@@ -659,6 +659,7 @@ LAUNCH_ARGS+=" controller:=${CONTROLLER} detector:=${DETECTOR} benchmark_mode:=$
 LAUNCH_ARGS+=" controller_cpu:=${CONTROLLER_CPU:-} detector_cpu:=${DETECTOR_CPU:-}"
 LAUNCH_ARGS+=" use_slam_depth:=${CONTROLLER_USE_SLAM_DEPTH:-false}"
 LAUNCH_ARGS+=" use_slam_pose:=${CONTROLLER_USE_SLAM_POSE:-false}"
+LAUNCH_ARGS+=" stereo:=${STEREO_ON:-false}"
 if [[ "$DETECTOR" == "oracle" ]]; then
     log "Detector: oracle (yolo_bridge skipped, oracle_detector_node starts in Docker)"
 else

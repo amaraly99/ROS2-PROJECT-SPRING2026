@@ -31,7 +31,11 @@ assert(any(contains(topics,'/rosout')), 'ROS failed. Restart MATLAB and rerun.')
 disp('ROS OK')
 
 % Camera publisher — BEST_EFFORT to match Pi subscriber QoS
-% Intrinsics (for reference): fx=fy=554 px, cx=320, cy=240, HFOV=60 deg
+% Intrinsics: fx=fy=1200 px, cx=320, cy=240, HFOV=29.9 deg.
+% NOT 554/60deg — that was an assumption written into the configs and never
+% checked against the block. Confirmed 2026-08-24 two independent ways:
+% check_camera_fov (warp test, r=0.94) and check_stereo_geometry (fx=1236 from
+% disparity vs ground-truth depth). See camera-focal-length memory.
 cam_pub = ros2publisher(node, '/sim/camera/image_raw', 'sensor_msgs/Image', ...
     'Reliability','besteffort','Durability','volatile','Depth',5);
 
@@ -41,6 +45,44 @@ cam_msg.width        = uint32(640);
 cam_msg.encoding     = 'bgr8';
 cam_msg.is_bigendian = uint8(0);
 cam_msg.step         = uint32(640 * 3);
+
+% ── Stereo right eye (optional) ──────────────────────────────────────────────
+% The LEFT topic above is deliberately NOT renamed. /sim/camera/image_raw is
+% hardcoded in visp_servo_node.cpp:398 and referenced by run_stack_hil.sh,
+% record_bag.sh, bag_qos_overrides.yaml and hil_simulation.launch.py — and every
+% existing rosbag replays against that name. The right eye is purely additive.
+%
+% STEREO_ON is set by set_stereo.m, which ALSO comments/uncomments the right
+% camera blocks in the Simulink model — so the model and this script cannot
+% disagree about which mode you are in. Default 0 means this whole block is
+% skipped and the session is exactly the mono session that produced every
+% published result.
+if ~exist('STEREO_ON','var') || isempty(STEREO_ON), STEREO_ON = 0; end
+assignin('base','STEREO_ON', double(STEREO_ON));
+
+if STEREO_ON
+    cam_pub_right = ros2publisher(node, '/sim/camera/right/image_raw', 'sensor_msgs/Image', ...
+        'Reliability','besteffort','Durability','volatile','Depth',5);
+
+    cam_msg_right              = ros2message('sensor_msgs/Image');
+    cam_msg_right.height       = uint32(480);
+    cam_msg_right.width        = uint32(640);
+    cam_msg_right.encoding     = 'bgr8';   % NOT rgb8. Must match the left eye exactly:
+                                           % the publisher packs B,G,R and the Pi calls
+                                           % toCvCopy(msg,"rgb8"), which CONVERTS from
+                                           % whatever the message declares. Declaring
+                                           % rgb8 here while packing BGR would swap red
+                                           % and blue in the right eye only — stereo
+                                           % matching would degrade with no error.
+    cam_msg_right.is_bigendian = uint8(0);
+    cam_msg_right.step         = uint32(640 * 3);
+
+    disp('Stereo ON  — right eye on /sim/camera/right/image_raw')
+else
+    cam_pub_right = [];
+    cam_msg_right = [];
+    disp('Stereo OFF — mono only on /sim/camera/image_raw')
+end
 
 % cmd_vel subscriber — writes Pi commands to base workspace
 assignin('base','sim_vx', 0);

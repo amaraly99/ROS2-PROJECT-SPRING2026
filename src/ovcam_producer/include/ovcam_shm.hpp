@@ -44,7 +44,27 @@ struct alignas(64) SlotHeader {
     uint32_t fourcc;    // pixel format (FOURCC_NV12 above)
     uint32_t bytes_used;// total bytes of pixel data written
 
-    uint32_t _pad[3];   // padding to make sizeof(SlotHeader) exactly 64 bytes
+    uint32_t _pad0;     // keeps t_src_ns 8-byte aligned
+
+    // SOURCE timestamp, nanoseconds. 0 = "not provided", which is what every
+    // writer predating this field effectively stores.
+    //
+    // WHY THIS EXISTS: t_ns above is stamped by the *consumer side* when the
+    // frame is written into this ring — i.e. it encodes the Pi's arrival time,
+    // including network jitter. For one camera that is harmless. For STEREO it
+    // is fatal: two independent bridge instances would each stamp their own
+    // arrival jitter, so a left/right pair would never share a timestamp, and
+    // a stereo matcher would silently pair frames that do not correspond and
+    // produce garbage depth with no error.
+    //
+    // t_src_ns carries the ORIGINAL capture/simulation timestamp through the
+    // ring untouched, so both eyes can be republished with one shared stamp.
+    //
+    // ABI: this occupies bytes that were previously _pad[3], so
+    // sizeof(SlotHeader) is unchanged at 64 and every existing consumer, which
+    // reads only the fields above, is unaffected. Readers must treat 0 as
+    // "absent" and fall back to t_ns.
+    uint64_t t_src_ns;
 };
 // Compile-time check: if this fails your layout is wrong
 static_assert(sizeof(SlotHeader) == 64, "SlotHeader must be 64 bytes");

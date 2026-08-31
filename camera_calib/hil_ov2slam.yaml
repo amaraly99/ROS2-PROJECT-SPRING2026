@@ -4,15 +4,21 @@
 #--------------------------------------------------------------------------------------------
 # Camera Parameters  (Simulink 3D Camera — synthetic, ideal pinhole, 640x480)
 #
-# Intrinsics derived from the Simulink block configured for 60° HFOV at 640x480:
-#   fx = fy = 320 / tan(30°) ≈ 554
+# Intrinsics VERIFIED against the running Simulink model 2026-08-25:
+#   fx = fy = 1200  (HFOV 29.9° = 2*atan(320/1200) at 640x480)
 #   cx = 320.0  (image centre, no principal-point offset)
 #   cy = 240.0
 #   k1=k2=p1=p2 = 0  (synthetic camera, no lens distortion)
 #
+# FOCAL LENGTH CORRECTION, 2026-08-25 — this file previously said 554, derived
+# from an ASSUMPTION that the block was 60° HFOV (320/tan(30°) ≈ 554). The block
+# was never opened to check. It renders at fx = 1200, a narrow ~30° lens, so 554
+# was wrong by 2.17x. See camera_calib/hil_sim_ov2slam.yaml for the two
+# independent verifications and the full blast radius.
+#
 # Diff from ov5647_ov2slam.yaml:
-#   fxl  543.097664 → 554.0
-#   fyl  539.701638 → 554.0
+#   fxl  543.097664 → 1200.0
+#   fyl  539.701638 → 1200.0
 #   cxl  310.686570 → 320.0
 #   cyl  222.928406 → 240.0
 #   k1l  -0.00983529 → 0.0
@@ -35,9 +41,9 @@ Camera.left_nheight: 480
 Camera.right_nwidth:  752
 Camera.right_nheight: 480
 
-# Intrinsics (Simulink 3D Camera, 60° HFOV, 640x480)
-Camera.fxl: 554.0
-Camera.fyl: 554.0
+# Intrinsics (Simulink 3D Camera, 29.9° HFOV, 640x480 — see header: 554 was wrong)
+Camera.fxl: 1200.0
+Camera.fyl: 1200.0
 Camera.cxl: 320.0
 Camera.cyl: 240.0
 

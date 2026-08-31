@@ -132,6 +132,11 @@ static void on_request(Request* req) {
     slot->fourcc     = FOURCC_NV12;
     slot->bytes_used = (uint32_t)off;
 
+    // The real camera has no upstream timestamp to carry, so t_src_ns is always
+    // "absent" here. Written explicitly rather than left alone so a reused ring
+    // slot can never hand a consumer a stale value from a previous frame.
+    slot->t_src_ns   = 0ULL;
+
     // seqlock close: even = "complete"
     seq_store(slot, fn * 2, __ATOMIC_RELEASE);
 

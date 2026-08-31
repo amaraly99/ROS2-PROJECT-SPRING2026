@@ -22,11 +22,19 @@
 #   calib_yaml      OV2SLAM calibration file path
 #   controller_cpu  taskset core(s) for the controller node  (e.g. "0"; empty = no pin)
 #   detector_cpu    taskset core(s) for yolo_bridge/oracle node  (empty = no pin)
+#   stereo          true | false  (default: false — run the RIGHT-eye chain alongside the
+#                     left, for stereo SLAM. Requires MATLAB running with STEREO_ON=1 so
+#                     that /sim/camera/right/image_raw is published, paired with the left
+#                     eye on one simulation timestamp. Default false = mono, byte-identical
+#                     to every published mono result. Stereo doubles the inbound stream to
+#                     ~295 Mbit/s and requires wired Ethernet.)
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, EnvironmentVariable
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 CTRL_MAP = {
@@ -66,6 +74,15 @@ def launch_setup(context, *args, **kwargs):
     use_slam_depth = s('use_slam_depth').lower() in ('true', '1', 'yes')
     use_slam_pose  = s('use_slam_pose').lower()  in ('true', '1', 'yes')
 
+    # Stereo (optional right eye). Kept as an unresolved LaunchConfiguration
+    # (not run through s()) so IfCondition/ParameterValue can defer evaluation
+    # to launch time — matches the working pattern from feat/stereo-hil.
+    stereo_lc = LaunchConfiguration('stereo')
+    # Both bridge instances must republish from the SOURCE timestamp so a
+    # left/right pair carries one identical stamp — required for stereo,
+    # a no-op when stereo is off (the node's own default is also false).
+    use_source_stamp = ParameterValue(stereo_lc, value_type=bool)
+
     cfg = lambda name: f'{workspace}/config/hil/{name}'
     # taskset prefix for a node, or None when the cpu arg is empty (no pinning).
     # MUST be a space-separated STRING — launch_ros concatenates a list with NO
@@ -91,6 +108,7 @@ def launch_setup(context, *args, **kwargs):
                 'width': 640, 'height': 480, 'slots': 4,
                 'shm_name': '/ovcam_frames',
                 'sem_name': '/ovcam_ready',
+                'use_source_stamp': use_source_stamp,
             }],
         ))
 
@@ -101,7 +119,45 @@ def launch_setup(context, *args, **kwargs):
                 executable='ovcam_bridge_node',
                 name='ovcam_bridge',
                 output='screen',
+                parameters=[{'use_source_stamp': use_source_stamp}],
             ))
+
+        # ── RIGHT EYE (stereo only) — a second instance of each node above. ────────
+        # The left chain above deliberately keeps every default, including the
+        # topic name /ovcam/image_raw (matched by benchmarks/e2e_latency_probe.py),
+        # so the mono-vs-stereo detector-latency delta comes free from a stereo run
+        # with no extra instrumentation. shm_name/sem_name must differ from the left
+        # or the two bridges overwrite each other's ring. The detector is NOT
+        # duplicated — yolo_producer reads /ovcam_frames, the left ring, so
+        # detection stays monocular by construction.
+        nodes.append(Node(
+            package='sim_camera_bridge',
+            executable='sim_camera_bridge_node',
+            name='sim_camera_bridge_right',
+            output='screen',
+            condition=IfCondition(stereo_lc),
+            parameters=[{
+                'input_topic': '/sim/camera/right/image_raw',
+                'width': 640, 'height': 480, 'slots': 4,
+                'shm_name': '/ovcam_frames_right',
+                'sem_name': '/ovcam_ready_right',
+                'use_source_stamp': True,
+            }],
+        ))
+        nodes.append(Node(
+            package='ovcam_bridge',
+            executable='ovcam_bridge_node',
+            name='ovcam_bridge_right',
+            output='screen',
+            condition=IfCondition(stereo_lc),
+            parameters=[{
+                'shm_name': '/ovcam_frames_right',
+                'sem_name': '/ovcam_ready_right',
+                'output_topic': '/ovcam/right/image_raw',
+                'frame_id': 'camera_right',
+                'use_source_stamp': True,
+            }],
+        ))
 
     # ── stack_nodes: detector + controller (the FSM). Held off while
     # INITIALIZER_GATE is running (see run_stack_hil.sh) so nothing is
@@ -112,6 +168,8 @@ def launch_setup(context, *args, **kwargs):
         #            /sim/drone_pose + /sim/target_pose from MATLAB; no hardware).
         #   yolo   → yolo_bridge reads /yolo_shm written by the host yolo_producer.
         # Both publish /yolo/detections. Add a detector by adding a DET_MAP row above.
+        # NOTE: the detector reads the LEFT ring only (/ovcam_frames /
+        # /yolo_shm) even in stereo — detection stays monocular by construction.
         if detector not in DET_MAP:
             raise RuntimeError(
                 f"Unknown detector='{detector}'. Valid: {list(DET_MAP)}")
@@ -130,6 +188,8 @@ def launch_setup(context, *args, **kwargs):
 
         # ── 4. OV2SLAM — normally deferred by run_stack_hil.sh (slam:=false passed). ─
         #    Only active when this launch file is invoked directly with slam:=true.
+        #    calib_yaml selects mono vs stereo calibration — stereo mode should be
+        #    paired with a stereo calib_yaml (e.g. hil_sim_ov2slam_stereo.yaml).
         if slam:
             nodes.append(Node(
                 package='ov2slam',
@@ -196,6 +256,13 @@ def generate_launch_description():
             description='IBVS only: feed SLAM map-point depth into the interaction matrix (vs bbox depth)'),
         DeclareLaunchArgument('use_slam_pose', default_value='false',
             description='IBVS only: gate vx on SLAM pose freshness+confidence; use SLAM range for approach'),
+        DeclareLaunchArgument('stereo', default_value='false',
+            description='Set true to run the RIGHT-eye chain alongside the left, for stereo '
+                        'SLAM. Requires MATLAB running with STEREO_ON=1 so that '
+                        '/sim/camera/right/image_raw is published, paired with the left eye on '
+                        'one simulation timestamp. Default false = mono, byte-identical to '
+                        'every published mono result. NOTE: stereo doubles the inbound stream '
+                        'to ~295 Mbit/s and requires wired Ethernet.'),
         DeclareLaunchArgument('calib_yaml',
             default_value=PathJoinSubstitution(
                 [EnvironmentVariable('WORKSPACE_DIR', default_value='/workspace'),

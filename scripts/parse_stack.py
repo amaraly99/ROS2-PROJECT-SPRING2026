@@ -86,6 +86,10 @@ def emit_env(cfg):
         ("DDS",            get(cfg, "network.dds", "cyclonedds")),
         ("ROS_DOMAIN_ID",  get(cfg, "network.ros_domain_id", 0)),
 
+        # ── camera (stereo toggle — default false so all existing mono configs
+        # keep working unmodified; see docs/STEREO_INTERFACE_CONTRACT.md) ──
+        ("STEREO_ON", as_bool(get(cfg, "camera.stereo"), False)),
+
         # ── detector (runs in main container; host_cpu is for yolo_producer) ──
         ("DETECTOR",          get(cfg, "detector.type", "yolo")),
         ("DETECTOR_CPU",      get(cfg, "detector.cpu", "")),

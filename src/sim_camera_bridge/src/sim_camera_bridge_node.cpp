@@ -38,6 +38,14 @@ public:
         shm_name_    = declare_parameter("shm_name", std::string("/ovcam_frames"));
         sem_name_    = declare_parameter("sem_name", std::string("/ovcam_ready"));
 
+        // use_source_stamp: carry the INCOMING header.stamp through the ring in
+        // SlotHeader::t_src_ns, instead of letting the consumer fall back to the
+        // Pi's own arrival time. Required for stereo — two bridge instances must
+        // republish a left/right pair with ONE shared stamp, and arrival time
+        // differs per instance by network jitter. Default false so mono behaves
+        // exactly as before and every published mono result stays valid.
+        use_source_stamp_ = declare_parameter("use_source_stamp", false);
+
         // Stride padding: producer.cpp uses (W + 31) & ~31u. At 640 / 480 / 1280
         // these values are already 32-aligned, so stride == W and we can write
         // tightly-packed rows. Refuse anything else loudly rather than silently
@@ -176,6 +184,14 @@ private:
         slot->fourcc     = FOURCC_NV12;
         slot->bytes_used = static_cast<uint32_t>(H * W * 3 / 2);
 
+        // Source stamp, or 0 meaning "absent" so the consumer falls back to
+        // t_ns. Always written (not only when enabled) so a slot can never
+        // carry a stale value left behind by an earlier frame in this ring.
+        slot->t_src_ns   = use_source_stamp_
+            ? (static_cast<uint64_t>(msg->header.stamp.sec) * 1000000000ULL
+               + msg->header.stamp.nanosec)
+            : 0ULL;
+
         // seqlock close: even = "complete"
         seq_store(slot, fn * 2, __ATOMIC_RELEASE);
         ws_store(g_, fn);
@@ -191,6 +207,7 @@ private:
     // params
     std::string input_topic_, shm_name_, sem_name_;
     int width_{640}, height_{480}, slots_{4};
+    bool use_source_stamp_{false};
 
     // shm state
     void*       base_{MAP_FAILED};

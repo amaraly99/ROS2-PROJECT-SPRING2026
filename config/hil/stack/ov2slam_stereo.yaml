@@ -1,0 +1,68 @@
+# ============================================================================
+# HIL Stack Config — "ov2slam_stereo"
+#
+# Stereo OV2SLAM: both eyes captured (camera.stereo: true, threaded through to
+# the launch file's `stereo` arg and both bridge nodes' `use_source_stamp`),
+# OV2SLAM given the stereo calibration/baseline (camera_calib/hil_sim_ov2slam_stereo.yaml,
+# fx=1200, 0.11m baseline — see docs/STEREO_INTERFACE_CONTRACT.md). The detector
+# stays monocular by construction (reads the left ring only).
+#
+# Requires MATLAB running with STEREO_ON=1 (set_stereo.m) — see GUIDE_TO_RUN.md.
+# Wired Ethernet only: stereo roughly doubles the inbound stream (~295 Mbit/s).
+# ============================================================================
+
+mode: scout
+
+# ── Global / network ─────────────────────────────────────────────────────────
+network:
+  matlab_host_ip: 192.168.137.1
+  interface:      eth0
+  dds:            fastrtps       # matches hil_ros_init_LT.m's RMW_IMPLEMENTATION —
+                                  # do NOT default to cyclonedds here, MATLAB won't discover it
+  ros_domain_id:  0
+
+# ── camera ────────────────────────────────────────────────────────────────────
+camera:
+  stereo: true                   # threaded to the launch file's `stereo` arg via
+                                  # parse_stack.py's STEREO_ON -> run_stack_hil.sh
+
+# ── Module 1: DETECTION ──────────────────────────────────────────────────────
+detector:
+  type:     yolo
+  cpu:      "1"
+  host_cpu: "1"
+  topics:
+    image_in: /ovcam/image_raw   # LEFT ring only — detection stays monocular
+    out:      /yolo/detections
+  yolo:
+    hef:        /workspace/models/yolo26n_10h.hef
+    confidence: 0.20
+
+# ── Module 2: CONTROLLER ─────────────────────────────────────────────────────
+controller:
+  type:       ibvs
+  cpu:        "0"
+  gains_file: bench_ibvs.yaml
+  topics:
+    detections_in: /yolo/detections
+    cmd_out:       /cmd_vel
+
+# ── Module 3: SLAM ───────────────────────────────────────────────────────────
+slam:
+  enabled:           true
+  type:              ov2slam
+
+  image:             ros2_perception_stack
+  container_name:    slam_ov2slam
+  cpu:               "2,3"
+  startup_delay_sec: 15
+  restart:           unless-stopped
+
+  command:           "ros2 run ov2slam ov2slam_node /workspace/camera_calib/hil_sim_ov2slam_stereo.yaml"
+
+  topics:
+    image_in: /ovcam/image_raw
+    pose_out: /slam/pose
+  remap:
+    - "/ovcam/image_raw:=/ovcam/image_raw"
+    - "vo_pose:=/slam/pose"

@@ -104,6 +104,10 @@ private:
     double clamp_vel(double v, double lim) const;
     static double wrap_to_pi(double a);
     static double deg2rad(double d);
+    // True bearing (unsigned) for a target at normalized horizontal offset
+    // ex_norm, from the pinhole model. image_x_yaw_sign_ applies the sign
+    // separately at each call site — this returns magnitude only.
+    double bearing_from_ex(double ex_norm) const;
 
     // Build the ServoInputs handed to the controller for one APPROACHING tick.
     ServoInputs make_inputs(double ex_norm, double ey_norm,
@@ -137,6 +141,7 @@ private:
     double lockon_ex_tol_;
     double k_lockon_bias_;
     double image_x_yaw_sign_;   // +1.0 = legacy (inverted); -1.0 = corrected
+    double camera_fx_;          // camera focal length (px) for bearing_from_ex()
 
     double search_yaw_target_deg_;
     double k_search_yaw_;

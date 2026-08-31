@@ -76,6 +76,7 @@ void ServoFsmNode::declare_parameters() {
     declare_parameter("min_confidence",     0.30);
     declare_parameter("image_width",        640);
     declare_parameter("image_height",       480);
+    declare_parameter("camera_fx",           1200.0);  // px; 30deg HFOV @1200 (stereo); was hardcoded 30deg/fx~554
 
     // Sim camera intrinsics (hil_ros_init_LT: fx=fy=554, cx=320, cy=240).
     declare_parameter("cam_fx", 554.0);
@@ -147,6 +148,7 @@ void ServoFsmNode::load_parameters() {
     }
     min_confidence_ = get_parameter("min_confidence").as_double();
     image_width_    = get_parameter("image_width").as_int();
+    camera_fx_      = get_parameter("camera_fx").as_double();
     image_height_   = get_parameter("image_height").as_int();
 
     cam_fx_ = get_parameter("cam_fx").as_double();
@@ -495,7 +497,7 @@ void ServoFsmNode::on_detections(const DetectionArray::SharedPtr msg) {
     // Reaches further than these two lines: this writes last_bearing_to_sign_rad_,
     // which seed_search_from_last_bearing() (~line 749) uses as the SEARCH yaw target,
     // and that target drives a LIVE yaw servo at line 689 (k_search_yaw * err).
-    double bearing_offset_rad = image_x_yaw_sign_ * ex_norm * (30.0 * M_PI / 180.0);
+    double bearing_offset_rad = image_x_yaw_sign_ * bearing_from_ex(ex_norm);
     last_bearing_to_sign_rad_ = wrap_to_pi(drone_yaw_rad_ + bearing_offset_rad);
     have_last_bearing_ = true;
 
@@ -535,7 +537,7 @@ void ServoFsmNode::update_state_on_detection(double bbox_ratio, double ex_norm,
             // This one aims the SEARCHING yaw target at an off-centre sign, so an
             // inverted sign does not merely slow lock-on — it sweeps the sign further
             // out of the lockon_ex_tol window and lock-on never fires.
-            double yaw_bias = image_x_yaw_sign_ * k_lockon_bias_ * ex_norm * (30.0 * M_PI / 180.0);
+            double yaw_bias = image_x_yaw_sign_ * k_lockon_bias_ * bearing_from_ex(ex_norm);
             RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 1000,
                 "[lockon-bias] ex=%+.3f -> yaw_bias=%+.3f rad (sign=%+.1f)",
                 ex_norm, yaw_bias, image_x_yaw_sign_);
@@ -882,5 +884,9 @@ double ServoFsmNode::wrap_to_pi(double a) {
 }
 
 double ServoFsmNode::deg2rad(double d) { return d * M_PI / 180.0; }
+
+double ServoFsmNode::bearing_from_ex(double ex_norm) const {
+    return std::atan(ex_norm * (image_width_ / 2.0) / camera_fx_);
+}
 
 }  // namespace servo_core

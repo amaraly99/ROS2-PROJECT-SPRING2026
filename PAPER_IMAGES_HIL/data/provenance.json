@@ -1,0 +1,104 @@
+{
+ "offline": {
+  "ORB-SLAM2": {
+   "src": "ORB_SLAM2/results/20260609_092931/experiment_summary.csv",
+   "attempted": 100,
+   "valid": 100,
+   "seqs": 10
+  },
+  "ORB-SLAM3": {
+   "src": "ORBSLAM3_ROS2/results/orbslam_benchmark/20260614_014256/experiment_summary.csv",
+   "attempted": 100,
+   "valid": 74,
+   "seqs": 10
+  },
+  "OV2SLAM-acc": {
+   "src": "ROS2-PROJECT-SPRING2026/results/ov2slam_benchmark_v2/20260612_234141/accurate_mono/experiment_summary.csv",
+   "attempted": 100,
+   "valid": 100,
+   "seqs": 10
+  },
+  "OV2SLAM-fast": {
+   "src": "ROS2-PROJECT-SPRING2026/results/ov2slam_benchmark_v2/20260613_102424/fast_mono/experiment_summary.csv",
+   "attempted": 100,
+   "valid": 100,
+   "seqs": 10
+  }
+ },
+ "online": {
+  "ORB-SLAM2": {
+   "attempted": 10,
+   "valid": 10,
+   "bags": [
+    "run_orbslam2_probe_verso10_orbslam2_20260803_164627",
+    "run_orbslam2_probe_verso10_orbslam2_20260803_165527",
+    "run_orbslam2_probe_verso10_orbslam2_20260803_170429",
+    "run_orbslam2_probe_verso10_orbslam2_20260803_171334",
+    "run_orbslam2_probe_verso10_orbslam2_20260803_172317",
+    "run_orbslam2_probe_verso10_orbslam2_20260803_173319",
+    "run_orbslam2_probe_verso10_orbslam2_20260803_174658",
+    "run_orbslam2_probe_verso10_orbslam2_20260803_175731",
+    "run_orbslam2_probe_verso10_orbslam2_20260803_180758",
+    "run_orbslam2_probe_verso10_orbslam2_20260803_181853"
+   ]
+  },
+  "ORB-SLAM3": {
+   "attempted": 20,
+   "valid": 20,
+   "bags": [
+    "run_orbslam3_probe_orb3lat_orbslam3_20260804_230728",
+    "run_orbslam3_probe_orb3lat_orbslam3_20260804_231052",
+    "run_orbslam3_probe_orb3lat_orbslam3_20260804_231416",
+    "run_orbslam3_probe_orb3lat_orbslam3_20260804_231739",
+    "run_orbslam3_probe_orb3lat_orbslam3_20260804_232102",
+    "run_orbslam3_probe_orb3lat_orbslam3_20260804_232403",
+    "run_orbslam3_probe_orb3lat_orbslam3_20260804_232702",
+    "run_orbslam3_probe_orb3lat_orbslam3_20260804_233026",
+    "run_orbslam3_probe_orb3lat_orbslam3_20260804_233337",
+    "run_orbslam3_probe_orb3lat_orbslam3_20260804_233640",
+    "run_orbslam3_probe_orb3x10_orbslam3_20260804_190941",
+    "run_orbslam3_probe_orb3x10_orbslam3_20260804_191302",
+    "run_orbslam3_probe_orb3x10_orbslam3_20260804_191606",
+    "run_orbslam3_probe_orb3x10_orbslam3_20260804_191905",
+    "run_orbslam3_probe_orb3x10_orbslam3_20260804_192203",
+    "run_orbslam3_probe_orb3x10_orbslam3_20260804_192510",
+    "run_orbslam3_probe_orb3x10_orbslam3_20260804_192815",
+    "run_orbslam3_probe_orb3x10_orbslam3_20260804_193117",
+    "run_orbslam3_probe_orb3x10_orbslam3_20260804_193425",
+    "run_orbslam3_probe_orb3x10_orbslam3_20260804_193735"
+   ]
+  },
+  "OV2SLAM-acc": {
+   "attempted": 10,
+   "valid": 10,
+   "bags": [
+    "run_ov2slam_oracle_accurate_verso10_ov2_accurate_20260803_165230",
+    "run_ov2slam_oracle_accurate_verso10_ov2_accurate_20260803_170126",
+    "run_ov2slam_oracle_accurate_verso10_ov2_accurate_20260803_171031",
+    "run_ov2slam_oracle_accurate_verso10_ov2_accurate_20260803_172005",
+    "run_ov2slam_oracle_accurate_verso10_ov2_accurate_20260803_172956",
+    "run_ov2slam_oracle_accurate_verso10_ov2_accurate_20260803_174055",
+    "run_ov2slam_oracle_accurate_verso10_ov2_accurate_20260803_175403",
+    "run_ov2slam_oracle_accurate_verso10_ov2_accurate_20260803_180430",
+    "run_ov2slam_oracle_accurate_verso10_ov2_accurate_20260803_181511",
+    "run_ov2slam_oracle_accurate_verso10_ov2_accurate_20260803_182637"
+   ]
+  },
+  "OV2SLAM-fast": {
+   "attempted": 10,
+   "valid": 10,
+   "bags": [
+    "run_ov2slam_oracle_fast_verso10_ov2_fast_20260803_164930",
+    "run_ov2slam_oracle_fast_verso10_ov2_fast_20260803_165834",
+    "run_ov2slam_oracle_fast_verso10_ov2_fast_20260803_170726",
+    "run_ov2slam_oracle_fast_verso10_ov2_fast_20260803_171651",
+    "run_ov2slam_oracle_fast_verso10_ov2_fast_20260803_172637",
+    "run_ov2slam_oracle_fast_verso10_ov2_fast_20260803_173656",
+    "run_ov2slam_oracle_fast_verso10_ov2_fast_20260803_175040",
+    "run_ov2slam_oracle_fast_verso10_ov2_fast_20260803_180102",
+    "run_ov2slam_oracle_fast_verso10_ov2_fast_20260803_181133",
+    "run_ov2slam_oracle_fast_verso10_ov2_fast_20260803_182300"
+   ]
+  }
+ }
+}
