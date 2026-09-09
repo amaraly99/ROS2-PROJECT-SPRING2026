@@ -1,0 +1,11 @@
+model,size_mb,status,pp_mode,n_outputs,preprocess_ms,inference_ms,postprocess_ms,e2e_ms,fps,n_dets,detections
+yolo26n_10h,4.8,PASS,raw-tensor-CPU-PP,6,0.352,24.689,0.959,26.000,38.46,5,"person×4, bus×1"
+yolo26m,22.7,PASS,raw-tensor-CPU-PP,6,0.341,38.568,0.961,39.871,25.08,5,"person×4, bus×1"
+yolo26n,5.1,PASS,raw-tensor-CPU-PP,6,0.350,27.205,0.953,28.507,35.08,5,"person×4, bus×1"
+yolo26s,13.8,PASS,raw-tensor-CPU-PP,6,0.355,30.200,0.958,31.513,31.73,5,"person×4, bus×1"
+yolov11m,27.0,PASS,on-device-NMS,1,0.280,26.679,0.131,27.089,36.92,4,person×4
+yolov11n,5.3,PASS,on-device-NMS,1,0.257,15.947,0.127,16.331,61.23,4,person×4
+yolov11s,16.3,PASS,on-device-NMS,1,0.286,19.710,0.151,20.147,49.63,4,person×4
+yolov8m,26.7,PASS,on-device-NMS,1,0.279,25.282,0.129,25.690,38.93,4,person×4
+yolov8n,7.0,PASS,on-device-NMS,1,0.284,15.203,0.133,15.620,64.02,4,person×4
+yolov8s,13.8,PASS,on-device-NMS,1,0.284,18.565,0.149,18.998,52.64,4,person×4

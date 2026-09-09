@@ -1,0 +1,58 @@
+{
+  "config": {
+    "model_id": "yolov8m",
+    "label": "yolov8m",
+    "backend": "cpu",
+    "model_path": "/home/ahmed/ROS2-PROJECT-SPRING2026/models/onnx/yolov8m/yolov8m.onnx",
+    "family": null,
+    "variant": null,
+    "intra_threads": 2,
+    "inter_threads": 1,
+    "input_size": 640,
+    "conf": 0.2,
+    "iou": 0.45,
+    "frames": 25,
+    "warmup": 5,
+    "image": "/tmp/bus.jpg",
+    "src_resolution": [
+      810,
+      1080
+    ]
+  },
+  "latency_s": {
+    "preprocess": {
+      "mean": 0.00475404968,
+      "p50": 0.004742437,
+      "p95": 0.004795511
+    },
+    "inference": {
+      "mean": 1.46772923284,
+      "p50": 1.466911309,
+      "p95": 1.475404379
+    },
+    "postprocess": {
+      "mean": 0.0026430741999999997,
+      "p50": 0.002635293,
+      "p95": 0.002656589
+    },
+    "end_to_end": {
+      "mean": 1.4751276188400002,
+      "p50": 1.474334428,
+      "p95": 1.482801294
+    }
+  },
+  "fps": {
+    "mean": 0.6779074482968277
+  },
+  "detections": {
+    "count": 5,
+    "by_class": {
+      "bus": 1,
+      "person": 4
+    }
+  },
+  "host": {
+    "cpu_count": 4
+  },
+  "timestamp": "2026-06-25 16:32:50"
+}

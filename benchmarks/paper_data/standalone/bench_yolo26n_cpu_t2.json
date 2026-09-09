@@ -1,0 +1,58 @@
+{
+  "config": {
+    "model_id": "yolo26n",
+    "label": "yolo26n",
+    "backend": "cpu",
+    "model_path": "/home/ahmed/ROS2-PROJECT-SPRING2026/models/onnx/yolo26n/yolo26n.onnx",
+    "family": null,
+    "variant": null,
+    "intra_threads": 2,
+    "inter_threads": 1,
+    "input_size": 640,
+    "conf": 0.2,
+    "iou": 0.45,
+    "frames": 40,
+    "warmup": 5,
+    "image": "benchmarks/assets/bus.jpg",
+    "src_resolution": [
+      810,
+      1080
+    ]
+  },
+  "latency_s": {
+    "preprocess": {
+      "mean": 0.0061622442999999995,
+      "p50": 0.006071446,
+      "p95": 0.00683689
+    },
+    "inference": {
+      "mean": 0.164601422975,
+      "p50": 0.163086787,
+      "p95": 0.165580842
+    },
+    "postprocess": {
+      "mean": 0.00019535150000000003,
+      "p50": 0.00019413,
+      "p95": 0.000199389
+    },
+    "end_to_end": {
+      "mean": 0.1709606067,
+      "p50": 0.169376235,
+      "p95": 0.172224935
+    }
+  },
+  "fps": {
+    "mean": 5.8493007208075145
+  },
+  "detections": {
+    "count": 5,
+    "by_class": {
+      "bus": 1,
+      "person": 4
+    }
+  },
+  "host": {
+    "cpu_count": 4
+  },
+  "timestamp": "2026-09-09 07:55:37"
+}
