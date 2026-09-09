@@ -100,6 +100,38 @@ def cmdvel_hz(summary):
     return None
 
 
+def per_run_stages(prefixes):
+    """Per-run P50 for each stage, then mean/std across runs.
+
+    pooled_stages() concatenates every sample from every run and takes ONE
+    percentile of the pool, which discards run-to-run variation by construction --
+    that is why the per-stage table has no spread while the centroid column does
+    (centroid_rms already aggregates per-run-then-mean+-std). This gives the same
+    treatment to the stages, so a reader can tell a real placement effect from
+    noise.
+
+    Returns {stage_key: {"mean","std","n_runs","p50s"}} or None per stage.
+    """
+    per = {k: [] for k, _ in PAPER_STAGE_LABELS}
+    for pref in prefixes:
+        s = paper_stage_series(_read_csv(pref + "_telemetry.csv"),
+                               _read_csv(pref + ".csv"),
+                               _read_csv(pref + "_cam_stamps.csv"))
+        for k in per:
+            d = _dist(s.get(k, []))
+            if d and d.get("p50_ms") is not None:
+                per[k].append(d["p50_ms"])
+    out = {}
+    for k, vals in per.items():
+        if not vals:
+            out[k] = None
+            continue
+        m = sum(vals) / len(vals)
+        sd = (sum((x - m) ** 2 for x in vals) / len(vals)) ** 0.5 if len(vals) > 1 else 0.0
+        out[k] = {"mean": m, "std": sd, "n_runs": len(vals), "p50s": vals}
+    return out
+
+
 def aggregate(dirs, label, states=None):
     prefixes = find_runs(dirs, label)
     return {
@@ -107,6 +139,7 @@ def aggregate(dirs, label, states=None):
         "prefixes": prefixes,
         "n_runs": len(prefixes),
         "stages": pooled_stages(prefixes) if prefixes else {},
+        "stages_per_run": per_run_stages(prefixes) if prefixes else {},
         "centroid": centroid_rms(prefixes, states=states) if prefixes else None,
         "summary": read_summary(dirs, label),
     }
@@ -142,6 +175,33 @@ def emit_1b(configs):
     for cfg, agg in configs:
         st = agg["stages"]
         cells = [_f(st[k]["p50_ms"]) if st.get(k) else "---" for k in order]
+        cv = cmdvel_hz(agg["summary"])
+        cv_s = "---" if not cv or cv[0] is None else f"{cv[0]:.2f}$\\pm${cv[1]:.2f}"
+        rows.append(f"{cfg} & " + " & ".join(cells) + f" & {cv_s} \\\\")
+    header = ("\\textbf{Cfg} & \\textbf{Frame Acq.} & \\textbf{Obj.\\ Det.} & "
+              "\\textbf{Det.\\ Pub.} & \\textbf{Control} & \\textbf{E2E} & "
+              "\\textbf{/cmd\\_vel Hz} \\\\")
+    return header, "\n".join(rows)
+
+
+def emit_1b_spread(configs):
+    """Per-stage table carrying run-to-run spread: mean+-std of per-run P50 (ms).
+
+    Same stages as emit_1b, but every cell is mean+-std over the runs instead of a
+    single pooled percentile. This is the version the placement discussion needs:
+    the C-vs-D per-stage differences are ~1 ms against a run-to-run sigma of
+    ~0.03 ms, and that ratio is invisible in the pooled table.
+    """
+    order = ["frame_acq_jitter", "object_detection", "detection_publish",
+             "control", "end_to_end"]
+    rows = []
+    for cfg, agg in configs:
+        st = agg.get("stages_per_run") or {}
+        cells = []
+        for k in order:
+            d = st.get(k)
+            cells.append("---" if not d
+                         else f"{d['mean']:.2f}$\\pm${d['std']:.2f}")
         cv = cmdvel_hz(agg["summary"])
         cv_s = "---" if not cv or cv[0] is None else f"{cv[0]:.2f}$\\pm${cv[1]:.2f}"
         rows.append(f"{cfg} & " + " & ".join(cells) + f" & {cv_s} \\\\")
@@ -237,8 +297,15 @@ def main():
     print("── Table placement (tab:placement) ──")
     print(body_pl, "\n")
 
+    # 1b with run-to-run spread — the version the placement discussion needs
+    hdr_1bs, body_1bs = emit_1b_spread(configs)
+    print("── Table 1b-spread (per-stage x per-config, mean±std of per-run P50, ms) ──")
+    print(hdr_1bs)
+    print(body_1bs, "\n")
+
     for name, text in (("table_1a_latency.tex", body_1a),
                        ("table_1b_perstage.tex", hdr_1b + "\n\\hline\n" + body_1b),
+                       ("table_1b_perstage_spread.tex", hdr_1bs + "\n\\hline\n" + body_1bs),
                        ("table_placement.tex", body_pl)):
         with open(os.path.join(args.out_dir, name), "w") as f:
             f.write(text + "\n")

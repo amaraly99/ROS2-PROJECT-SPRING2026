@@ -1,0 +1,43 @@
+% Standalone detector benchmarks (tab:detectors).
+% NPU rows: hef_bench.py, 80 synchronous iterations / 8 warmup, Hailo-10H +
+%   HailoRT 5.1.1, throughput = 1/E2E, single-stream synchronous.
+%   Source: benchmarks/paper_data/hef/hef_timing_*.csv
+% CPU rows: standalone_yolo_benchmarker.py, ONNX Runtime, intra_op=2, inter_op=1,
+%   spinning disabled, 640x640 network input, no SLAM co-load.
+%   Source: benchmarks/paper_data/standalone/bench_<id>_cpu_t2.json
+%   Measured frames per row: YOLO26n 40, YOLO26s 40, YOLO26m 25, YOLOv8n 40, YOLOv8s 40, YOLOv8m 25, YOLOv11n 40, YOLOv11s 25, YOLOv11m 18
+%   conf thresholds present in these runs: [0.2, 0.25]
+% GENERATED -- regenerate rather than hand-edit.
+\textbf{Model} & \textbf{Backend} & \textbf{Inf.\ (ms)} & \textbf{E2E (ms)} & \textbf{fps} \\
+\hline
+\multicolumn{5}{|l|}{\textit{YOLO-family --- Hailo-10H NPU (INT8 HEF, synchronous)}} \\
+\hline
+YOLO26n  & Hailo-10H  & 27.2  & 28.5  & 35.1 \\
+YOLO26s  & Hailo-10H  & 30.2  & 31.5  & 31.7 \\
+YOLO26m  & Hailo-10H  & 38.6  & 39.9  & 25.1 \\
+YOLOv8n  & Hailo-10H  & 15.2  & 15.6  & 64.0 \\
+YOLOv8s  & Hailo-10H  & 18.6  & 19.0  & 52.6 \\
+YOLOv8m  & Hailo-10H  & 25.3  & 25.7  & 38.9 \\
+YOLOv11n & Hailo-10H  & 15.9  & 16.3  & 61.2 \\
+YOLOv11s & Hailo-10H  & 19.7  & 20.1  & 49.6 \\
+YOLOv11m & Hailo-10H  & 26.7  & 27.1  & 36.9 \\
+\hline
+\multicolumn{5}{|l|}{\textit{YOLO-family --- ARM CPU (Cortex-A76, ONNX Runtime)}} \\
+\hline
+YOLO26n  & ONNX-CPU  & 164.6  & 171.0  & 5.8 \\
+YOLO26s  & ONNX-CPU  & 481.0  & 487.1  & 2.1 \\
+YOLO26m  & ONNX-CPU  & 1410.0  & 1415.0  & 0.7 \\
+YOLOv8n  & ONNX-CPU  & 216.5  & 226.0  & 4.4 \\
+YOLOv8s  & ONNX-CPU  & 585.8  & 594.7  & 1.7 \\
+YOLOv8m  & ONNX-CPU  & 1467.7  & 1475.1  & 0.7 \\
+YOLOv11n & ONNX-CPU  & 187.6  & 196.7  & 5.1 \\
+YOLOv11s & ONNX-CPU  & 494.0  & 503.0  & 2.0 \\
+YOLOv11m & ONNX-CPU  & 1417.5  & 1425.1  & 0.7 \\
+\hline
+% NOT GENERATED -- no standalone measurement of these two is archived.
+% The draft's ~12 ms / ~80 fps (MOG2) and ~1700 ms / ~0.6 fps (OWL-ViT) have no
+% source file in the repository. Measure them, or drop the standalone claim:
+% the ~1.7 s figure is load-bearing for the manuscript's ~2.2x contention claim.
+% \multicolumn{5}{|l|}{\textit{Non-YOLO --- ARM CPU (Cortex-A76)}} \\
+% OpenCV MOG2 & ARM CPU & --- & ? & ? \\
+% OWL-ViT base-32 & ARM CPU & --- & ? & ? \\

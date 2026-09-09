@@ -1,0 +1,11 @@
+% Harness validation: our CPU FP32 pipeline against published COCO mAP50-95.
+% Published values: Sapkota & Karkee, arXiv:2510.09653, Table 3.
+% YOLO26n is compared against its END-TO-END figure (40.3), because our CPU
+% export is the e2e/NMS-free head -- see PUBLISHED in aggregate_coco_v2.py.
+% Ours: ARM CPU, FP32 ONNX, conf=0.001, 5000-image val2017, controlled postprocess.
+% GENERATED -- regenerate rather than hand-edit.
+\textbf{Model} & \textbf{Published} & \textbf{This work} & \textbf{$\Delta$ (\%)} \\
+\hline
+YOLO26n  & 0.403 (e2e) & 0.4022 & $-0.2$ \\
+YOLOv8n  & 0.373 & 0.3668 & $-1.7$ \\
+YOLOv11n & 0.395 & 0.3871 & $-2.0$ \\
