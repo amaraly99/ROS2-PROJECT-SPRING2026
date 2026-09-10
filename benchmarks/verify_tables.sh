@@ -49,7 +49,8 @@ python3 benchmarks/make_paper_tables.py \
     --results-dir benchmarks/paper_data/placement \
     --out-dir "$TMP/sweep" >/dev/null 2>&1
 for f in table_1a_latency.tex table_1b_perstage.tex \
-         table_1b_perstage_spread.tex table_placement.tex; do
+         table_1b_perstage_spread.tex table_placement_stages_paper.tex \
+         table_placement.tex; do
     check "$f" "$TMP/sweep/$f" "$COMMITTED_SWEEP/$f"
 done
 
@@ -73,6 +74,16 @@ for f in table_coco_benchmark_vs_deployed.tex table_coco_validation.tex \
     check "$f" "$TMP/acc/benchmarks/paper_data/accuracy/tables/$f" \
           "$COMMITTED_ACC/$f"
 done
+
+echo "== Manuscript vs generated fragments (check_manuscript_tables.py) =="
+# access.tex carries no \input{}, so the paper's tables are independent copies of
+# these fragments. Without this stage the harness would certify the data and miss
+# the paper drifting away from it.
+if python3 benchmarks/check_manuscript_tables.py --repo-root "$REPO"; then
+    pass=$((pass+1))
+else
+    fail=$((fail+1))
+fi
 
 echo
 if [[ $fail -eq 0 ]]; then

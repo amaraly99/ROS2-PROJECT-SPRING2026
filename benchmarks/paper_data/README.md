@@ -85,11 +85,26 @@ REACHED's share of the samples varies a lot by config (23% of samples for the 16
 length versus reach time, not tracking quality, and it silently flatters whichever config idled at
 the target longest. `make_paper_tables.py` therefore defaults to `--centroid-states APPROACHING`.
 
-Under that metric, **a higher command rate does not buy better tracking**: the 16.16 Hz NPU config
-(A, 114.4 ± 7.3 px) has *higher* approach-phase centroid error than the 4.33 Hz CPU config
-(B, 96.7 ± 7.5 px). The same ordering holds under the pooled metric, so it is not an artifact of the
-filter. This is consistent with the reach result — the mission is actuation-limited, and past roughly
-1 Hz, additional detections do not translate into better closed-loop behaviour.
+**Centroid RMS does not resolve these configurations at n=3, and no claim should rest on it.**
+An earlier revision of this file read the config means as showing that a higher command rate does
+not buy better tracking (A at 16.16 Hz, 114.4 px, against B at 4.33 Hz, 96.7 px). Recomputing per
+run shows the spread within a single configuration is as large as any difference between them:
+
+| Cfg | per-run RMS (px) | approach duration (s) | samples |
+|---|---|---|---|
+| A | 118.3 / 120.7 / 104.2 | 54.8 / 55.1 / 52.7 | ~850 |
+| B | 91.3 / 107.3 / 91.3 | 42.7 / 42.7 / 43.5 | ~172 |
+| C | 79.5 / 99.9 / 117.3 | 42.2 / 42.0 / 44.2 | ~673 |
+| D | 119.9 / 115.7 / 111.2 | 45.3 / 45.5 / 47.3 | ~714 |
+
+Config C alone spans 38 px and fully overlaps A's range. Note also that B is sampled ~5x more
+sparsely (it runs at 4.33 Hz), so its RMS is a coarser estimate of the same trajectory, and B's
+approach is *shorter* in wall-clock than A's — so the tempting explanation that a slower command
+rate flatters the metric is not supported either. The honest statement is that three runs cannot
+separate these configurations, which is what the paper now says.
+
+The reach result is unaffected and stands on its own: mission time is actuation-limited, and a 12x
+spread in detection rate produces no measurable difference in time to target.
 
 ## Known artifacts in earlier data
 

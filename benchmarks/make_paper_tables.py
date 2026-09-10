@@ -211,6 +211,41 @@ def emit_1b_spread(configs):
     return header, "\n".join(rows)
 
 
+# Row labels as tab:placement_stages prints them. Config B (CPU inference) is
+# deliberately absent: it is the detector sweep's story (Table tab:detector_e2e)
+# and repeating it here is what made the placement section look padded.
+PAPER_PLACEMENT_ROWS = [("A", "A (SLAM cores 2--3)"),
+                        ("C", "C (SLAM shared core)"),
+                        ("D", "D (all on one core)")]
+
+
+def emit_placement_stages_paper(configs):
+    """tab:placement_stages exactly as the manuscript prints it.
+
+    Same numbers as emit_1b_spread, restricted to the NPU-inference configs and
+    carrying the descriptive row labels, so the fragment can be diffed against
+    the inline table in access.tex (see check_manuscript_tables.py).
+    """
+    order = ["frame_acq_jitter", "object_detection", "detection_publish",
+             "control", "end_to_end"]
+    by = dict(configs)
+    rows = []
+    for cfg, label in PAPER_PLACEMENT_ROWS:
+        agg = by.get(cfg)
+        if not agg:
+            continue
+        st = agg.get("stages_per_run") or {}
+        cells = []
+        for k in order:
+            d = st.get(k)
+            cells.append("---" if not d
+                         else f"{d['mean']:.2f}$\\pm${d['std']:.2f}")
+        cv = cmdvel_hz(agg["summary"])
+        cv_s = "---" if not cv or cv[0] is None else f"{cv[0]:.2f}$\\pm${cv[1]:.2f}"
+        rows.append(f"{label} & " + " & ".join(cells) + f" & {cv_s} \\\\")
+    return "\n".join(rows)
+
+
 PLACEMENT_DESC = {
     "A": "NPU infer., SLAM pinned (cores 2--3)",
     "B": "CPU infer., SLAM pinned",
@@ -306,6 +341,8 @@ def main():
     for name, text in (("table_1a_latency.tex", body_1a),
                        ("table_1b_perstage.tex", hdr_1b + "\n\\hline\n" + body_1b),
                        ("table_1b_perstage_spread.tex", hdr_1bs + "\n\\hline\n" + body_1bs),
+                       ("table_placement_stages_paper.tex",
+                        emit_placement_stages_paper(configs)),
                        ("table_placement.tex", body_pl)):
         with open(os.path.join(args.out_dir, name), "w") as f:
             f.write(text + "\n")
