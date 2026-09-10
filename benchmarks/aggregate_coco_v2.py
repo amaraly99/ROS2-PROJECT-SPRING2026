@@ -168,8 +168,13 @@ def emit_tables(rows, outdir):
     # Both columns must share an image budget. The v1 sweep's headline error was
     # ranking a 1000-image CPU column against a 5000-image NPU column, so the
     # budget is chosen explicitly and a mismatch is fatal.
+    # layout="" pins the component column to each model's DEFAULT export, which is
+    # the configuration published mAP tables are computed on -- for YOLO26 that is
+    # the e2e/NMS-free head. The raw-tensor YOLO26 exports live in the same pool
+    # (they are the architecture-matched arm of the quantization table) and would
+    # otherwise make this lookup ambiguous.
     for budget in (5000, 1000):
-        comp = {m: _pick(rows, "cpu", 0.001, budget, model=m) for m in nano}
+        comp = {m: _pick(rows, "cpu", 0.001, budget, layout="", model=m) for m in nano}
         if all(comp.values()):
             break
     else:
