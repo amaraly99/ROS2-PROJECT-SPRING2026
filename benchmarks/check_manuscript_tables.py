@@ -28,6 +28,7 @@ PAIRS = [
     ("tab:latency_results",  "benchmarks/paper_data/tables/table_1a_latency.tex"),
     ("tab:placement_stages", "benchmarks/paper_data/tables/table_placement_stages_paper.tex"),
     ("tab:acc_reversal",     "benchmarks/paper_data/accuracy/tables/table_coco_benchmark_vs_deployed.tex"),
+    ("tab:acc_validation",   "benchmarks/paper_data/accuracy/tables/table_coco_validation.tex"),
     ("tab:acc_deployed",     "benchmarks/paper_data/accuracy/tables/table_coco_deployed.tex"),
     ("tab:acc_quant",        "benchmarks/paper_data/accuracy/tables/table_coco_quantization.tex"),
 ]
