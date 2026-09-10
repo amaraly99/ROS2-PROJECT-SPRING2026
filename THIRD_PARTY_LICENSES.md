@@ -62,9 +62,21 @@ Obtained separately by the user; listed for completeness because the stack does 
 The YOLO models used in the paper derive from **Ultralytics** weights, which are **AGPL-3.0**. They
 are **not committed to this repository**; `models/fetch_models.sh` downloads or exports them on
 demand. If you redistribute the weights or a derived model, the AGPL-3.0 terms apply to you —
-including its network-use provision. The compiled Hailo `.hef` artifacts for YOLOv8/YOLOv11 are the
-official Hailo Model Zoo builds and carry Hailo's Model Zoo terms; the YOLO26 `.hef` files are our
-own Dataflow Compiler builds of the same Ultralytics weights and inherit AGPL-3.0.
+including its network-use provision. All nine compiled Hailo `.hef` artifacts used in the paper
+— YOLOv8, YOLOv11 and YOLO26 alike — are **official Hailo Model Zoo builds** and carry Hailo's Model
+Zoo terms. They are not redistributed here: `models/fetch_models.sh` downloads them from Hailo's
+bucket and verifies each against a pinned sha256. Every one has been confirmed byte-identical to the
+vendor artifact (2026-09-11). They come from two Model Zoo releases, because no YOLO26 build exists
+under v5.1.0 for this device:
 
-`models/yolo26n_10h.hef` and `src/yolo_ros/yolo26n.pt` are tracked in git history (they predate this
-policy) and are subject to the same AGPL-3.0 terms.
+| Artifact | Model Zoo release |
+|---|---|
+| `yolov8{n,s,m}.hef`, `yolov11{n,s,m}.hef` | v5.1.0 (hailo10h) |
+| `yolo26{n,s,m}.hef` | v5.3.0 (hailo10h) |
+
+`models/yolo26n_10h.hef` is a **superseded** artifact: a self-compiled Hailo Dataflow Compiler build
+(SDK 5.2.0) of the Ultralytics weights, produced before the Model Zoo carried YOLO26 for this
+device. It is a derivative of AGPL-3.0 weights and is subject to those terms. It is tracked in git
+history and retained only for provenance; **no result in the paper uses it**, and the deployed
+YOLO26n model is the Model Zoo v5.3.0 build above. `src/yolo_ros/yolo26n.pt` is likewise tracked
+history and subject to AGPL-3.0.

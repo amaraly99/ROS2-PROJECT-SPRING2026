@@ -10,17 +10,24 @@
 #
 # Provenance of each group:
 #
-#   v8/v11 HEFs   Official Hailo Model Zoo v5.1.0 hailo10h builds, downloaded
-#                 below and checksum-verified. These are the ones the paper used
-#                 (verified byte-identical). They bake a 0.20 NMS score threshold
-#                 into the on-device op, which is why every config in
-#                 model_registry.json runs at conf 0.20 — see the note there.
+#   All nine HEFs are official Hailo Model Zoo hailo10h builds, downloaded below
+#   and checksum-verified byte-identical to the artifacts the paper used. They are
+#   NOT all from one Model Zoo release, and that is forced rather than chosen:
 #
-#   yolo26 HEFs   Custom-compiled with the Hailo Dataflow Compiler against COCO
-#                 val2017 calibration; there is no public Model Zoo entry for
-#                 YOLO26 on hailo10h. Published as assets on the release tag.
-#                 Set MODELS_RELEASE_URL to fetch them, or compile your own on an
-#                 x86 DFC host (the Pi cannot run the DFC — only HailoRT inference).
+#   v8/v11 HEFs   Model Zoo v5.1.0, matching the HailoRT 5.1.1 runtime. They bake
+#                 a 0.20 NMS score threshold into the on-device op, which is why
+#                 every config in model_registry.json runs at conf 0.20 — see the
+#                 note there.
+#
+#   yolo26 HEFs   Model Zoo v5.3.0. No YOLO26 build exists under v5.1.0 for
+#                 hailo10h (that path returns HTTP 403), so v5.3.0 is the earliest
+#                 release carrying them. Their headers report `sdk-version: 5.3.0`
+#                 against 5.1.0 for the v8/v11 set; whether that difference explains
+#                 the YOLO26 quantization result was tested directly and it does
+#                 not — see benchmarks/paper_data/accuracy/hef_provenance_control/.
+#
+#   models/yolo26n_10h.hef is a superseded self-compiled DFC 5.2.0 build, kept only
+#   for history. Nothing in the paper uses it.
 #
 #   ONNX          Exported from the Ultralytics .pt weights at 640x640. Requires
 #                 the `ultralytics` package. Note the weights are AGPL-3.0 — see
@@ -30,7 +37,9 @@ set -euo pipefail
 
 MODELS_DIR="$(cd "$(dirname "$0")" && pwd)"
 MZ_BASE="${MZ_BASE:-https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/v5.1.0/hailo10h}"
-MODELS_RELEASE_URL="${MODELS_RELEASE_URL:-}"
+# YOLO26 is absent from the v5.1.0 Model Zoo for this device; v5.3.0 is the
+# earliest release that carries it.
+MZ26_BASE="${MZ26_BASE:-https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/v5.3.0/hailo10h}"
 WHAT="${1:-all}"
 
 # sha256 of every artifact as used in the paper.
@@ -84,22 +93,12 @@ fetch_hef() {
         verify "$out"
     done
 
-    echo "── YOLO26 HEFs (custom DFC build) ──────────────────────────────"
-    if [ -z "$MODELS_RELEASE_URL" ]; then
-        echo "  ! MODELS_RELEASE_URL is not set, so the YOLO26 HEFs cannot be fetched."
-        echo "    Get them from the release assets:"
-        echo "      MODELS_RELEASE_URL=https://github.com/<owner>/<repo>/releases/download/<tag> \\"
-        echo "        bash models/fetch_models.sh hef"
-        echo "    Or compile them yourself on an x86 Hailo DFC host."
-        echo "    The v8/v11 models above are enough to run the stack and 12 of the"
-        echo "    20 sweep configs; the 8 yolo26 configs need these."
-        return 0
-    fi
+    echo "── Hailo Model Zoo HEFs (yolo26, v5.3.0) ───────────────────────"
     for m in "${YOLO26_HEFS[@]}"; do
         local out="$MODELS_DIR/hef/$m.hef"
         if [ -f "$out" ] && verify "$out" 2>/dev/null; then continue; fi
         echo "  ↓ $m.hef"
-        curl -fL --retry 3 -o "$out" "$MODELS_RELEASE_URL/$m.hef"
+        curl -fL --retry 3 -o "$out" "$MZ26_BASE/$m.hef"
         verify "$out"
     done
 }
