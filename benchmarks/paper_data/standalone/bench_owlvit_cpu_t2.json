@@ -1,0 +1,44 @@
+{
+  "config": {
+    "model_id": "owlvit-base-patch32",
+    "label": "OWL-ViT base-32",
+    "backend": "cpu",
+    "prompt": "stop sign",
+    "box_threshold": 0.2,
+    "intra_threads": 2,
+    "inter_threads": 1,
+    "frames": 25,
+    "warmup": 3,
+    "image": "benchmarks/assets/stop_sign_test.jpg",
+    "src_resolution": [
+      1500,
+      1389
+    ]
+  },
+  "latency_ms": {
+    "preprocess": {
+      "mean": 53.175808720000006,
+      "p50": 53.278299,
+      "p95": 53.867041
+    },
+    "inference": {
+      "mean": 1659.2491574399996,
+      "p50": 1643.601613,
+      "p95": 1814.78021
+    },
+    "postprocess": {
+      "mean": 0.5428698399999999,
+      "p50": 0.539112,
+      "p95": 0.577704
+    },
+    "end_to_end": {
+      "mean": 1713.6212646,
+      "p50": 1697.416912,
+      "p95": 1869.493086
+    }
+  },
+  "fps": {
+    "mean": 0.5835595184642062
+  },
+  "n_detections_last_frame": 1
+}

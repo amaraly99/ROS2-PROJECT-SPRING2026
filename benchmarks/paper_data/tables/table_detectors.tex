@@ -34,10 +34,8 @@ YOLOv11n & ONNX-CPU  & 187.6  & 196.7  & 5.1 \\
 YOLOv11s & ONNX-CPU  & 494.0  & 503.0  & 2.0 \\
 YOLOv11m & ONNX-CPU  & 1417.5  & 1425.1  & 0.7 \\
 \hline
-% NOT GENERATED -- no standalone measurement of these two is archived.
-% The draft's ~12 ms / ~80 fps (MOG2) and ~1700 ms / ~0.6 fps (OWL-ViT) have no
-% source file in the repository. Measure them, or drop the standalone claim:
-% the ~1.7 s figure is load-bearing for the manuscript's ~2.2x contention claim.
-% \multicolumn{5}{|l|}{\textit{Non-YOLO --- ARM CPU (Cortex-A76)}} \\
-% OpenCV MOG2 & ARM CPU & --- & ? & ? \\
-% OWL-ViT base-32 & ARM CPU & --- & ? & ? \\
+\multicolumn{5}{|l|}{\textit{Non-YOLO --- ARM CPU (Cortex-A76)}} \\
+\hline
+OpenCV MOG2     & ARM CPU & ---  & \multicolumn{2}{c|}{\textit{see text}} \\
+OWL-ViT base-32~\cite{minderer2022owlvit} & ARM CPU & --- & 1714 & 0.58 \\
+\hline

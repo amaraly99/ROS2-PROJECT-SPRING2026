@@ -69,6 +69,10 @@ def load_cpu(repo):
                        "bench_*_cpu_t2.json")
     for p in sorted(glob.glob(pat)):
         d = json.load(open(p))
+        # The glob also matches bench_owlvit_cpu_t2.json, which is written by a
+        # different harness with a different schema; it is loaded by load_vlm().
+        if d.get("config", {}).get("model_id") not in DISPLAY:
+            continue
         c, lat = d["config"], d["latency_s"]
         if c["intra_threads"] != 2 or c["inter_threads"] != 1:
             raise SystemExit(f"{p}: expected intra=2/inter=1, got "
@@ -77,6 +81,21 @@ def load_cpu(repo):
                               lat["end_to_end"]["mean"] * 1e3,
                               d["fps"]["mean"], c["frames"], c["conf"])
     return out
+
+
+def load_vlm(repo):
+    """(end_to_end_ms, fps) for OWL-ViT, or None if not measured.
+
+    Produced by benchmarks/standalone_vlm_benchmark.py, which drives the same
+    OwlViTPredictor the pipeline uses, on one still image with warm-up discarded
+    -- the same protocol as the YOLO CPU rows, at the same 2 threads.
+    """
+    p = os.path.join(repo, "benchmarks", "paper_data", "standalone",
+                     "bench_owlvit_cpu_t2.json")
+    if not os.path.exists(p):
+        return None
+    d = json.load(open(p))
+    return d["latency_ms"]["end_to_end"]["mean"], d["fps"]["mean"]
 
 
 def main():
@@ -124,16 +143,24 @@ def main():
     for m in ORDER:
         i, e, f = cpu[m][0], cpu[m][1], cpu[m][2]
         L.append(f"{DISPLAY[m]:8s} & ONNX-CPU  & {i:.1f}  & {e:.1f}  & {f:.1f} \\\\")
-    L += [
-        r"\hline",
-        r"% NOT GENERATED -- no standalone measurement of these two is archived.",
-        r"% The draft's ~12 ms / ~80 fps (MOG2) and ~1700 ms / ~0.6 fps (OWL-ViT) have no",
-        r"% source file in the repository. Measure them, or drop the standalone claim:",
-        r"% the ~1.7 s figure is load-bearing for the manuscript's ~2.2x contention claim.",
-        r"% \multicolumn{5}{|l|}{\textit{Non-YOLO --- ARM CPU (Cortex-A76)}} \\",
-        r"% OpenCV MOG2 & ARM CPU & --- & ? & ? \\",
-        r"% OWL-ViT base-32 & ARM CPU & --- & ? & ? \\",
-    ]
+    L += [r"\hline",
+          r"\multicolumn{5}{|l|}{\textit{Non-YOLO --- ARM CPU (Cortex-A76)}} \\",
+          r"\hline"]
+
+    # OpenCV MOG2 has no standalone row by construction, not by omission:
+    # background subtraction estimates its model from a moving sequence, so the
+    # single-image protocol behind every other row does not define a comparable
+    # figure for it. Its in-loop cost is reported in tab:detector_e2e instead.
+    L.append(r"OpenCV MOG2     & ARM CPU & ---  & \multicolumn{2}{c|}{\textit{see text}} \\")
+
+    vlm = load_vlm(repo)
+    if vlm:
+        e, f = vlm
+        L.append(r"OWL-ViT base-32~\cite{minderer2022owlvit} & ARM CPU & --- & "
+                 f"{e:.0f} & {f:.2f} \\\\")
+    else:
+        L.append(r"% OWL-ViT: no measurement archived -- run standalone_vlm_benchmark.py")
+    L.append(r"\hline")
 
     p = os.path.join(outdir, "table_detectors.tex")
     with open(p, "w") as f:
