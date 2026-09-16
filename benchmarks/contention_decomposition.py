@@ -4,11 +4,19 @@ contention_decomposition.py — what channel couples the detector to its co-tena
 
 The detector sweep shows a CPU-resident detector losing 20-34 % of its standalone
 throughput inside the closed loop. The manuscript previously attributed that to
-the detector and the SLAM solver "competing for the Cortex-A76 cores", which is
-wrong: run_stack_hil.sh pins the detector to cores 0-1 and OV2SLAM to cores 2-3,
-so they never contend for a core. This isolates the channel that is actually
-responsible, using synthetic co-tenants instead of the full stack so it needs no
-simulator, no SLAM build and no wired-LAN rig.
+the detector and the SLAM solver "competing for the Cortex-A76 cores". That is
+not what the deployed stack does: run_stack_hil.sh pins the detector to core 1
+(DETECTOR_CORE="1") and OV2SLAM to cores 2-3, so those two never contend for a
+core. This isolates the channel that is actually responsible, using synthetic
+co-tenants instead of the full stack so it needs no simulator, no SLAM build and
+no wired-LAN rig.
+
+Two gaps this deliberately does NOT close, both recorded in the README:
+  - The detector is pinned here to cores 0-1, matching the 2-thread standalone
+    benchmark, not to the single core the deployed stack uses.
+  - Co-tenants are placed on cores 2-3 only. run_stack_hil.sh leaves the ROS
+    nodes unrestricted (NODE_CORES="0-3"), so in the deployed baseline they can
+    share the detector's core. That channel is untested here.
 
 Conditions, detector always pinned to cores 0-1:
 

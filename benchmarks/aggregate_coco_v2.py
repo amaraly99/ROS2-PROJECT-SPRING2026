@@ -6,8 +6,10 @@ Reads benchmarks/results/accuracy/coco/v2_{controlled,deployed}/*.csv and emits,
 to benchmarks/paper_data/accuracy/:
 
     coco_v2_all_runs.csv        every run, one row, all postprocess columns
-    COCO_ACCURACY_RESULTS.md    narrative report (BRIEF_A structure)
     tables/table_coco_*.tex     LaTeX fragments
+
+COCO_ACCURACY_RESULTS.md sits in the same directory but is NOT written here; it
+is maintained by hand and can fall behind this script's output.
 
 Every cross-backend comparison it prints is guarded: it refuses to compare two
 runs that did not use the same image budget and the same postprocess profile.

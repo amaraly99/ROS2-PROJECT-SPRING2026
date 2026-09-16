@@ -8,9 +8,9 @@
 The detector sweep shows a CPU-resident detector losing 20–34 % of its standalone
 throughput inside the closed loop. The draft attributed this to the detector and
 the SLAM solver "competing for the Cortex-A76 cores". That is not what the stack
-does: `run_stack_hil.sh` pins the detector to cores 0–1 and OV²SLAM to cores 2–3,
-so the two never contend for a core. Something else couples them, and this
-isolates what.
+does: `run_stack_hil.sh` pins the detector to core 1 (`DETECTOR_CORE="1"`) and
+OV²SLAM to cores 2–3, so those two never contend for a core. Something else
+couples them, and this isolates what.
 
 Synthetic co-tenants are used instead of the real stack so the experiment needs no
 simulator, no SLAM build and no wired-LAN rig — it runs on the Pi alone.
@@ -21,6 +21,18 @@ simulator, no SLAM build and no wired-LAN rig — it runs on the Pi alone.
 | `idle` | pinned to 0–1 | idle |
 | `cpu` | pinned to 0–1 | two ALU spinners, ~2 KB working set (fits L1) |
 | `mem` | pinned to 0–1 | two streaming loads, 64 MB buffers (≫ 2 MB shared L3) |
+
+Two deliberate mismatches with the deployed configuration, stated here so no
+result is read as covering them:
+
+1. **The detector is pinned to cores 0–1 here, not to the single core the stack
+   uses.** That matches the 2-thread standalone benchmark these latencies are
+   compared against, not `run_stack_hil.sh`.
+2. **Co-tenants are placed on cores 2–3 only, so the detector's own core is never
+   loaded.** `run_stack_hil.sh` leaves the four ROS nodes unrestricted
+   (`NODE_CORES="0-3"`), so in the deployed baseline they can and do share the
+   detector's core. Nothing here bounds that channel, and the manuscript says so
+   rather than claiming the memory path is the only one.
 
 ## Results (mean ± std over three repetitions, inference stage)
 
