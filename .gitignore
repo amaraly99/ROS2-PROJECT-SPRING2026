@@ -216,3 +216,6 @@ scripts/hil_matrix/logs/
 trash/
 
 __pycache__/
+
+# Session handoff notes — local only, not tracked
+HANDOFF*.md

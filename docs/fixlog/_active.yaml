@@ -1,0 +1,52 @@
+stage: done  # FIX-028 written (docs/fixlog/028-orb-stereo-wrappers-published-nothing.md), live-verified
+loop_count: 0
+max_loops: 2
+active_fix: none
+
+last_completed: FIX-028
+closing_evidence: >
+  Live HIL stereo trials 2026-09-08 (run_matrix.py --trials 1, oracle,
+  --hold-fsm): orbslam2_stereo VALID 1/1 -- 282 scored poses, APE RMSE 0.619 m
+  over 33.63 m, scale 1.119, 44.8 ms/frame, 11.6 Hz
+  (results/matrix_20260908_100347); orbslam3_stereo VALID 1/1 -- 271 scored
+  poses, APE RMSE 0.700 m over 33.76 m, scale 1.223, 33.0 ms/frame, 11.6 Hz,
+  readiness via the handshake-ACK path (results/matrix_20260908_100722). Both
+  backends had published nothing at all before the fix.
+
+session_2026-09-08_summary: >
+  1. IDEA-004 ("ground-truth freeze") CLOSED as a false alarm: the drone is
+  deliberately held still (spawn hold; slam_traj_probe.m post-init settle +
+  orchestrator waiting for /slam/tracking_state==2). 16/16 bags of 09-06
+  confirm the hold ends 0.0-0.3 s before the scorer's t_init. No code change.
+  Lesson encoded as skills rule-out-by-design / read-the-driver-first /
+  occams-razor-before-escalate / second-brain (Stage-0 design gate).
+  2. Stereo integration of four backends, all changes additive and listed in
+  docs/REVERT_2026-09-08_stereo_integration.md (one-shot revert script):
+  OV2SLAM-fast stereo calib+configs; ORB-SLAM3 built in this worktree +
+  Stereo/HIL_SIM.yaml + config + FIX-028; ORB-SLAM2 core+wrapper built +
+  stereo/hil_sim.yaml + config + FIX-028; RTAB-Map live-HIL bridge + launch +
+  config (no build). Wiring tests (stereo_wiring_test.sh) pass for all four.
+  Live trials: RTAB-Map VALID (RMSE 0.509 m / 33.7 m, scale 1.10, 7 Hz,
+  results/matrix_20260908_100013); ORB-SLAM2 and ORB-SLAM3 VALID (above);
+  OV2SLAM-fast: first attempt failed at Simulink start (MATLAB-side 240 s
+  timeout, one-off -- the next four starts took 51-55 s); re-run VALID 1/1 --
+  303 scored poses, RMSE 0.257 m over 33.7 m, scale 0.960, 4.2 ms/frame,
+  11.7 Hz (results/matrix_20260908_101113). All five stereo arms are now
+  live-verified. Rig left clean: 0 containers, MATLAB down, no .matrixbak.
+  3. Nothing committed. Windows run_matrix.py (untracked file) has a one-line
+  edit; pristine copy in trash/run_matrix.py.orig-2026-09-08.
+
+coupling_note: >
+  RTAB-Map on the live rig logs "A large number (644/953) of stereo
+  correspondences are rejected!" and computes an enormous "delay" because the
+  image header stamps are the MATLAB sim clock, not wall time; odometry and the
+  map->odom correction still worked (map_corrected 212/213). Documented in the
+  handoff as a caveat, not a blocker.
+
+open_followups: >
+  TODO-AT/AU/AV (fixlog 028), TODO-AS (fixlog 027), TODO-AQ/AR (024/025).
+  6/16 stereo OV2SLAM trials on 09-06 never reached SLAM-ready in budget
+  (initialisation-time question, untouched). The 09-06 _TEST configs and
+  export_bag_csv.py / pose_watch.py remain untracked. First-trial stereo scale
+  readings of 1.10-1.22 (RTAB-Map / ORB-SLAM2 / ORB-SLAM3) are n=1 numbers --
+  watch across a 10-trial matrix before reading anything into them.

@@ -76,11 +76,11 @@ void ServoFsmNode::declare_parameters() {
     declare_parameter("min_confidence",     0.30);
     declare_parameter("image_width",        640);
     declare_parameter("image_height",       480);
-    declare_parameter("camera_fx",           1200.0);  // px; 30deg HFOV @1200 (stereo); was hardcoded 30deg/fx~554
-
-    // Sim camera intrinsics (hil_ros_init_LT: fx=fy=554, cx=320, cy=240).
-    declare_parameter("cam_fx", 554.0);
-    declare_parameter("cam_fy", 554.0);
+    // Sim camera intrinsics. 1200, NOT 554 -- 554 was never measured (see
+    // bench_fsm.yaml for the full derivation/citation). bearing_from_ex()
+    // uses this same cam_fx_ -- no separate camera_fx parameter anymore.
+    declare_parameter("cam_fx", 1200.0);
+    declare_parameter("cam_fy", 1200.0);
     declare_parameter("cam_cx", 320.0);
     declare_parameter("cam_cy", 240.0);
     declare_parameter("known_target_height", 1.5);
@@ -148,7 +148,6 @@ void ServoFsmNode::load_parameters() {
     }
     min_confidence_ = get_parameter("min_confidence").as_double();
     image_width_    = get_parameter("image_width").as_int();
-    camera_fx_      = get_parameter("camera_fx").as_double();
     image_height_   = get_parameter("image_height").as_int();
 
     cam_fx_ = get_parameter("cam_fx").as_double();
@@ -886,7 +885,7 @@ double ServoFsmNode::wrap_to_pi(double a) {
 double ServoFsmNode::deg2rad(double d) { return d * M_PI / 180.0; }
 
 double ServoFsmNode::bearing_from_ex(double ex_norm) const {
-    return std::atan(ex_norm * (image_width_ / 2.0) / camera_fx_);
+    return std::atan(ex_norm * (image_width_ / 2.0) / cam_fx_);
 }
 
 }  // namespace servo_core

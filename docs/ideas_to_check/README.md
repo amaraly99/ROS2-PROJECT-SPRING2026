@@ -18,5 +18,7 @@ dead end).
 
 | ID | Date | Title | Status |
 |----|------|-------|--------|
+| [004](004-ground-truth-pose-frozen-in-bag.md) | 2026-09-06 | Ground-truth pose "freeze" in stereo+oracle trials -- FALSE ALARM: the drone is deliberately held still (spawn hold + slam_traj_probe.m post-init hold while the orchestrator waits for SLAM-ready); confirmed on 16/16 bags, never inside the scored window | **closed -- not a bug** |
 | [002](002-searching-yaw-settle-oscillation.md) | 2026-07-02 | SEARCHING yaw-settle oscillation — YAW_RIGHT_60/LEFT_60/CENTER never converges, blocks FIX-011 end-to-end | **open** |
+| [003](003-ov2slam-sync-error-stalls-mid-run.md) | 2026-09-04 | OV2SLAM stereo pairing stalls forever partway through a run (Sync error, no recovery) | **open** |
 | [001](001-orbslam2-monocular-init-reliability.md) | 2026-07-02 | ORB-SLAM2 monocular init reliability (CPU pinning falsified, FSM gating idea) | **graduated → fixlog/011** |

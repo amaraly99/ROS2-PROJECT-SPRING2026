@@ -802,8 +802,9 @@ void StereoMode::ProcessStereoPair(
         timestamp = GetImageTimestampSeconds(*right_msg);
     }
 
-    pAgent->TrackStereo(left_cv_ptr->image, right_cv_ptr->image, timestamp);
+    const Sophus::SE3f Tcw = pAgent->TrackStereo(left_cv_ptr->image, right_cv_ptr->image, timestamp);  // HIL: was discarded (stereo path never got the mono HIL port)
     const auto after_track = std::chrono::steady_clock::now();
+    PublishPose(Tcw, timestamp);  // HIL: same contract as MonocularMode::Img_callback
     PublishMapPointCloud(timestamp);
 
     RecordCallbackTiming(

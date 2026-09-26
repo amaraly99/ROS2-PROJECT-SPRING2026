@@ -1,0 +1,73 @@
+%YAML:1.0
+
+#--------------------------------------------------------------------------------------------
+# HIL_SIM stereo -- MATLAB/Unreal synthetic stereo pair used by the ROS2-PROJECT HIL bench.
+#
+# Created 2026-09-08. Template: Stereo/EuRoC_rectified.yaml (the pre-rectified stereo form
+# ORB-SLAM3 V1.0 supports natively: Camera.type "Rectified" is treated as an ideal pinhole
+# pair with no distortion and NO internal rectification pass -- see orb_slam3/src/Settings.cc,
+# readCamera1() "Rectified" branch). The simulator renders two ideal pinhole cameras with
+# parallel optical axes and a pure +x offset, so the pair is rectified by construction.
+#
+# Intrinsics: fx = fy = 554 px, cx = 320, cy = 240 for BOTH eyes -- the value read from the
+# Simulink "Simulation 3D Camera" blocks' raw .slx XML and verified live by the OV2SLAM stereo
+# arm (Umeyama scale 0.98 +/- 0.03 once the calib said 554; 0.46 when it said 1200 --
+# docs/fixlog/027-stereo-fx-1200-vs-554-mismatch.md). Identical to Monocular/HIL_SIM.yaml and
+# camera_calib/hil_sim_ov2slam_stereo.yaml so every backend sees the same camera model.
+#
+# Baseline: 0.11 m (right block mountPoint y = -0.11 in the .slx; body_T_cam1 in the OV2SLAM
+# stereo calib). Stereo.ThDepth left at EuRoC_rectified.yaml's 60 (close/far threshold in
+# baselines = 6.6 m) -- deliberately NOT tuned per-backend (controlled-ablation premise).
+#
+# Input images arrive as mono8 (ovcam_bridge converts), so Camera.RGB is irrelevant.
+#--------------------------------------------------------------------------------------------
+File.version: "1.0"
+
+Camera.type: "Rectified"
+
+Camera1.fx: 554.0
+Camera1.fy: 554.0
+Camera1.cx: 320.0
+Camera1.cy: 240.0
+
+Camera2.fx: 554.0
+Camera2.fy: 554.0
+Camera2.cx: 320.0
+Camera2.cy: 240.0
+
+Camera.width: 640
+Camera.height: 480
+
+# Nominal publish rate; measured end-to-end delivery is ~13 Hz over the MATLAB->Pi link,
+# identical for every backend (same note as Monocular/HIL_SIM.yaml).
+Camera.fps: 20
+
+Camera.RGB: 1
+
+Stereo.b: 0.61
+Stereo.ThDepth: 60.0
+
+#--------------------------------------------------------------------------------------------
+# ORB Parameters -- identical to Monocular/HIL_SIM.yaml (upstream EuRoC mono defaults).
+# The only thing that may differ between benchmark arms is the SLAM system itself.
+#--------------------------------------------------------------------------------------------
+ORBextractor.nFeatures: 800
+ORBextractor.scaleFactor: 1.2
+ORBextractor.nLevels: 8
+ORBextractor.iniThFAST: 15
+ORBextractor.minThFAST: 5
+
+#--------------------------------------------------------------------------------------------
+# Viewer -- headless on the Pi, but the keys must exist or the parser errors out.
+#--------------------------------------------------------------------------------------------
+Viewer.KeyFrameSize: 0.05
+Viewer.KeyFrameLineWidth: 1.0
+Viewer.GraphLineWidth: 0.9
+Viewer.PointSize: 2.0
+Viewer.CameraSize: 0.08
+Viewer.CameraLineWidth: 3.0
+Viewer.ViewpointX: 0.0
+Viewer.ViewpointY: -0.7
+Viewer.ViewpointZ: -1.8
+Viewer.ViewpointF: 500.0
+Viewer.imageViewScale: 1.0

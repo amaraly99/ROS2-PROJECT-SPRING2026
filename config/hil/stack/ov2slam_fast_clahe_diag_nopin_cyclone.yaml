@@ -1,0 +1,55 @@
+# SLAM RMSE capture — OV2SLAM (FAST profile, CLAHE ON), MONO, UNPINNED, over WiFi/CycloneDDS.
+# Built 2026-09-16 for a single-variable replication of the August 2026-08-15
+# fast-CLAHE success (matrix_20260815_231824, on the separate
+# ROS2-PROJECT-SPRING2026 worktree, feat/stereo-hil branch, init_dist=0.783m,
+# recovered this session after being wrongly assumed unrecoverable).
+#
+# That August run differed from tonight's 20 straight failures
+# (ov2slam_fast_clahe_diag_nopin_wifi.yaml, results/matrix_20260916_012729 and
+# matrix_20260916_052337) in THREE axes at once: network interface (eth0 vs
+# WiFi), DDS transport (cyclonedds vs fastrtps), and SLAM pinning ("2,3" vs
+# unpinned). Changing all three at once would not isolate anything.
+#
+# This file changes ONLY dds: fastrtps -> cyclonedds, using the same pattern
+# already proven working in this exact repo:
+# ov2slam_oracle_accurate_cyclone_TEST.yaml runs cyclonedds over the same WiFi
+# IP (192.168.1.201, interface "") this file uses. Interface stays WiFi, not
+# eth0, because eth0 is still NO-CARRIER/DOWN (reconfirmed 2026-09-15/16) —
+# testing the true wired condition is a separate, not-yet-done experiment.
+# slam.cpu stays unpinned ("") to match tonight's protocol and isolate DDS
+# transport alone as the one changed variable.
+mode: benchmark
+
+network:
+  matlab_host_ip: 192.168.1.201
+  interface:      ""
+  dds:            cyclonedds
+  ros_domain_id:  0
+
+detector:
+  type: oracle
+  cpu:  "0"
+
+controller:
+  type: proportional
+  cpu:  "0"
+
+slam:
+  enabled:           true
+  type:              ov2slam
+  image:             ros2_perception_stack
+  container_name:    slam_ov2slam
+  cpu:               ""     # NOPIN: unpinned, matching tonight's protocol
+  startup_delay_sec: 2
+  restart:           unless-stopped
+  command:           "ros2 run ov2slam ov2slam_node /workspace/camera_calib/hil_sim_ov2slam_fast_clahe.yaml"
+  topics:
+    image_in: /ovcam/image_raw
+    pose_out: /slam/pose
+  remap:
+    - "/ovcam/image_raw:=/ovcam/image_raw"
+    - "vo_pose:=/slam/pose"
+    - "slam_tracking_state:=/slam/tracking_state"
+
+init_gate:
+  enabled: false

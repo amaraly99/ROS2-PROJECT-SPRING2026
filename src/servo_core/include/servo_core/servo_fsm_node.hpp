@@ -141,7 +141,6 @@ private:
     double lockon_ex_tol_;
     double k_lockon_bias_;
     double image_x_yaw_sign_;   // +1.0 = legacy (inverted); -1.0 = corrected
-    double camera_fx_;          // camera focal length (px) for bearing_from_ex()
 
     double search_yaw_target_deg_;
     double k_search_yaw_;

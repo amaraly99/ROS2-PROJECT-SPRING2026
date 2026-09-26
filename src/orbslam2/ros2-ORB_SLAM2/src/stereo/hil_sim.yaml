@@ -1,0 +1,68 @@
+%YAML:1.0
+
+#--------------------------------------------------------------------------------------------
+# HIL simulator STEREO camera -- Unreal Engine synthetic feed, 640x480, ideal pinhole pair,
+# no distortion, parallel optical axes, pure +x baseline. Created 2026-09-08.
+#
+# The ROS 2 stereo wrapper (src/stereo/stereo.cpp) expects PRE-RECTIFIED images on
+# camera/left and camera/right and does not consume LEFT.*/RIGHT.* rectification blocks --
+# the simulator pair is rectified by construction, so none are given here.
+#
+# fx = fy = 554 px for both eyes: the value in the Simulink camera blocks' raw .slx XML,
+# verified live via the OV2SLAM stereo arm (docs/fixlog/027-stereo-fx-1200-vs-554-mismatch.md).
+# Same numbers as ../monocular/hil_sim.yaml so mono and stereo arms share one camera model.
+# Baseline 0.11 m (right block mountPoint y = -0.11) -> Camera.bf = 554 * 0.11 = 60.94.
+# ThDepth 60 (close/far threshold in baselines = 6.6 m) matches the ORB-SLAM3 stereo HIL_SIM
+# settings; deliberately not tuned per backend. Images arrive as mono8, so Camera.RGB is moot.
+#--------------------------------------------------------------------------------------------
+
+Camera.fx: 554.0
+Camera.fy: 554.0
+Camera.cx: 320.0
+Camera.cy: 240.0
+
+Camera.k1: 0.0
+Camera.k2: 0.0
+Camera.p1: 0.0
+Camera.p2: 0.0
+Camera.k3: 0.0
+
+Camera.width: 640
+Camera.height: 480
+
+# Nominal publish rate (measured delivery ~13 Hz over the MATLAB->Pi link, same for all arms)
+Camera.fps: 20.0
+
+# Stereo baseline times fx
+Camera.bf: 60.94
+
+# Color order (ignored: input is mono8)
+Camera.RGB: 0
+
+# Close/Far threshold. Baseline times.
+ThDepth: 60.0
+
+#--------------------------------------------------------------------------------------------
+# ORB Parameters -- identical to ../monocular/hil_sim.yaml
+#--------------------------------------------------------------------------------------------
+ORBextractor.nFeatures: 800
+ORBextractor.scaleFactor: 1.2
+ORBextractor.nLevels: 8
+ORBextractor.iniThFAST: 15
+ORBextractor.minThFAST: 5
+
+#--------------------------------------------------------------------------------------------
+# Viewer Parameters (headless; keys must exist)
+#--------------------------------------------------------------------------------------------
+Viewer.KeyFrameSize: 0.05
+Viewer.KeyFrameLineWidth: 1
+Viewer.GraphLineWidth: 0.9
+Viewer.PointSize: 2
+Viewer.CameraSize: 0.08
+Viewer.CameraLineWidth: 3
+Viewer.ViewpointX: 0
+Viewer.ViewpointY: -0.7
+Viewer.ViewpointZ: -1.8
+Viewer.ViewpointF: 500
+
+Viewer.UseViewer: 0

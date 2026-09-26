@@ -1,0 +1,82 @@
+# HIL Stack Config -- orbslam3_probe, MONO, UNPINNED, over WiFi/FastRTPS.
+# Built 2026-09-15 to give mono an unpinned arm comparable to the ALICIA stereo
+# batch. Base is orbslam3_probe_wifi.yaml, NOT orbslam3_probe_nopin.yaml -- the
+# existing _nopin file predates the wifi network fix and still points at the
+# dead wired link (reconfirmed down 2026-09-15). ld_prefix carried over
+# unchanged: Pangolin is header/lib-only and untouched by rebuilds, per
+# orbslam3_probe_wifi.yaml's own header, no equivalent risk to the ORB-SLAM2
+# g2o ld_prefix fix applies here. Only change from the _wifi base: slam.cpu
+# "2,3" -> "". controller.cpu / detector.cpu deliberately left untouched, same
+# FIX-008 / unverified-warning reasoning as every other _nopin file in this dir.
+mode: benchmark
+
+network:
+  matlab_host_ip: 192.168.1.201
+  interface:      ""
+  dds:            fastrtps
+  ros_domain_id:  0
+
+detector:
+  type:     oracle
+  cpu:      "0"
+  topics:
+    image_in: /ovcam/image_raw
+    out:      /yolo/detections
+
+controller:
+  type:       proportional
+  # cpu "1" -> "0" (2026-09-15): matches all 5 ALICIA stereo arms and the 3 mono
+  # OV2SLAM arms, making all 10 configs across both flights uniform on this axis.
+  #
+  # For THIS benchmark path the pin is INERT, and that is traced, not assumed:
+  # run_matrix.py starts the stack with --hold-fsm, and run_stack_hil.sh hits its
+  # HOLD_FSM block ("SLAM HELD -- camera + SLAM sidecar up, FSM NOT launched")
+  # and exit 0s before ever calling launch_stack. detector.cpu/controller.cpu
+  # only reach anything through LAUNCH_ARGS (run_stack_hil.sh:734), which is
+  # consumed by launch_stack alone -- so with the FSM held, neither the oracle
+  # detector node nor the controller process is ever started and neither pin is
+  # applied. The drone flies slam_traj_probe.m's scripted trajectory by writing
+  # sim_cmdvel into the MATLAB base workspace, never through ROS /cmd_vel. Of the
+  # three cpu fields only slam.cpu is live here (run_stack_hil.sh:236, taskset on
+  # the sidecar, which does start).
+  #
+  # Changed anyway for two reasons: it removes a mono-vs-stereo asymmetry that
+  # would otherwise need a footnote in the write-up, and if this config is ever
+  # reused in a mode where the stack DOES launch (--resume-fsm, init_gate, or
+  # full closed-loop), "0" is the value matching every other arm.
+  # detector.cpu was already "0" and is unchanged.
+  cpu:        "0"
+  gains_file: bench_proportional.yaml
+  topics:
+    detections_in: /yolo/detections
+    cmd_out:       /cmd_vel
+
+slam:
+  enabled:           true
+  type:              orbslam3
+  image:             orbslam3_container
+  container_name:    slam_orbslam3
+  cpu:               ""     # NOPIN: unpinned to match ALICIA stereo protocol
+  startup_delay_sec: 2
+  restart:           unless-stopped
+
+  setup_overlay: /workspace/src/orbslam3/install/setup.bash
+  ld_prefix:     /workspace/src/orbslam3/Pangolin/build:/usr/local/lib:/opt/ros/jazzy/lib
+
+  command: >-
+    bash -c "python3 /workspace/src/orbslam3/scripts/hil_handshake_node.py
+    --ros-args -p settings_name:=HIL_SIM &
+    exec ros2 run ros2_orb_slam3 mono_node_cpp --ros-args
+    -p voc_file_arg:=/workspace/src/orbslam3/orb_slam3/Vocabulary/ORBvoc.txt.bin
+    -p settings_file_path_arg:=/workspace/src/orbslam3/orb_slam3/config/Monocular/
+    -r /mono_py_driver/img_msg:=/ovcam/image_raw
+    -r slam_pose:=/slam/pose
+    -r slam_tracking_state:=/slam/tracking_state"
+
+  topics:
+    image_in: /ovcam/image_raw
+    pose_out: /slam/pose
+
+init_gate:
+  enabled: false
+  module: none

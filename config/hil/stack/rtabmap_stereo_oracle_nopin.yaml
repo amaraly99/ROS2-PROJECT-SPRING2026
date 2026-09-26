@@ -1,0 +1,73 @@
+# ============================================================================
+# HIL Stack Config — "rtabmap_stereo_oracle"   (created 2026-09-08)
+#
+# SLAM-isolation experiment for STEREO RTAB-Map (F2M stereo odometry + rtabmap
+# loop closure): ORACLE detector + proportional controller (both "perfect" on
+# purpose) + the RTAB-Map sidecar. Network/camera/detector/controller blocks are
+# copied verbatim from config/hil/stack/ov2slam_stereo_oracle.yaml.
+#
+# RTAB-Map had no live-HIL integration before this (only the EuRoC offline
+# benchmark under src/rtabmap_docker/). The sidecar runs
+# src/rtabmap_docker/hil_stereo.launch.py: hil_stereo_bridge.py (CameraInfo from
+# the verified sim intrinsics, odometry -> /slam/pose, /slam/tracking_state, and
+# the timing CSV the orchestrator/aggregator expect) + rtabmap_odom/stereo_odometry
+# + rtabmap_slam/rtabmap. No build step: the image is the one the EuRoC benchmark
+# used (host_benchmarker_rtabmap), already present on the Pi.
+#
+# Requires MATLAB running with STEREO_ON=1 (set_stereo.m) -- run_matrix.py does
+# this itself when the matrix arm sets stereo: true.
+# ============================================================================
+
+mode: benchmark
+
+# ── Global / network ─────────────────────────────────────────────────────────
+network:
+  matlab_host_ip: 192.168.137.1
+  interface:      ""              # auto-detect via routing table toward matlab_host_ip
+  dds:            fastrtps
+  ros_domain_id:  0
+
+# ── camera ────────────────────────────────────────────────────────────────────
+camera:
+  stereo: true
+
+# ── Module 1: DETECTION ──────────────────────────────────────────────────────
+detector:
+  type: oracle
+  cpu:  "0"
+
+# ── Module 2: CONTROLLER ─────────────────────────────────────────────────────
+controller:
+  type: proportional
+  cpu:  "0"
+
+# ── Module 3: SLAM ───────────────────────────────────────────────────────────
+slam:
+  enabled:           true
+  type:              rtabmap
+  image:             rtabmap-jazzy-arm64:latest
+  container_name:    slam_rtabmap
+  startup_delay_sec: 2
+  restart:           unless-stopped
+
+  # run_stack_hil.sh prepends /workspace/opencv/build/lib (the custom OpenCV 4.10
+  # this repo's OV2SLAM uses) to every sidecar's LD_LIBRARY_PATH. rtabmap in this
+  # image links OpenCV 4.6 (different soname, so no clash), but keep the image's
+  # own system libs first regardless.
+  ld_prefix:     /usr/lib/aarch64-linux-gnu:/opt/ros/jazzy/lib
+
+  # bash -c wrapper: run_stack_hil.sh appends `--ros-args <remaps>` to every
+  # command; `ros2 launch` would reject that as a malformed launch argument, so
+  # the appended tail must land in bash's $0 instead (same trick the ORB-SLAM3
+  # configs rely on). exec keeps the launch process as PID 1 for docker stop.
+  command: >-
+    bash -c "exec ros2 launch /workspace/src/rtabmap_docker/hil_stereo.launch.py"
+
+  topics:
+    image_in: /ovcam/image_raw
+    pose_out: /slam/pose
+
+# ── SLAM-init gate ────────────────────────────────────────────────────────────
+init_gate:
+  enabled: false
+  module: none

@@ -130,7 +130,7 @@ public:
                 if (!img0_buf.empty() && !img1_buf.empty())
                 {
                     double time0 = (double)img0_buf.front()->header.stamp.sec + 1e-9*(double)img0_buf.front()->header.stamp.nanosec;
-                    double time1 = (double)img1_buf.front()->header.stamp.sec + 1e-9*(double)img0_buf.front()->header.stamp.nanosec;
+                    double time1 = (double)img1_buf.front()->header.stamp.sec + 1e-9*(double)img1_buf.front()->header.stamp.nanosec;
 
                     // sync tolerance
                     if(time0 < time1 - 0.015)
@@ -151,6 +151,7 @@ public:
                         img1_buf.pop();
 
                         if( !image0.empty() && !image1.empty() ) {
+                            std::cout << "Stereo pair accepted -- dt(right-left) = " << (time1 - time0) << " s" << std::endl;
                             pslam_->addNewStereoImages(time0, image0, image1);
                             publishTrackingState();
                         }

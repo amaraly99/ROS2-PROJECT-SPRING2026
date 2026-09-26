@@ -1,0 +1,44 @@
+# SLAM RMSE capture — OV2SLAM (FAST profile), MONO, over WiFi/FastRTPS.
+# Byte-identical to ov2slam_oracle_fast.yaml except the network block -- see
+# ov2slam_oracle_accurate_wifi.yaml's header for why (eth0 is down tonight).
+#
+# NOTE (carried over verbatim from ov2slam_oracle_fast.yaml): OV2SLAM-fast
+# initialises ~10.7 m into the flight, well past the 3 m init leg, so it is
+# EXPECTED to abort every trial ("did not initialise during the init cycle,
+# tracking_state=1") and record 0/N. That abort is the finding, not a harness
+# failure.
+mode: benchmark
+
+network:
+  matlab_host_ip: 192.168.1.201
+  interface:      ""
+  dds:            fastrtps
+  ros_domain_id:  0
+
+detector:
+  type: oracle
+  cpu:  "0"
+
+controller:
+  type: proportional
+  cpu:  "0"
+
+slam:
+  enabled:           true
+  type:              ov2slam
+  image:             ros2_perception_stack
+  container_name:    slam_ov2slam
+  cpu:               "2,3"
+  startup_delay_sec: 2
+  restart:           unless-stopped
+  command:           "ros2 run ov2slam ov2slam_node /workspace/camera_calib/hil_sim_ov2slam_fast.yaml"
+  topics:
+    image_in: /ovcam/image_raw
+    pose_out: /slam/pose
+  remap:
+    - "/ovcam/image_raw:=/ovcam/image_raw"
+    - "vo_pose:=/slam/pose"
+    - "slam_tracking_state:=/slam/tracking_state"
+
+init_gate:
+  enabled: false

@@ -93,7 +93,7 @@ start_slam_sidecar() {
     # Benchmark run dir (created here so SLAM timing/CPU artefacts land here,
     # regardless of which position this function is called from).
     BAG_HOST=""
-    if [[ "$MODE" == "benchmark" ]]; then
+    if [[ "$RECORDING_ON" == "true" ]]; then
         STAMP=$(date +%Y%m%d_%H%M%S)
         RUNREL="bags/run_${CONFIG_NAME:-nocfg}_${RUN_TAG:+${RUN_TAG}_}${STAMP}"
         BAG_HOST="${WS}/${RUNREL}"
@@ -101,7 +101,7 @@ start_slam_sidecar() {
         GIT_SHA=$(git -C "$WS" rev-parse --short HEAD 2>/dev/null || echo nogit)
         {
             echo "config=${CONFIG_NAME:-nocfg}"
-            echo "mode=benchmark"
+            echo "mode=${MODE}"
             echo "controller=${CONTROLLER}"
             echo "detector=${DETECTOR}"
             echo "slam_enabled=${SLAM_ENABLED}"
@@ -183,7 +183,7 @@ YAML
         # OV2_BENCH_TIMING_CSV (Profiler::LogEvent). Each ignores the other's var,
         # so setting both is harmless — the running backend picks up only its own.
         SLAM_TIMING_ENV=":"   # no-op for scout mode
-        SLAM_LOG_REDIRECT=""  # no-op for scout mode (no RUNREL to write into)
+        SLAM_LOG_REDIRECT=""  # overridden below, unconditionally (both modes)
         # Pre-computed here (not inline below) because the docker run command
         # below is one big double-quoted string in THIS script -- a literal
         # unescaped `"` inside it prematurely closes/reopens that outer string
@@ -202,6 +202,18 @@ YAML
             # evidence needed to diagnose an init failure after the fact. Persist
             # it next to bag_record.log/slam_cpu_sampler.log instead.
             SLAM_LOG_REDIRECT=" >>/workspace/${RUNREL}/slam_sidecar.log 2>&1"
+        else
+            # Scout mode has no RUNREL (no per-run results dir) -- same loss-on-
+            # teardown problem as above, just without a benchmark dir to write
+            # into. Persist to a fixed /tmp path instead. Scoped by SLAM_CONTAINER
+            # (unique per backend: slam_ov2slam, slam_orbslam2, ...), NOT one
+            # shared filename -- two different-type scout sidecars overlapping
+            # would otherwise truncate/interleave into the same inode. Truncate
+            # (not append): this is "read the log for THIS run", and OV2SLAM's
+            # own console output is verbose enough (a 40s window produced 3.8MB
+            # in testing, mostly per-keyframe Ceres summaries) that appending
+            # forever across a long manual-testing session isn't what you want.
+            SLAM_LOG_REDIRECT=" >/tmp/slam_sidecar_${SLAM_CONTAINER}.log 2>&1"
         fi
 
         sudo docker run -d \
@@ -226,7 +238,7 @@ YAML
         if [[ "$MODE" == "benchmark" ]]; then
             log "SLAM sidecar started — log: docker logs ${SLAM_CONTAINER}  (persisted: ${RUNREL}/slam_sidecar.log)"
         else
-            log "SLAM sidecar started — log: docker logs ${SLAM_CONTAINER}"
+            log "SLAM sidecar started — log: docker logs ${SLAM_CONTAINER}  (persisted: /tmp/slam_sidecar_${SLAM_CONTAINER}.log)"
         fi
 
         # Benchmark mode: auto-start the host-side CPU/mem/thread sampler for the
@@ -281,12 +293,12 @@ launch_stack() {
 # bag behind to inspect -- not just meta.txt -- since "hold and log, don't
 # tear down" is meaningless if nothing was ever recorded to look at.
 start_bag_recording() {
-    [[ "$MODE" == "benchmark" ]] || return 0
+    [[ "$RECORDING_ON" == "true" ]] || return 0
 
     BAG_TOPICS="/cmd_vel /sim/drone_pose /sim/target_pose /sim/heartbeat /bench/state /yolo/detections"
     [[ "$SLAM_ENABLED" == "true" ]] && BAG_TOPICS+=" ${SLAM_POSE_OUT:-/slam/pose} /tf /tf_static"
 
-    log "Benchmark mode: recording → ${RUNREL}/bag"
+    log "Recording (mode=${MODE}) → ${RUNREL}/bag"
     log "  topics: ${BAG_TOPICS}"
     sudo docker exec -d ros2_perception_stack bash -lc "
         source /opt/ros/jazzy/setup.bash
@@ -374,9 +386,17 @@ CONTROLLER="${CONTROLLER:-proportional}"   # ibvs | proportional | h_vs | pbvs
 DETECTOR="${DETECTOR:-yolo}"               # yolo | oracle
 
 case "$MODE" in
-    benchmark|scout) ;;
-    *) die "Unknown MODE='${MODE}'. Valid: benchmark | scout" ;;
+    benchmark|scout|record) ;;
+    *) die "Unknown MODE='${MODE}'. Valid: benchmark | scout | record" ;;
 esac
+
+# record = scout's behavior (no FSM-timing coupling either way -- see the
+# init_gate note above) + bag recording, WITHOUT benchmark's CPU/thread
+# profiling samplers. One shared switch, computed once, matching this
+# script's own existing style for SLAM_ENABLED/DEBUG_IMAGE_ON rather than
+# repeating the "benchmark || record" condition at every call site.
+RECORDING_ON=false
+[[ "$MODE" == "benchmark" || "$MODE" == "record" ]] && RECORDING_ON=true
 
 [[ "$HOLD_FSM" == "true" && "$RESUME_FSM" == "true" ]] && die "--hold-fsm and --resume-fsm are mutually exclusive"
 
@@ -441,8 +461,15 @@ if [[ "$OPT" == "stop" ]]; then
     rm -f /tmp/slam_thread_sampler.pid 2>/dev/null || true
     sudo pkill -f slam_thread_sampler.py 2>/dev/null || true
     sudo pkill -f yolo_producer 2>/dev/null || true
-    sudo rm -f /dev/shm/ovcam_frames /dev/shm/yolo_shm \
-               /dev/shm/sem.ovcam_ready /dev/shm/sem.yolo_ready 2>/dev/null || true
+    # Right-eye paths included unconditionally -- rm -f on a nonexistent path
+    # is a silent no-op, so this is safe even for mono runs. Left-eye-only
+    # cleanup here was the root cause of FIX-024 (see docs/fixlog/024-...):
+    # a leftover right-eye shm/sem from an unclean shutdown would otherwise
+    # survive indefinitely and get picked up by the next run's reader before
+    # the new writer replaced it.
+    sudo rm -f /dev/shm/ovcam_frames /dev/shm/yolo_shm /dev/shm/ovcam_frames_right \
+               /dev/shm/sem.ovcam_ready /dev/shm/sem.yolo_ready /dev/shm/sem.ovcam_ready_right \
+               2>/dev/null || true
     log "All stopped."
     exit 0
 fi
@@ -495,6 +522,51 @@ if [[ "$OPT" == "hz" ]]; then
         "
     fi
     exit 0
+fi
+
+# -- wait-arrival <max_wait_sec> -- poll RECORDED /sim/drone_pose for arrival,
+# same DDS auto-detect as `hz` above. Exit 0 = arrived, exit 1 = timed out
+# (caller should fail the trial, not fall back to a fixed sleep).
+if [[ "$OPT" == "wait-arrival" ]]; then
+    MAX_WAIT="${2:-60}"
+    CYCLONE_RESOLVED="/tmp/cyclonedds_hil.resolved.xml"
+    FASTRTPS_RESOLVED="/tmp/fastrtps_hil.resolved.xml"
+    WA_RESOLVED=""
+    WA_RMW=""
+    if [[ -f "$CYCLONE_RESOLVED" && -f "$FASTRTPS_RESOLVED" ]]; then
+        if [[ "$CYCLONE_RESOLVED" -nt "$FASTRTPS_RESOLVED" ]]; then
+            WA_RESOLVED="$CYCLONE_RESOLVED"; WA_RMW="cyclonedds"
+        else
+            WA_RESOLVED="$FASTRTPS_RESOLVED"; WA_RMW="fastrtps"
+        fi
+    elif [[ -f "$CYCLONE_RESOLVED" ]]; then
+        WA_RESOLVED="$CYCLONE_RESOLVED"; WA_RMW="cyclonedds"
+    elif [[ -f "$FASTRTPS_RESOLVED" ]]; then
+        WA_RESOLVED="$FASTRTPS_RESOLVED"; WA_RMW="fastrtps"
+    else
+        die "no resolved DDS profile found ($CYCLONE_RESOLVED / $FASTRTPS_RESOLVED) -- start the stack first"
+    fi
+    log "wait-arrival: using ${WA_RMW} profile, max ${MAX_WAIT}s"
+    if [[ "$WA_RMW" == "cyclonedds" ]]; then
+        sudo docker exec ros2_perception_stack bash -lc "
+            source /opt/ros/jazzy/setup.bash
+            source /workspace/install/setup.bash
+            export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+            export CYCLONEDDS_URI=file://${WA_RESOLVED}
+            export ROS_DOMAIN_ID=${ROS_DOMAIN_ID}
+            python3 /workspace/scripts/hil_matrix/wait_for_arrival.py --max-wait ${MAX_WAIT}
+        "
+    else
+        sudo docker exec ros2_perception_stack bash -lc "
+            source /opt/ros/jazzy/setup.bash
+            source /workspace/install/setup.bash
+            export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+            export FASTRTPS_DEFAULT_PROFILES_FILE=${WA_RESOLVED}
+            export ROS_DOMAIN_ID=${ROS_DOMAIN_ID}
+            python3 /workspace/scripts/hil_matrix/wait_for_arrival.py --max-wait ${MAX_WAIT}
+        "
+    fi
+    exit $?
 fi
 
 # ── validate env vars ─────────────────────────────────────────────────────────
@@ -614,8 +686,11 @@ sudo docker rm  ros2_perception_stack 2>/dev/null || true
 _slam_cids=$(sudo docker ps -aq --filter 'name=^slam_' 2>/dev/null)
 [[ -n "$_slam_cids" ]] && sudo docker rm -f $_slam_cids 2>/dev/null || true
 sudo pkill -f yolo_producer 2>/dev/null || true
-sudo rm -f /dev/shm/ovcam_frames /dev/shm/yolo_shm \
-           /dev/shm/sem.ovcam_ready /dev/shm/sem.yolo_ready 2>/dev/null || true
+# Right-eye paths included unconditionally -- see matching comment in the
+# `stop` block above (FIX-024).
+sudo rm -f /dev/shm/ovcam_frames /dev/shm/yolo_shm /dev/shm/ovcam_frames_right \
+           /dev/shm/sem.ovcam_ready /dev/shm/sem.yolo_ready /dev/shm/sem.ovcam_ready_right \
+           2>/dev/null || true
 sleep 0.5
 
 # ── 1. Docker container (detached) ────────────────────────────────────────────
@@ -686,6 +761,22 @@ done
 [[ -e /dev/shm/ovcam_frames ]] \
     || die "sim_camera_bridge did not create /dev/shm/ovcam_frames — check /tmp/hil_launch.log"
 log "SHM created."
+
+# Same wait, right eye only (stereo configs only -- sim_camera_bridge_right
+# never starts otherwise, so this would die() on every mono run if
+# unconditional). No chmod 666 equivalent needed here: that fix exists only
+# because yolo_producer (host-side, non-root) reads the LEFT ring -- the
+# detector is deliberately monocular and never touches the right-eye shm.
+if [[ "${STEREO_ON:-false}" == "true" ]]; then
+    log "Waiting for /dev/shm/ovcam_frames_right to appear..."
+    for i in $(seq 1 20); do
+        [[ -e /dev/shm/ovcam_frames_right ]] && break
+        sleep 0.5
+    done
+    [[ -e /dev/shm/ovcam_frames_right ]] \
+        || die "sim_camera_bridge_right did not create /dev/shm/ovcam_frames_right — check /tmp/hil_launch.log"
+    log "Right-eye SHM created."
+fi
 
 # Fix permissions: sim_camera_bridge runs as root inside Docker and creates the
 # SHM + semaphore as root with umask-derived 0644. yolo_producer runs on the
@@ -815,9 +906,9 @@ if [[ "$MODE" == "benchmark" ]]; then
 echo "    ${RUNREL}/slam_sidecar.log   (persisted copy — survives container stop/removal)"
 fi
 fi
-if [[ "$MODE" == "benchmark" ]]; then
+if [[ "$RECORDING_ON" == "true" ]]; then
 echo ""
-echo "  Recording (benchmark mode):"
+echo "  Recording (mode=${MODE}):"
 echo "    ${RUNREL}/bag            (RMSE input — meta.txt + bag_record.log alongside)"
 echo "    → restart the Simulink sim NOW for a clean t=0, then let the run play out."
 fi

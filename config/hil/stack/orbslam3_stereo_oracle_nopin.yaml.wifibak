@@ -1,0 +1,92 @@
+# ============================================================================
+# HIL Stack Config — "orbslam3_stereo_oracle"   (created 2026-09-08)
+#
+# SLAM-isolation experiment for STEREO ORB-SLAM3: ORACLE detector + proportional
+# controller (both "perfect" on purpose, so a bad result is SLAM's own fault) +
+# the ORB-SLAM3 stereo sidecar. Network/camera/detector/controller blocks are
+# copied verbatim from config/hil/stack/ov2slam_stereo_oracle.yaml (the proven
+# stereo arm); the slam: block mirrors config/hil/stack/orbslam3_probe.yaml (the
+# proven mono ORB-SLAM3 sidecar) with the mono node/handshake/settings swapped
+# for their stereo counterparts.
+#
+# Requires MATLAB running with STEREO_ON=1 (set_stereo.m) -- run_matrix.py does
+# this itself when the matrix arm sets stereo: true.
+#
+# Build prerequisite (this worktree, 2026-09-08): src/orbslam3/install/ built
+# from the vendored package with colcon inside orbslam3_container, plus the
+# Pangolin/ and orb_slam3/Vocabulary/ trees copied from ~/ROS2-PROJECT-SPRING2026.
+# ============================================================================
+
+mode: benchmark
+
+# ── Global / network ─────────────────────────────────────────────────────────
+# Stereo needs fastrtps (CycloneDDS won't even discover MATLAB, see
+# ov2slam_stereo.yaml's own comment). Same block as ov2slam_stereo_oracle.yaml.
+network:
+  matlab_host_ip: 192.168.1.201
+  interface:      ""              # auto-detect via routing table toward matlab_host_ip
+  dds:            fastrtps
+  ros_domain_id:  0
+
+# ── camera ────────────────────────────────────────────────────────────────────
+camera:
+  stereo: true                   # threaded to the launch file's `stereo` arg via
+                                  # parse_stack.py's STEREO_ON -> run_stack_hil.sh
+
+# ── Module 1: DETECTION ──────────────────────────────────────────────────────
+detector:
+  type: oracle
+  cpu:  "0"
+
+# ── Module 2: CONTROLLER ─────────────────────────────────────────────────────
+controller:
+  type: proportional
+  cpu:  "0"
+
+# ── Module 3: SLAM ───────────────────────────────────────────────────────────
+slam:
+  enabled:           true
+  type:              orbslam3
+  image:             orbslam3_container
+  container_name:    slam_orbslam3
+  startup_delay_sec: 2
+  restart:           unless-stopped
+
+  setup_overlay: /workspace/src/orbslam3/install/setup.bash
+  # Pangolin is built in-tree and never installed to a system prefix, so its
+  # .so files live in the build dir (same as orbslam3_probe.yaml).
+  ld_prefix:     /workspace/src/orbslam3/Pangolin/build:/usr/local/lib:/opt/ros/jazzy/lib
+
+  # Two processes in one sidecar, exactly as the mono config:
+  #  1. hil_handshake_node -- the C++ node drops every frame until a String naming
+  #     the settings YAML arrives on <prefix>/experiment_settings. The STEREO node's
+  #     prefix is /stereo_py_driver (src/orbslam3/src/common.cpp, StereoMode ctor),
+  #     hence topic_prefix below. Backgrounded; publishes until ACKed then idles.
+  #  2. stereo_node_cpp in the FOREGROUND so it owns PID 1 and docker stop reaches it.
+  # StereoMode subscribes <prefix>/left_img_msg and <prefix>/right_img_msg and pairs
+  # frames by EXACT header stamp -- satisfied by the launch's use_source_stamp
+  # (both eyes carry the identical MATLAB stamp). Pose/tracking-state publishers use
+  # relative names, remapped here to the stack's backend-agnostic contract.
+  # settings_name HIL_SIM -> <settings_file_path_arg>/HIL_SIM.yaml.
+  command: >-
+    bash -c "python3 /workspace/src/orbslam3/scripts/hil_handshake_node.py
+    --ros-args -p settings_name:=HIL_SIM -p topic_prefix:=/stereo_py_driver &
+    exec ros2 run ros2_orb_slam3 stereo_node_cpp --ros-args
+    -p voc_file_arg:=/workspace/src/orbslam3/orb_slam3/Vocabulary/ORBvoc.txt.bin
+    -p settings_file_path_arg:=/workspace/src/orbslam3/orb_slam3/config/Stereo/
+    -r /stereo_py_driver/left_img_msg:=/ovcam/image_raw
+    -r /stereo_py_driver/right_img_msg:=/ovcam/right/image_raw
+    -r slam_pose:=/slam/pose
+    -r slam_tracking_state:=/slam/tracking_state"
+
+  topics:
+    image_in: /ovcam/image_raw
+    pose_out: /slam/pose
+
+# ── SLAM-init gate ────────────────────────────────────────────────────────────
+# OFF: the gate overrides --hold-fsm (it launches the detector+controller stack
+# itself, which then fights the MATLAB probe for cmd_vel) -- same reasoning as
+# every *_probe / *_stereo_oracle config.
+init_gate:
+  enabled: false
+  module: none

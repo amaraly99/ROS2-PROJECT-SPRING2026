@@ -1,0 +1,72 @@
+# HIL Stack Config -- orbslam2_probe, MONO, over WiFi/FastRTPS.
+# Byte-identical to orbslam2_probe.yaml except:
+#   1. network block -- swapped to WiFi/FastRTPS (eth0 is physically down
+#      tonight: `ip addr show eth0` -> NO-CARRIER, state DOWN; live ping to
+#      192.168.137.10 got 100% loss).
+#   2. ld_prefix -- ADDS /workspace/src/orbslam2/Thirdparty/g2o/lib, which the
+#      original orbslam2_probe.yaml predates. `mono` was rebuilt tonight in the
+#      SAME colcon pass as `stereo` (build_stereo_2026-09-08.sh), against the
+#      HOST-persisted lib/ and Thirdparty/g2o/lib/ (the ephemeral build
+#      container's own "refresh_runtime_libs" copy into /usr/local/lib does NOT
+#      survive -- that container was --rm). Without this, a real trial's fresh
+#      orbslam2_fixed container would fall back to the IMAGE's own stale,
+#      pre-existing /usr/local/lib/libg2o.so instead of the one `mono` was
+#      actually linked against tonight -- exactly the ld_prefix already proven
+#      correct for orbslam2_stereo_oracle.yaml.
+mode: benchmark
+
+network:
+  matlab_host_ip: 192.168.1.201
+  interface:      ""
+  dds:            fastrtps
+  ros_domain_id:  0
+
+detector:
+  type:     oracle
+  cpu:      "0"
+  topics:
+    image_in: /ovcam/image_raw
+    out:      /yolo/detections
+
+controller:
+  type:       proportional
+  cpu:        "1"
+  gains_file: bench_proportional.yaml
+  topics:
+    detections_in: /yolo/detections
+    cmd_out:       /cmd_vel
+
+slam:
+  enabled:           true
+  type:              orbslam2
+  image:             orbslam2_fixed
+  container_name:    slam_orbslam2
+  cpu:               "2,3"
+  startup_delay_sec: 2
+  restart:           unless-stopped
+
+  setup_overlay: /workspace/src/orbslam2/install_stereo/setup.bash
+  ld_prefix:     /workspace/src/orbslam2/lib:/workspace/src/orbslam2/Thirdparty/g2o/lib:/usr/local/lib:/opt/ros/jazzy/lib
+
+  command: >-
+    ros2 run orbslam mono
+    /workspace/src/orbslam2/Vocabulary/ORBvoc.txt
+    /workspace/src/orbslam2/ros2-ORB_SLAM2/src/monocular/hil_sim.yaml
+
+  topics:
+    image_in: /ovcam/image_raw
+    pose_out: /slam/pose
+  remap:
+    - "camera:=/ovcam/image_raw"
+    - "slam_pose:=/slam/pose"
+    - "slam_tracking_state:=/slam/tracking_state"
+
+init_gate:
+  enabled: false
+  module: orbslam2
+  params:
+    legs: [left, right, up_slow]
+    leg_speed: 1.0
+    leg_duration_sec: 0.50
+    timeout_sec: 30
+    ready_debounce: 2

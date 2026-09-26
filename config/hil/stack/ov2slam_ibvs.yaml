@@ -5,9 +5,9 @@
 mode: scout
 
 network:
-  matlab_host_ip: 192.168.137.1
-  interface:      eth0
-  dds:            cyclonedds
+  matlab_host_ip: 192.168.1.201
+  interface:      ""              # auto-detect via routing table toward matlab_host_ip
+  dds:            fastrtps       # matches hil_ros_init_LT.m's RMW_IMPLEMENTATION — do NOT default to cyclonedds here, MATLAB won't discover it
   ros_domain_id:  0
 
 detector:

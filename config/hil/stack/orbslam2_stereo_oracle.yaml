@@ -1,0 +1,86 @@
+# ============================================================================
+# HIL Stack Config — "orbslam2_stereo_oracle"   (created 2026-09-08)
+#
+# SLAM-isolation experiment for STEREO ORB-SLAM2: ORACLE detector + proportional
+# controller (both "perfect" on purpose) + the ORB-SLAM2 stereo sidecar.
+# Network/camera/detector/controller blocks copied verbatim from
+# config/hil/stack/ov2slam_stereo_oracle.yaml (the proven stereo arm); the slam:
+# block mirrors config/hil/stack/orbslam2_probe.yaml (the proven mono ORB-SLAM2
+# sidecar) with `mono` -> `stereo` and the stereo HIL settings file.
+#
+# Requires MATLAB running with STEREO_ON=1 (set_stereo.m) -- run_matrix.py does
+# this itself when the matrix arm sets stereo: true.
+#
+# Build prerequisite (this worktree, 2026-09-08): src/orbslam2/install_stereo/ +
+# src/orbslam2/lib/ rebuilt from source inside orbslam2_fixed (the documented
+# src/orbslam2/README_HIL.md recipe), because the image itself ships only
+# `mono`/`rgbd` and the stereo wrapper needed the /slam/pose + /slam/tracking_state
+# publishers added (docs/fixlog/028-*).
+# ============================================================================
+
+mode: benchmark
+
+# ── Global / network ─────────────────────────────────────────────────────────
+# Stereo needs fastrtps (CycloneDDS won't discover MATLAB in stereo, see
+# ov2slam_stereo.yaml). orbslam2_fixed ships FastRTPS natively, so unlike the
+# cyclonedds mono config no RMW library juggling is needed here.
+network:
+  matlab_host_ip: 192.168.1.201
+  interface:      ""              # auto-detect via routing table toward matlab_host_ip
+  dds:            fastrtps
+  ros_domain_id:  0
+
+# ── camera ────────────────────────────────────────────────────────────────────
+camera:
+  stereo: true
+
+# ── Module 1: DETECTION ──────────────────────────────────────────────────────
+detector:
+  type: oracle
+  cpu:  "0"
+
+# ── Module 2: CONTROLLER ─────────────────────────────────────────────────────
+controller:
+  type: proportional
+  cpu:  "0"
+
+# ── Module 3: SLAM ───────────────────────────────────────────────────────────
+slam:
+  enabled:           true
+  type:              orbslam2
+  image:             orbslam2_fixed
+  container_name:    slam_orbslam2
+  cpu:               "2,3"
+  startup_delay_sec: 2
+  restart:           unless-stopped
+
+  # orbslam2_fixed image lacks ldconfig for ROS2 libs -- must set LD_LIBRARY_PATH.
+  # lib/ and Thirdparty/g2o/lib are this worktree's fresh core build (same source
+  # the wrapper was compiled against); /usr/local/lib is the image's copy.
+  setup_overlay: /workspace/src/orbslam2/install_stereo/setup.bash
+  ld_prefix:     /workspace/src/orbslam2/lib:/workspace/src/orbslam2/Thirdparty/g2o/lib:/usr/local/lib:/opt/ros/jazzy/lib
+
+  # ros2 run (not a raw binary) -- verified for mono to preserve taskset affinity
+  # on the real child binary (orbslam2_probe.yaml FIX 5). stereo.cpp strips the
+  # `--ros-args` run_stack_hil.sh appends (rclcpp::remove_ros_arguments), like mono.
+  command: >-
+    ros2 run orbslam stereo
+    /workspace/src/orbslam2/Vocabulary/ORBvoc.txt
+    /workspace/src/orbslam2/ros2-ORB_SLAM2/src/stereo/hil_sim.yaml
+
+  topics:
+    image_in: /ovcam/image_raw
+    pose_out: /slam/pose
+  # stereo.cpp subscribes camera/left + camera/right (message_filters, approximate
+  # time sync) and publishes slam_pose / slam_tracking_state (relative names).
+  remap:
+    - "camera/left:=/ovcam/image_raw"
+    - "camera/right:=/ovcam/right/image_raw"
+    - "slam_pose:=/slam/pose"
+    - "slam_tracking_state:=/slam/tracking_state"
+
+# ── SLAM-init gate ────────────────────────────────────────────────────────────
+# OFF: it overrides --hold-fsm (same reasoning as orbslam2_probe.yaml).
+init_gate:
+  enabled: false
+  module: orbslam2

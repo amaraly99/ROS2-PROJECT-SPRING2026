@@ -1,0 +1,49 @@
+# SLAM RMSE capture — OV2SLAM (FAST profile, CLAHE ON), MONO, UNPINNED, over WiFi/FastRTPS.
+# Built 2026-09-15 to give this arm an unpinned, network-working path comparable
+# to the ALICIA stereo batch. No _wifi variant existed before this file at all
+# (only ov2slam_oracle_accurate/_fast got that fix on Sep 8) -- base is
+# ov2slam_fast_clahe_diag.yaml, network block swapped to WiFi/FastRTPS (eth0
+# reconfirmed NO-CARRIER/DOWN this session) and slam.cpu "2,3" -> "".
+#
+# STANDING CAVEAT, carried over verbatim from ov2slam_fast_clahe_diag.yaml's own
+# header: this profile was originally built DIAGNOSTIC ONLY, to test whether
+# CLAHE explains OV2SLAM-fast's init failure. WITH CLAHE ON THIS IS NOT "FAST
+# MODE" -- its numbers were never meant to be reported as OV2SLAM-fast. Per
+# explicit user decision 2026-09-15, it is being run as a full 10-trial
+# reportable arm anyway; whether its row belongs in a paper is left for the
+# user to decide later, not decided by this config.
+mode: benchmark
+
+network:
+  matlab_host_ip: 192.168.1.201
+  interface:      ""
+  dds:            fastrtps
+  ros_domain_id:  0
+
+detector:
+  type: oracle
+  cpu:  "0"
+
+controller:
+  type: proportional
+  cpu:  "0"
+
+slam:
+  enabled:           true
+  type:              ov2slam
+  image:             ros2_perception_stack
+  container_name:    slam_ov2slam
+  cpu:               ""     # NOPIN: unpinned to match ALICIA stereo protocol
+  startup_delay_sec: 2
+  restart:           unless-stopped
+  command:           "ros2 run ov2slam ov2slam_node /workspace/camera_calib/hil_sim_ov2slam_fast_clahe.yaml"
+  topics:
+    image_in: /ovcam/image_raw
+    pose_out: /slam/pose
+  remap:
+    - "/ovcam/image_raw:=/ovcam/image_raw"
+    - "vo_pose:=/slam/pose"
+    - "slam_tracking_state:=/slam/tracking_state"
+
+init_gate:
+  enabled: false

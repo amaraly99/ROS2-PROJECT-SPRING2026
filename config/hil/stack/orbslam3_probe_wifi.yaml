@@ -1,0 +1,58 @@
+# HIL Stack Config -- orbslam3_probe, MONO, over WiFi/FastRTPS.
+# Byte-identical to orbslam3_probe.yaml except the network block -- swapped to
+# WiFi/FastRTPS (eth0 is physically down tonight: `ip addr show eth0` ->
+# NO-CARRIER, state DOWN; live ping to 192.168.137.10 got 100% loss).
+# ld_prefix unchanged: Pangolin is header/lib-only and untouched by tonight's
+# rebuild, so no equivalent risk to the ORB-SLAM2 ld_prefix fix applies here.
+mode: benchmark
+
+network:
+  matlab_host_ip: 192.168.1.201
+  interface:      ""
+  dds:            fastrtps
+  ros_domain_id:  0
+
+detector:
+  type:     oracle
+  cpu:      "0"
+  topics:
+    image_in: /ovcam/image_raw
+    out:      /yolo/detections
+
+controller:
+  type:       proportional
+  cpu:        "1"
+  gains_file: bench_proportional.yaml
+  topics:
+    detections_in: /yolo/detections
+    cmd_out:       /cmd_vel
+
+slam:
+  enabled:           true
+  type:              orbslam3
+  image:             orbslam3_container
+  container_name:    slam_orbslam3
+  cpu:               "2,3"
+  startup_delay_sec: 2
+  restart:           unless-stopped
+
+  setup_overlay: /workspace/src/orbslam3/install/setup.bash
+  ld_prefix:     /workspace/src/orbslam3/Pangolin/build:/usr/local/lib:/opt/ros/jazzy/lib
+
+  command: >-
+    bash -c "python3 /workspace/src/orbslam3/scripts/hil_handshake_node.py
+    --ros-args -p settings_name:=HIL_SIM &
+    exec ros2 run ros2_orb_slam3 mono_node_cpp --ros-args
+    -p voc_file_arg:=/workspace/src/orbslam3/orb_slam3/Vocabulary/ORBvoc.txt.bin
+    -p settings_file_path_arg:=/workspace/src/orbslam3/orb_slam3/config/Monocular/
+    -r /mono_py_driver/img_msg:=/ovcam/image_raw
+    -r slam_pose:=/slam/pose
+    -r slam_tracking_state:=/slam/tracking_state"
+
+  topics:
+    image_in: /ovcam/image_raw
+    pose_out: /slam/pose
+
+init_gate:
+  enabled: false
+  module: none

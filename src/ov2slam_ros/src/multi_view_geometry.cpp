@@ -94,6 +94,12 @@ Eigen::Vector3d MultiViewGeometry::opengvTriangulate2(const Sophus::SE3d &Tlr,
     opengv::point_t pt = 
             opengv::triangulation::triangulate2(adapter, 0);
 
+    double range = pt.norm();
+    double cos_theta = bvl.dot(R12 * bvr);
+    if( range != range || range > 100.0 ) {
+        std::cout << "TRIANGULATION DEGENERATE -- range=" << range << " cos_theta=" << cos_theta << std::endl;
+    }
+
     return pt;
 }
 #endif

@@ -1,0 +1,49 @@
+# SLAM RMSE capture — OV2SLAM (FAST profile), MONO, UNPINNED, over WiFi/FastRTPS.
+# Built 2026-09-15 to give mono an unpinned arm comparable to the ALICIA stereo
+# batch. No unpinned mono-fast variant existed before this file -- only pinned
+# (ov2slam_oracle_fast.yaml / _wifi.yaml). Base is ov2slam_oracle_fast_wifi.yaml,
+# same reasoning as ov2slam_oracle_accurate_nopin_wifi.yaml's header. Only
+# change: slam.cpu "2,3" -> "". controller.cpu / detector.cpu left untouched,
+# same FIX-008 / unverified-warning reasoning as every other _nopin file here.
+#
+# NOTE (carried over verbatim from ov2slam_oracle_fast.yaml / _wifi.yaml):
+# OV2SLAM-fast initialises ~10.7 m into the flight, well past the 3 m init leg,
+# so it is EXPECTED to abort every trial ("did not initialise during the init
+# cycle, tracking_state=1") and record 0/N. That abort is the finding, not a
+# harness failure -- unpinning does not change this expectation, unverified
+# whether it changes the actual outcome.
+mode: benchmark
+
+network:
+  matlab_host_ip: 192.168.1.201
+  interface:      ""
+  dds:            fastrtps
+  ros_domain_id:  0
+
+detector:
+  type: oracle
+  cpu:  "0"
+
+controller:
+  type: proportional
+  cpu:  "0"
+
+slam:
+  enabled:           true
+  type:              ov2slam
+  image:             ros2_perception_stack
+  container_name:    slam_ov2slam
+  cpu:               ""     # NOPIN: unpinned to match ALICIA stereo protocol
+  startup_delay_sec: 2
+  restart:           unless-stopped
+  command:           "ros2 run ov2slam ov2slam_node /workspace/camera_calib/hil_sim_ov2slam_fast.yaml"
+  topics:
+    image_in: /ovcam/image_raw
+    pose_out: /slam/pose
+  remap:
+    - "/ovcam/image_raw:=/ovcam/image_raw"
+    - "vo_pose:=/slam/pose"
+    - "slam_tracking_state:=/slam/tracking_state"
+
+init_gate:
+  enabled: false

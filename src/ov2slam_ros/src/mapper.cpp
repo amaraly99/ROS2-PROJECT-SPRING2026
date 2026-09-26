@@ -125,8 +125,43 @@ void Mapper::run()
                 }
             }
 
+            // Stereo mode has no motion-based bootstrap step (unlike mono's
+            // visual_front_end.cpp checkReadyForInit() gate) -- every keyframe
+            // triangulates real 3D points directly from the fixed camera
+            // baseline above, so "ready" just means the first keyframe with
+            // enough of those points has been produced. Non-blocking: unlike
+            // the mono block below, this never resets or skips a keyframe,
+            // it only flips a flag once.
+            //
+            // Threshold (30) reuses the SAME number visual_front_end.cpp:495
+            // already uses for stereo specifically (`stereo_ && nb3dkps_ > 30`,
+            // there deciding whether to prefer 3D keypoints for epipolar
+            // filtering) -- a real stereo precedent, not the mono kfid_==1
+            // reset bar a few lines below, which is a different mode and a
+            // different, motion-dependent point count. Still: nothing in this
+            // codebase establishes that bar transfers to meaning "ready" --
+            // that's reused, not independently validated for this purpose.
+            //
+            // Known gap, not fixed here (flagged in fixlog TODO-x): mono has
+            // a recovery path if its first "ready" reading turns out wrong
+            // (mapper.cpp:129 below, kfid_==1 && nb3dkps_<30 -> reset()),
+            // gated to mono_ and untouched by this change. Stereo has no
+            // equivalent -- once this flips true here, it never reverts for
+            // the rest of the run, even if that first batch of points was
+            // bad (e.g. a calibration issue, not just per-point noise -- this
+            // project has shipped one of those before, see commits 11fa007 /
+            // 4839666). Each point is still cheirality- and reprojection-
+            // filtered by triangulateStereo() above, so this isn't reading
+            // raw noise -- but it has no defense against a systematic error
+            // that would pass those same per-point checks.
+            if( pslamstate_->stereo_ && !pslamstate_->bvision_init_
+                && pnewkf->nb3dkps_ >= 30 )
+            {
+                pslamstate_->bvision_init_ = true;
+            }
+
             // If Mono mode, check if reset is required
-            if( pslamstate_->mono_ && pslamstate_->bvision_init_ ) 
+            if( pslamstate_->mono_ && pslamstate_->bvision_init_ )
             {
                 if( kf.kfid_ == 1 && pnewkf->nb3dkps_ < 30 ) {
                     std::cout << "\n Bad initialization detected! Resetting\n";

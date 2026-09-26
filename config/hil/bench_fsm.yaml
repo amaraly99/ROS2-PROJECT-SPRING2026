@@ -19,9 +19,13 @@
     image_width:  640
     image_height: 480
 
-    # ── Sim camera intrinsics (hil_ros_init_LT: fx=fy=554, cx=320, cy=240) ──
-    cam_fx: 554.0
-    cam_fy: 554.0
+    # Sim camera intrinsics. fx=fy=1200, NOT the old 554 -- 554 was never
+    # measured (guessed from an assumed 60deg HFOV); 1200 is the Simulink
+    # block's actual, twice-measured setting (see feat/stereo-hil 11fa007:
+    # warp-correlation 0.94 vs 0.41, and stereo triangulation giving 1236,
+    # 3% off 1200). cx/cy (image center) are unaffected -- unrelated to focal length.
+    cam_fx: 1200.0
+    cam_fy: 1200.0
     cam_cx: 320.0
     cam_cy: 240.0
     known_target_height: 1.5   # metres (sedan); also used for IBVS desired depth

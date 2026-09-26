@@ -62,8 +62,8 @@ Camera.right_nwidth:  640
 Camera.right_nheight: 480
 
 # Intrinsics — Simulink 3D Camera, 29.9° HFOV, 640x480 (see header: 554 was wrong)
-Camera.fxl: 1200.0
-Camera.fyl: 1200.0
+Camera.fxl: 554.0
+Camera.fyl: 554.0
 Camera.cxl: 320.0
 Camera.cyl: 240.0
 
@@ -77,8 +77,8 @@ Camera.p2l: 0.0
 # so both eyes are the same ideal pinhole; only the position differs.
 # (The mono file carried EuRoC values here. They were inert in mono mode but
 #  are actively wrong in stereo — do not copy them back.)
-Camera.fxr: 1200.0
-Camera.fyr: 1200.0
+Camera.fxr: 554.0
+Camera.fyr: 554.0
 Camera.cxr: 320.0
 Camera.cyr: 240.0
 
@@ -95,16 +95,20 @@ body_T_cam0: !!opencv-matrix
    data: [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
 
 # ==========================================================================
-# STEREO BASELINE — 0.11 m  (EuRoC-matched)
+# STEREO BASELINE — 0.61 m  (revised 2026-09-13, see note below)
 #
 # body_T_cam0 is identity, so the body frame IS the left camera's optical frame
-# (Xc right, Yc down, Zc forward). The right camera sits +0.11 m along Xc with
+# (Xc right, Yc down, Zc forward). The right camera sits +0.61 m along Xc with
 # NO rotation, so this is a pure translation.
 #
 # *** THIS NUMBER MUST MATCH THE SIMULINK CAMERA OFFSET EXACTLY. ***
 # Simulink sets where the cameras physically are; this tells SLAM where it
 # believes they are. If they disagree, SLAM's scale is silently wrong —
 # distances come out proportionally off with no error message.
+# 2026-09-13: baseline changed from 0.11m (EuRoC-matched) to 0.61m after diagnosis
+# showed the short baseline produced thousands of exactly-singular triangulations
+# per trial for this scene's far background. See wiki_generated for the
+# investigation trail.
 # One setting, two files. Change both together.
 # ==========================================================================
 body_T_cam1: !!opencv-matrix

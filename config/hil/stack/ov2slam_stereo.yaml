@@ -15,8 +15,8 @@ mode: scout
 
 # ── Global / network ─────────────────────────────────────────────────────────
 network:
-  matlab_host_ip: 192.168.137.1
-  interface:      eth0
+  matlab_host_ip: 192.168.1.201
+  interface:      ""              # auto-detect via routing table toward matlab_host_ip
   dds:            fastrtps       # matches hil_ros_init_LT.m's RMW_IMPLEMENTATION —
                                   # do NOT default to cyclonedds here, MATLAB won't discover it
   ros_domain_id:  0
@@ -55,7 +55,7 @@ slam:
   image:             ros2_perception_stack
   container_name:    slam_ov2slam
   cpu:               "2,3"
-  startup_delay_sec: 15
+  startup_delay_sec: 2
   restart:           unless-stopped
 
   command:           "ros2 run ov2slam ov2slam_node /workspace/camera_calib/hil_sim_ov2slam_stereo.yaml"

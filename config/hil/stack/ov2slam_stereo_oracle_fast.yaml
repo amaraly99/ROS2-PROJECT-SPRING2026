@@ -1,0 +1,88 @@
+# COPY of ov2slam_stereo_oracle.yaml (created 2026-09-08) with ONE change: the SLAM
+# command loads the FAST-tuned stereo calib hil_sim_ov2slam_stereo_fast.yaml instead
+# of the accurate-tuned hil_sim_ov2slam_stereo.yaml. Everything else identical.
+# ============================================================================
+# HIL Stack Config — "ov2slam_stereo_oracle_fast"
+#
+# SLAM-isolation experiment for stereo: ORACLE detector (reads the real
+# simulated position directly, no camera picture involved) + the
+# proportional controller (the simplest, most predictable steering law) +
+# stereo OV2SLAM. Detector and controller are both "perfect" here on
+# purpose, so any bad result is SLAM's own fault, not noise from detection
+# or steering. Mirrors config/hil/stack/ov2slam_oracle.yaml (the existing
+# mono version of this same experiment) with the network/camera/SLAM-command
+# block swapped for the already-proven stereo settings from
+# config/hil/stack/ov2slam_stereo.yaml.
+#
+# Requires MATLAB running with STEREO_ON=1 (set_stereo.m) — see GUIDE_TO_RUN.md.
+# Wired Ethernet only: stereo roughly doubles the inbound stream (~295 Mbit/s).
+# ============================================================================
+
+mode: benchmark
+
+# ── Global / network ─────────────────────────────────────────────────────────
+# Copied from ov2slam_stereo.yaml, NOT ov2slam_oracle.yaml — they differ in a
+# way that matters: stereo needs fastrtps (CycloneDDS won't even discover
+# MATLAB, see ov2slam_stereo.yaml's own comment). Using mono's cyclonedds
+# block here would break the MATLAB connection entirely.
+network:
+  matlab_host_ip: 192.168.1.201
+  interface:      ""              # auto-detect via routing table toward matlab_host_ip
+  dds:            fastrtps
+  ros_domain_id:  0
+
+# ── camera ────────────────────────────────────────────────────────────────────
+camera:
+  stereo: true                   # threaded to the launch file's `stereo` arg via
+                                  # parse_stack.py's STEREO_ON -> run_stack_hil.sh
+
+# ── Module 1: DETECTION ──────────────────────────────────────────────────────
+detector:
+  type: oracle
+  cpu:  "0"
+
+# ── Module 2: CONTROLLER ─────────────────────────────────────────────────────
+controller:
+  type: proportional
+  cpu:  "0"
+
+# ── Module 3: SLAM ───────────────────────────────────────────────────────────
+slam:
+  enabled:           true
+  type:              ov2slam
+
+  image:             ros2_perception_stack
+  container_name:    slam_ov2slam
+  cpu:               "2,3"
+  # 2s, not mono's stale 15s -- proven value, see
+  # docs/fixlog/022-slam-startup-delay-15s-to-2s.md
+  startup_delay_sec: 2
+  restart:           unless-stopped
+
+  command:           "ros2 run ov2slam ov2slam_node /workspace/camera_calib/hil_sim_ov2slam_stereo_fast.yaml"
+
+  topics:
+    image_in: /ovcam/image_raw
+    pose_out: /slam/pose
+  remap:
+    - "/ovcam/image_raw:=/ovcam/image_raw"
+    - "vo_pose:=/slam/pose"
+    # Required even with init_gate OFF: run_matrix.py's own trial-verification
+    # step reads /slam/tracking_state directly (independent of init_gate),
+    # to confirm SLAM produced a map before flying the mission. OV2SLAM only
+    # ever publishes this under its own local name, "slam_tracking_state" --
+    # this remap is the only thing that makes it visible under the global
+    # name the check actually looks for. Missing this line does NOT mean
+    # SLAM failed -- confirmed live: SLAM was genuinely processing frames
+    # (5 -> 13 real timing events) the run this was found on, it just had
+    # no way to report that under the name being checked.
+    - "slam_tracking_state:=/slam/tracking_state"
+
+# ── SLAM-init gate ────────────────────────────────────────────────────────────
+# OFF by default here, matching ov2slam_stereo.yaml, not ov2slam_oracle.yaml.
+# Reasoning (confirmed docs/fixlog/022-...): a fixed-baseline stereo pair can
+# judge distance from a standstill, unlike one camera, so it does not need
+# mono's slow translation warm-up leg before it can see depth. Flagged for
+# review — turn on if a real run shows SLAM needs it after all.
+init_gate:
+  enabled: false
