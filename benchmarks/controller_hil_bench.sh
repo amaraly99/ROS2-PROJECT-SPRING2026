@@ -2,11 +2,20 @@
 # ─────────────────────────────────────────────────────────────────
 # controller_hil_bench.sh — ONE run of ONE controller.
 #
-#   ./benchmarks/controller_hil_bench.sh <ibvs|proportional> \
+#   ./benchmarks/controller_hil_bench.sh <ibvs|proportional|h_vs|pbvs> \
 #       [run_num] [duration_sec] [benchmark_mode]
 #
 # Run this FROM INSIDE the container (enter_container.sh first).
 # CycloneDDS ONLY. YOLO-AGNOSTIC: oracle detector replaces all perception.
+#
+# !! DDS WARNING: MATLAB and the Pi must use the SAME DDS. This script forces
+# !! CycloneDDS. The stack configs are mixed: `network.dds` in config/hil/stack/*.yaml
+# !! (the SLAM benchmark configs behind the published results, *_stereo_oracle_nopin
+# !! and *_nopin_wifi, use fastrtps). MATLAB takes its DDS from RMW_IMPLEMENTATION at
+# !! init (matlab/hil_ros_init_LT.m:19), so when switching between this bench and a
+# !! fastrtps stack config: clear all, setenv RMW_IMPLEMENTATION to the matching
+# !! rmw_cyclonedds_cpp / rmw_fastrtps_cpp, then re-run hil_ros_init_LT. A mismatch
+# !! gives no error, just no discovery (nothing moves).
 #
 # benchmark_mode (4th arg, default 'true'):
 #   true  → BENCHMARKING. FSM waits for a fresh sim reset before engaging, so

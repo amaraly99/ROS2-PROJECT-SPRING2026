@@ -13,7 +13,7 @@ mismatch is silent: SLAM computes depth from the calibrated baseline, so a wrong
 value scales every depth without any error being raised. Same failure class as
 FIX-027 (fx 1200 vs 554).
 
-Usage:  sync_baseline.py <baseline_m>
+Usage:  python3 scripts/hil_matrix/sync_baseline.py <baseline_m>   (from the repo root)
 Verifies every write by reading the file back; exits non-zero on any mismatch.
 """
 import re
@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 
 FX = 554.0
-REPO = Path.home() / "ROS2-slam-hil"
+REPO = Path(__file__).resolve().parents[2]   # <repo>/scripts/hil_matrix/sync_baseline.py
 
 OV2_STEREO      = REPO / "camera_calib/hil_sim_ov2slam_stereo.yaml"
 OV2_STEREO_FAST = REPO / "camera_calib/hil_sim_ov2slam_stereo_fast.yaml"

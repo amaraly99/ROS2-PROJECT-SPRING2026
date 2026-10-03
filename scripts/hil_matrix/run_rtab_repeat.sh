@@ -19,6 +19,7 @@ set -u
 REPO="/c/Users/homie/Desktop/ROS2-slam-hil"
 MATLAB_DIR="$REPO/matlab"
 PI="amaraly@192.168.1.60"
+PI_REPO="~/ROS2-slam-hil"   # repo path on the Pi (sync_baseline.py lives in it)
 ARM="only_rtabmap_stereo_oracle_nopin"
 
 BASELINES=("0.36:036" "0.42:042" "0.54:054")
@@ -67,7 +68,7 @@ for entry in "${BASELINES[@]}"; do
   fi
   echo "  verified .slx camera offset = $FOUND"
 
-  if ! ssh "$PI" "python3 ~/sync_baseline.py $B"; then
+  if ! ssh "$PI" "cd $PI_REPO && python3 scripts/hil_matrix/sync_baseline.py $B"; then
     echo "FATAL: calib sync failed for $B -- ABORTING this baseline"
     continue
   fi

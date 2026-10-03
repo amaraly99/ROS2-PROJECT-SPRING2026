@@ -19,7 +19,7 @@ BASELINE (new)
     zero-padded to 3 digits -- 0.11 -> "011"), compare it against the current
     matlab/hil_closed_loop.slx by content (not mtime/size), swap + verify the
     camera offset only if they differ, then run
-    `python3 ~/sync_baseline.py <meters>` on the Pi. Omit --baseline to get
+    `python3 scripts/hil_matrix/sync_baseline.py <meters>` in the Pi repo. Omit --baseline to get
     run_matrix.py's exact existing behavior -- the model file is left alone.
 
 TRANSPORT (new)
@@ -570,7 +570,7 @@ def sync_pi_baseline(pi, baseline):
     everywhere else in this file) so it gets dry-run printing, logging and
     exit-code checking for free -- no new ssh plumbing.
     """
-    pi(f"python3 ~/sync_baseline.py {baseline}", timeout=60)
+    pi(f"python3 scripts/hil_matrix/sync_baseline.py {baseline}", timeout=60)
 
 
 # ══════════════════════════════════════════════════════════════════════════

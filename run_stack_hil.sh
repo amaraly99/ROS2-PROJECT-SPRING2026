@@ -47,7 +47,7 @@
 #              for offline RMSE (controller approach and/or SLAM pose vs GT).
 #
 # Available configs:
-#   default        YOLO + proportional, no SLAM   (safe general-purpose default)
+#   default        YOLO + IBVS,         no SLAM   (safe general-purpose default)
 #   ibvs           YOLO + IBVS,         no SLAM   (fastest settle ~20 s)
 #   h_vs           YOLO + h_vs,         no SLAM   (smoothest commands)
 #   oracle         oracle detector + IBVS, no SLAM (no Hailo HAT needed)
