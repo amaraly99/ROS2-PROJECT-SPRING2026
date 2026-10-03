@@ -1,0 +1,83 @@
+# ============================================================================
+# HIL Stack Config — "orbslam3_rgbd_oracle_nopin_wifi"   (created 2026-10-03)
+#
+# ORB-SLAM3 RGB-D (rgbd_node_cpp) HIL arm, GRAY input, same transport as the
+# ORB-SLAM2 and RTAB-Map RGB-D arms:
+#   MATLAB sends the left image as mono8 (matrix config left_image: mono) plus
+#   16UC1 depth on one stamp -> sim_camera_bridge -> shared memory ->
+#   ovcam_bridge -> /ovcam/image_raw (gray). Depth goes straight to SLAM on
+#   /sim/camera/depth/image_raw.
+# START WITH run_stack_hil_rgbd.sh (keeps the MATLAB stamp so color and depth
+# pair exactly; RgbdMode pairs on an identical stamp, common_rgbd.cpp).
+#
+# network / camera / detector / controller / init_gate: copied from
+#   orbslam2_rgbd_oracle_nopin_wifi.yaml.
+# slam: copied from orbslam3_stereo_oracle_nopin.yaml with the RGB-D changes:
+#   overlay install_rgbd, binary rgbd_node_cpp, handshake prefix /rgbd_py_driver,
+#   settings HIL_SIM_RGBD (orb_slam3/config/RGB-D/), rgb + depth remaps.
+# ============================================================================
+
+mode: benchmark
+
+# ── Global / network ─────────────────────────────────────────────────────────
+network:
+  matlab_host_ip: 192.168.1.201   # MATLAB PC on Wi-Fi (Yasser5G)
+  interface:      ""              # auto-detect via routing table toward matlab_host_ip
+  dds:            fastrtps
+  ros_domain_id:  0
+
+# ── camera ────────────────────────────────────────────────────────────────────
+camera:
+  stereo: false   # RGB-D: left camera + its depth (read by run_stack_hil_rgbd.sh)
+  rgbd:   true    # informational
+
+# ── Module 1: DETECTION ──────────────────────────────────────────────────────
+detector:
+  type: oracle    # gray transport is only valid with the oracle (yolo_producer needs colour)
+  cpu:  "0"
+
+# ── Module 2: CONTROLLER ─────────────────────────────────────────────────────
+controller:
+  type: proportional
+  cpu:  "0"
+
+# ── Module 3: SLAM ───────────────────────────────────────────────────────────
+slam:
+  enabled:           true
+  type:              orbslam3
+  image:             orbslam3_container
+  container_name:    slam_orbslam3
+  startup_delay_sec: 2
+  restart:           unless-stopped
+
+  setup_overlay: /workspace/src/orbslam3/install_rgbd/setup.bash
+  # Pangolin is built in-tree and never installed to a system prefix.
+  ld_prefix:     /workspace/src/orbslam3/Pangolin/build:/usr/local/lib:/opt/ros/jazzy/lib
+
+  # Two processes in one sidecar, as in the stereo config:
+  #  1. hil_handshake_node -- RgbdMode drops every frame until a String naming the
+  #     settings YAML arrives on /rgbd_py_driver/experiment_settings. Backgrounded.
+  #  2. rgbd_node_cpp in the FOREGROUND so it owns PID 1 and docker stop reaches it.
+  # Remaps are INSIDE the bash -c string on purpose: run_stack_hil_rgbd.sh appends
+  # "--ros-args <slam.remap>" after the whole command, which bash -c would swallow.
+  # settings_name HIL_SIM_RGBD -> <settings_file_path_arg>/HIL_SIM_RGBD.yaml.
+  command: >-
+    bash -c "python3 /workspace/src/orbslam3/scripts/hil_handshake_node.py
+    --ros-args -p settings_name:=HIL_SIM_RGBD -p topic_prefix:=/rgbd_py_driver &
+    exec ros2 run ros2_orb_slam3 rgbd_node_cpp --ros-args
+    -p voc_file_arg:=/workspace/src/orbslam3/orb_slam3/Vocabulary/ORBvoc.txt.bin
+    -p settings_file_path_arg:=/workspace/src/orbslam3/orb_slam3/config/RGB-D/
+    -r /rgbd_py_driver/rgb_img_msg:=/ovcam/image_raw
+    -r /rgbd_py_driver/depth_img_msg:=/sim/camera/depth/image_raw
+    -r slam_pose:=/slam/pose
+    -r slam_tracking_state:=/slam/tracking_state"
+
+  topics:
+    image_in: /ovcam/image_raw
+    pose_out: /slam/pose
+
+# ── SLAM-init gate ────────────────────────────────────────────────────────────
+# OFF: it overrides --hold-fsm, and run_stack_hil_rgbd.sh refuses orbslam3 here.
+init_gate:
+  enabled: false
+  module: none

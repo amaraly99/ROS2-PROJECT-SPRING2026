@@ -1,0 +1,34 @@
+# ORB-SLAM3 RGB-D (rgbd_node_cpp) HIL arm, created 2026-10-03.
+# Copy of only_orbslam2_rgbd_oracle_nopin.yaml. Changes: arm name, stack config,
+# calib -> RGB-D/HIL_SIM_RGBD.yaml, run_tag, left_image: mono.
+# GRAY transport: MATLAB sends mono8 + depth, the same transport as the ORB-SLAM2
+# and RTAB-Map RGB-D n=10 sets. Valid only with the oracle detector.
+# The arm name MUST start with "orbslam3": run_matrix_rgbd.py then waits for the
+# handshake ACK instead of a timing CSV (ORB-SLAM3 writes timing only at shutdown).
+# MUST run with run_matrix_rgbd.py (RGB-D model + depth publisher; Pi side run_stack_hil_rgbd.sh).
+#   py scripts\hil_matrix\run_matrix_rgbd.py --config only_orbslam3_rgbd_oracle_nopin --dry-run
+#   py scripts\hil_matrix\run_matrix_rgbd.py --config only_orbslam3_rgbd_oracle_nopin --trials 1
+arms:
+  - {name: orbslam3_rgbd_nopin, config: orbslam3_rgbd_oracle_nopin_wifi, scene: parking_lot_far, dds: fastrtps, stereo: false, init_patience_sec: 60}
+
+trials: 10
+vx: 2.0
+run_tag: 'RGBD_ORB3'
+
+# Colour stream image type: mono -> MATLAB sends mono8 (sets RGBD_COLOUR_MONO=1).
+left_image: mono
+
+end_pad: 3
+
+min_free_mb: 8000
+min_poses: 20
+pacing_lo: 0.85
+pacing_hi: 1.15
+respawn_tol_m: 2.0
+
+pi: amaraly@192.168.1.60
+pi_repo: ~/ROS2-slam-hil
+matlab_dir: C:\Users\homie\Desktop\ROS2-slam-hil\matlab
+calib: src/orbslam3/orb_slam3/config/RGB-D/HIL_SIM_RGBD.yaml
+desktop: true
+probe_timeout: 400
