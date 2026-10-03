@@ -1,0 +1,28 @@
+# THROWAWAY diagnostic variant -- MONO oracle, NO CPU PINNING (matches the
+# historical 2026-08-19 ov2_accurate_nopin comparison run exactly, only the
+# network IP updated for today's Pi address), CycloneDDS (matching that
+# config's own original dds choice). 2026-09-06. Delete once test is done.
+#
+#   py scripts\hil_matrix\run_matrix.py --config only_ov2_mono_oracle_nopin_TEST --trials 1
+
+arms:
+  - {name: ov2_mono_oracle_nopin, config: ov2slam_oracle_accurate_nopin_TEST, scene: parking_lot_far, dds: cyclonedds, stereo: false, init_patience_sec: 60}
+
+trials: 1
+vx: 2.0
+run_tag: ''
+
+end_pad: 3
+
+min_free_mb: 8000
+min_poses: 20
+pacing_lo: 0.85
+pacing_hi: 1.15
+respawn_tol_m: 2.0
+
+pi: amaraly@192.168.1.60
+pi_repo: ~/ROS2-slam-hil
+matlab_dir: C:\Users\homie\Desktop\ROS2-slam-hil\matlab
+calib: camera_calib/hil_sim_ov2slam_accurate.yaml
+desktop: true
+probe_timeout: 400

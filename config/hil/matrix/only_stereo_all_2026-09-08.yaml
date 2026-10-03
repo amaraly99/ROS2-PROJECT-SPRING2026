@@ -1,0 +1,48 @@
+# All 5 stereo SLAM arms, 3 trials each -- 2026-09-08 follow-up to the single-trial
+# readiness pass. Purpose: separate a real scale/RMSE bias from single-trial noise
+# before touching any of the four candidate fixes identified in that investigation
+# (ThDepth A/B, RTAB CPU pinning, CLAHE/exposure preprocessing, more trials).
+# Round robin across arms (A1,B1,C1,D1,E1, A2,B2,...) per run_matrix.py's own design,
+# so session drift (thermal, network) spreads evenly instead of hitting one backend.
+#
+#   py scripts\hil_matrix\run_matrix.py --config only_stereo_all_2026-09-08 --dry-run
+#   py scripts\hil_matrix\run_matrix.py --config only_stereo_all_2026-09-08 --doctor
+#   py scripts\hil_matrix\run_matrix.py --config only_stereo_all_2026-09-08
+
+# --- what to fly ----------------------------------------------------------
+# init_patience_sec: 60 on every arm -- all five are stereo, and stereo's own
+# "ready" signal climbs gradually (see only_ov2_stereo_oracle.yaml's comment);
+# every arm gets the same budget so none is unfairly fast-failed.
+arms:
+  - {name: ov2_stereo_oracle,        config: ov2slam_stereo_oracle,      scene: parking_lot_far, dds: fastrtps, stereo: true, init_patience_sec: 60}
+  - {name: ov2_stereo_oracle_fast,   config: ov2slam_stereo_oracle_fast, scene: parking_lot_far, dds: fastrtps, stereo: true, init_patience_sec: 60}
+  - {name: rtabmap_stereo,           config: rtabmap_stereo_oracle,      scene: parking_lot_far, dds: fastrtps, stereo: true, init_patience_sec: 60}
+  - {name: orbslam2_stereo,          config: orbslam2_stereo_oracle,     scene: parking_lot_far, dds: fastrtps, stereo: true, init_patience_sec: 60}
+  - {name: orbslam3_stereo,          config: orbslam3_stereo_oracle,     scene: parking_lot_far, dds: fastrtps, stereo: true, init_patience_sec: 60}
+
+trials: 3          # trials PER ARM (15 total, round robin)
+vx: 2.0            # mission cruise speed, m/s
+run_tag: ''        # bag name prefix; the arm name is appended automatically
+
+# --- evaluation -----------------------------------------------------------
+end_pad: 3
+
+# --- gates ----------------------------------------------------------------
+min_free_mb: 8000      # below this Simulink stops holding real time
+min_poses: 20          # non-zero /slam/pose in the bag; fewer means no map
+pacing_lo: 0.85        # sim-time advance per wall second
+pacing_hi: 1.15
+respawn_tol_m: 2.0     # drone must be back at spawn before a trial starts
+
+# --- hosts and paths ------------------------------------------------------
+pi: amaraly@192.168.1.60
+pi_repo: ~/ROS2-slam-hil
+matlab_dir: C:\Users\homie\Desktop\ROS2-slam-hil\matlab
+# --calib is only a backup/restore safety net around the WHOLE matrix run
+# (run_matrix.py:1117/764/1156-1158) -- it is never read per-arm, so one file
+# is enough even though the 5 arms have 5 different real calibs. Pointing it
+# at the accurate OV2SLAM calib (first arm) matches without_ov2fast.yaml's
+# own precedent of naming one representative file.
+calib: camera_calib/hil_sim_ov2slam_stereo.yaml
+desktop: true
+probe_timeout: 400

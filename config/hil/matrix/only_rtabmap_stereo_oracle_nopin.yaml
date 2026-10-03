@@ -1,0 +1,36 @@
+# Single-arm SLAM-isolation experiment: STEREO RTAB-Map (F2M stereo odometry +
+# loop closure), oracle detector, proportional controller, SLAM CPU pinning
+# removed (cpu field blanked in the stack config, matches ${SLAM_CPU:+taskset
+# -c ${SLAM_CPU}} in run_stack_hil.sh: absent SLAM_CPU means truly unpinned).
+# 0.61m baseline (see camera_calib triangulation-singularity fix, 2026-09-13).
+# Structure copied from only_rtabmap_stereo_oracle.yaml.
+#
+#   py scripts\hil_matrix\run_matrix.py --config only_rtabmap_stereo_oracle_nopin --dry-run
+#   py scripts\hil_matrix\run_matrix.py --config only_rtabmap_stereo_oracle_nopin --doctor
+#   py scripts\hil_matrix\run_matrix.py --config only_rtabmap_stereo_oracle_nopin --trials 1
+
+# --- what to fly ----------------------------------------------------------
+arms:
+  - {name: rtabmap_stereo_nopin, config: rtabmap_stereo_oracle_nopin, scene: parking_lot_far, dds: fastrtps, stereo: true, init_patience_sec: 60}
+
+trials: 3          # trials PER ARM
+vx: 2.0            # mission cruise speed, m/s
+run_tag: 'baseline061_rtab_nopin'        # bag name prefix; the arm name is appended automatically
+
+# --- evaluation -----------------------------------------------------------
+end_pad: 3
+
+# --- gates ----------------------------------------------------------------
+min_free_mb: 8000      # below this Simulink stops holding real time
+min_poses: 20          # non-zero /slam/pose in the bag; fewer means no map
+pacing_lo: 0.85        # sim-time advance per wall second
+pacing_hi: 1.15
+respawn_tol_m: 2.0     # drone must be back at spawn before a trial starts
+
+# --- hosts and paths ------------------------------------------------------
+pi: amaraly@192.168.1.60
+pi_repo: ~/ROS2-slam-hil
+matlab_dir: C:\Users\homie\Desktop\ROS2-slam-hil\matlab
+calib: src/rtabmap_docker/hil_stereo_bridge.py
+desktop: true
+probe_timeout: 400

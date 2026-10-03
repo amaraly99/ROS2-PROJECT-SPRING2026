@@ -1,0 +1,30 @@
+# THROWAWAY diagnostic variant -- routes DDS traffic over the new wired
+# Ethernet link (192.168.137.1 <-> 192.168.137.10) instead of WiFi, to test
+# whether the ground-truth-pose-frozen-in-bag bug is network-medium-related.
+# Only network.matlab_host_ip differs from the real config
+# (config/hil/stack/ov2slam_stereo_oracle_wired_TEST.yaml on the Pi).
+# 2026-09-06. Delete once the test is done.
+#
+#   py scripts\hil_matrix\run_matrix.py --config only_ov2_stereo_oracle_wired_TEST --trials 1
+
+arms:
+  - {name: ov2_stereo_oracle_wired, config: ov2slam_stereo_oracle_wired_TEST, scene: parking_lot_far, dds: fastrtps, stereo: true, init_patience_sec: 60}
+
+trials: 1
+vx: 2.0
+run_tag: ''
+
+end_pad: 3
+
+min_free_mb: 8000
+min_poses: 20
+pacing_lo: 0.85
+pacing_hi: 1.15
+respawn_tol_m: 2.0
+
+pi: amaraly@192.168.1.60
+pi_repo: ~/ROS2-slam-hil
+matlab_dir: C:\Users\homie\Desktop\ROS2-slam-hil\matlab
+calib: camera_calib/hil_sim_ov2slam_stereo.yaml
+desktop: true
+probe_timeout: 400

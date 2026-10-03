@@ -1,0 +1,23 @@
+# ORB-SLAM2, stereo, SLAM CPU pinning removed. 0.61m baseline.
+# Cloned from only_orbslam2_stereo_oracle.yaml for the ALICIA unpinned batch.
+arms:
+  - {name: orbslam2_stereo_nopin, config: orbslam2_stereo_oracle_nopin, scene: parking_lot_far, dds: fastrtps, stereo: true, init_patience_sec: 60}
+
+trials: 10
+vx: 2.0
+run_tag: ''
+
+end_pad: 3
+
+min_free_mb: 8000
+min_poses: 20
+pacing_lo: 0.85
+pacing_hi: 1.15
+respawn_tol_m: 2.0
+
+pi: amaraly@192.168.1.60
+pi_repo: ~/ROS2-slam-hil
+matlab_dir: C:\Users\homie\Desktop\ROS2-slam-hil\matlab
+calib: src/orbslam2/ros2-ORB_SLAM2/src/stereo/hil_sim.yaml
+desktop: true
+probe_timeout: 400

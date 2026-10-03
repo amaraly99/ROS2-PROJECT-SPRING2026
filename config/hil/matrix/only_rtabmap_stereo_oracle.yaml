@@ -1,0 +1,36 @@
+# Single-arm SLAM-isolation experiment: STEREO RTAB-Map (F2M stereo odometry +
+# loop closure), oracle detector, proportional controller. Structure copied from
+# only_ov2_stereo_oracle.yaml; arm/config point at the RTAB-Map live-HIL
+# integration created 2026-09-08 (src/rtabmap_docker/hil_stereo.launch.py).
+#
+#   py scripts\hil_matrix\run_matrix.py --config only_rtabmap_stereo_oracle --dry-run
+#   py scripts\hil_matrix\run_matrix.py --config only_rtabmap_stereo_oracle --doctor
+#   py scripts\hil_matrix\run_matrix.py --config only_rtabmap_stereo_oracle --trials 1
+
+# --- what to fly ----------------------------------------------------------
+arms:
+  - {name: rtabmap_stereo, config: rtabmap_stereo_oracle, scene: parking_lot_far, dds: fastrtps, stereo: true, init_patience_sec: 60}
+
+trials: 10          # trials PER ARM
+vx: 2.0            # mission cruise speed, m/s
+run_tag: ''        # bag name prefix; the arm name is appended automatically
+
+# --- evaluation -----------------------------------------------------------
+end_pad: 3
+
+# --- gates ----------------------------------------------------------------
+min_free_mb: 8000      # below this Simulink stops holding real time
+min_poses: 20          # non-zero /slam/pose in the bag; fewer means no map
+pacing_lo: 0.85        # sim-time advance per wall second
+pacing_hi: 1.15
+respawn_tol_m: 2.0     # drone must be back at spawn before a trial starts
+
+# --- hosts and paths ------------------------------------------------------
+pi: amaraly@192.168.1.60
+pi_repo: ~/ROS2-slam-hil
+matlab_dir: C:\Users\homie\Desktop\ROS2-slam-hil\matlab
+# The file run_matrix.py backs up (.matrixbak) and restores around the matrix
+# (the bridge hardcodes the sim intrinsics; this is the file that carries them).
+calib: src/rtabmap_docker/hil_stereo_bridge.py
+desktop: true
+probe_timeout: 400

@@ -1,0 +1,25 @@
+# OV2SLAM accurate, stereo, SLAM CPU pinning removed (cpu field blanked in the
+# stack config; controller/detector pinning left untouched per FIX-008's
+# documented core-contention regression). 0.61m baseline.
+# Cloned from only_ov2_stereo_oracle.yaml for the ALICIA unpinned 5-backend batch.
+arms:
+  - {name: ov2_stereo_oracle_nopin, config: ov2slam_stereo_oracle_nopin, scene: parking_lot_far, dds: fastrtps, stereo: true, init_patience_sec: 60}
+
+trials: 10
+vx: 2.0
+run_tag: ''
+
+end_pad: 3
+
+min_free_mb: 8000
+min_poses: 20
+pacing_lo: 0.85
+pacing_hi: 1.15
+respawn_tol_m: 2.0
+
+pi: amaraly@192.168.1.60
+pi_repo: ~/ROS2-slam-hil
+matlab_dir: C:\Users\homie\Desktop\ROS2-slam-hil\matlab
+calib: camera_calib/hil_sim_ov2slam_stereo.yaml
+desktop: true
+probe_timeout: 400

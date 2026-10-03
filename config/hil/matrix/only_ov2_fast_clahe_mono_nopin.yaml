@@ -1,0 +1,37 @@
+# OV2SLAM fast-CLAHE, MONO, UNPINNED, over WiFi/FastRTPS -- 10 trials.
+# Part of the ALICIA_mono flight (2026-09-15).
+#
+# STANDING CAVEAT, carried over from ov2slam_fast_clahe_diag.yaml's own header:
+# this profile was originally built DIAGNOSTIC ONLY, to test whether CLAHE
+# explains OV2SLAM-fast's init failure. WITH CLAHE ON THIS IS NOT "FAST MODE" --
+# its numbers were never meant to be reported as OV2SLAM-fast. Per explicit
+# user decision 2026-09-15, run as a full 10-trial reportable arm anyway; the
+# user will decide separately whether this row belongs in a paper.
+#
+#   py scripts\hil_matrix\run_matrix.py --config only_ov2_fast_clahe_mono_nopin --dry-run
+#   py scripts\hil_matrix\run_matrix.py --config only_ov2_fast_clahe_mono_nopin
+
+arms:
+  # init_patience_sec: 60 matches every ALICIA stereo arm. This arm is the one
+  # being watched to see whether CLAHE is what gates OV2SLAM-fast's init, so it
+  # must not be failed early by an impatient gate.
+  - {name: ov2_fast_clahe, config: ov2slam_fast_clahe_diag_nopin_wifi, scene: parking_lot_far, dds: fastrtps, init_patience_sec: 60}
+
+trials: 10
+vx: 2.0
+run_tag: 'ALICIA_mono'
+
+end_pad: 3
+
+min_free_mb: 8000
+min_poses: 20
+pacing_lo: 0.85
+pacing_hi: 1.15
+respawn_tol_m: 2.0
+
+pi: amaraly@192.168.1.60
+pi_repo: ~/ROS2-slam-hil
+matlab_dir: C:\Users\homie\Desktop\ROS2-slam-hil\matlab
+calib: camera_calib/hil_sim_ov2slam_accurate.yaml
+desktop: true
+probe_timeout: 400

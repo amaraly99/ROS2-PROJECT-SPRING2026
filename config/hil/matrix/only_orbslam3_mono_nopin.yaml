@@ -1,0 +1,30 @@
+# ORB-SLAM3, MONO, UNPINNED, over WiFi/FastRTPS -- 10 trials.
+# Part of the ALICIA_mono flight (2026-09-15).
+#
+#   py scripts\hil_matrix\run_matrix.py --config only_orbslam3_mono_nopin --dry-run
+#   py scripts\hil_matrix\run_matrix.py --config only_orbslam3_mono_nopin
+
+arms:
+  # init_patience_sec: 60 matches every ALICIA stereo arm. The run_matrix.py
+  # default is 9, which risks failing a healthy backend whose tracking_state
+  # climbs to 2 gradually rather than at once.
+  - {name: orbslam3, config: orbslam3_probe_nopin_wifi, scene: parking_lot_far, dds: fastrtps, init_patience_sec: 60}
+
+trials: 10
+vx: 2.0
+run_tag: 'ALICIA_mono'
+
+end_pad: 3
+
+min_free_mb: 8000
+min_poses: 20
+pacing_lo: 0.85
+pacing_hi: 1.15
+respawn_tol_m: 2.0
+
+pi: amaraly@192.168.1.60
+pi_repo: ~/ROS2-slam-hil
+matlab_dir: C:\Users\homie\Desktop\ROS2-slam-hil\matlab
+calib: camera_calib/hil_sim_ov2slam_accurate.yaml
+desktop: true
+probe_timeout: 400

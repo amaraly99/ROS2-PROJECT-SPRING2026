@@ -1,0 +1,39 @@
+# Single-arm RGB-D milestone 1: RTAB-Map rgbd_odometry (F2M) + loop closure,
+# oracle detector, proportional controller, SLAM unpinned, Wi-Fi, FastRTPS.
+# Left camera colour + its ground-truth depth (16UC1 mm, same stamp) from
+# hil_closed_loop_baseline_RGBD.slx. Copied from only_rtabmap_stereo_oracle_nopin.yaml;
+# changes: stereo false, stack config rtabmap_rgbd_oracle_nopin_wifi, calib file,
+# run_tag.
+#
+# MUST be run with run_matrix_rgbd.py (not run_matrix.py): that copy loads the
+# RGB-D model and starts ./run_stack_hil_rgbd.sh on the Pi.
+#
+#   py scripts\hil_matrix\run_matrix_rgbd.py --config only_rtabmap_rgbd_oracle_nopin --dry-run
+#   py scripts\hil_matrix\run_matrix_rgbd.py --config only_rtabmap_rgbd_oracle_nopin --doctor
+#   py scripts\hil_matrix\run_matrix_rgbd.py --config only_rtabmap_rgbd_oracle_nopin --trials 1
+
+# --- what to fly ----------------------------------------------------------
+arms:
+  - {name: rtabmap_rgbd_nopin, config: rtabmap_rgbd_oracle_nopin_wifi, scene: parking_lot_far, dds: fastrtps, stereo: false, init_patience_sec: 60}
+
+trials: 10         # milestone 1 = one n=10 Wi-Fi set (Q18); use --trials 1 first
+vx: 2.0            # mission cruise speed, m/s
+run_tag: 'RGBD_rtab_nopin'        # bag name prefix; the arm name is appended automatically
+
+# --- evaluation -----------------------------------------------------------
+end_pad: 3
+
+# --- gates ----------------------------------------------------------------
+min_free_mb: 8000      # below this Simulink stops holding real time
+min_poses: 20          # non-zero /slam/pose in the bag; fewer means no map
+pacing_lo: 0.85        # sim-time advance per wall second
+pacing_hi: 1.15
+respawn_tol_m: 2.0     # drone must be back at spawn before a trial starts
+
+# --- hosts and paths ------------------------------------------------------
+pi: amaraly@192.168.1.60
+pi_repo: ~/ROS2-slam-hil
+matlab_dir: C:\Users\homie\Desktop\ROS2-slam-hil\matlab
+calib: src/rtabmap_docker/hil_rgbd_bridge.py
+desktop: true
+probe_timeout: 400

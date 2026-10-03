@@ -219,3 +219,10 @@ __pycache__/
 
 # Session handoff notes — local only, not tracked
 HANDOFF*.md
+
+# RGB-D build outputs (root-owned, 2026-10-01..03) and audit backups -- never commit
+src/orbslam2/build_rgbd/
+src/orbslam2/install_rgbd/
+src/orbslam3/build_rgbd/
+src/orbslam3/install_rgbd/
+*.bak_*

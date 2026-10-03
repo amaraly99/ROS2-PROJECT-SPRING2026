@@ -76,6 +76,23 @@ target_link_libraries(stereo
 
 ament_target_dependencies(stereo rclcpp sensor_msgs visualization_msgs cv_bridge message_filters ORB_SLAM2 Boost)
 
+# rgbd_hil (2026-10-01): HIL RGB-D node, a port of src/stereo/stereo.cpp. The stock rgbd target is unchanged.
+add_executable(rgbd_hil
+    src/rgbd/rgbd_hil.cpp
+    )
+
+target_link_libraries(rgbd_hil
+  g2o
+  DBoW2
+  ${ORB_SLAM2_LIBRARIES}
+  ${Boost_LIBRARIES}
+)
+
+ament_target_dependencies(rgbd_hil rclcpp sensor_msgs visualization_msgs cv_bridge geometry_msgs message_filters ORB_SLAM2 Boost)
+
+install(TARGETS rgbd_hil
+  DESTINATION lib/${PROJECT_NAME})
+
 install(TARGETS mono rgbd stereo
   DESTINATION lib/${PROJECT_NAME})
 

@@ -1,0 +1,40 @@
+# OV2SLAM fast, MONO, UNPINNED, over WiFi/FastRTPS -- 10 trials.
+# Part of the ALICIA_mono flight (2026-09-15). EXPECTED to abort every trial by
+# design (documented in ov2slam_oracle_fast.yaml / _wifi.yaml headers): OV2SLAM-
+# fast initialises ~10.7 m into the flight, past the 3 m init leg, so every
+# trial should record "did not initialise... tracking_state=1" and 0/N. That's
+# the known finding, not a harness failure. Included for completeness / to
+# reconfirm it still holds unpinned.
+#
+#   py scripts\hil_matrix\run_matrix.py --config only_ov2_fast_mono_nopin --dry-run
+#   py scripts\hil_matrix\run_matrix.py --config only_ov2_fast_mono_nopin
+
+arms:
+  # init_patience_sec: 60 matches what stereo-fast was given, deliberately, even
+  # though this arm is expected to abort every trial. Costs ~10 min across 10
+  # trials. The point is that the negative result becomes airtight: "failed even
+  # with the same 60s budget stereo got", rather than leaving open the obvious
+  # question of whether the gate was simply too impatient. The failure is
+  # believed to be a parallax problem (the drone is held STILL during the
+  # settle, so waiting adds no baseline), but that is a hypothesis, and 60s is
+  # what makes it a tested one.
+  - {name: ov2_fast, config: ov2slam_oracle_fast_nopin_wifi, scene: parking_lot_far, dds: fastrtps, init_patience_sec: 60}
+
+trials: 10
+vx: 2.0
+run_tag: 'ALICIA_mono'
+
+end_pad: 3
+
+min_free_mb: 8000
+min_poses: 20
+pacing_lo: 0.85
+pacing_hi: 1.15
+respawn_tol_m: 2.0
+
+pi: amaraly@192.168.1.60
+pi_repo: ~/ROS2-slam-hil
+matlab_dir: C:\Users\homie\Desktop\ROS2-slam-hil\matlab
+calib: camera_calib/hil_sim_ov2slam_accurate.yaml
+desktop: true
+probe_timeout: 400

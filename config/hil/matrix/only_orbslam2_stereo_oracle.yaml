@@ -1,0 +1,34 @@
+# Single-arm SLAM-isolation experiment: STEREO ORB-SLAM2, oracle detector,
+# proportional controller. Structure copied from only_ov2_stereo_oracle.yaml;
+# arm/config/calib point at the ORB-SLAM2 stereo integration created 2026-09-08.
+#
+#   py scripts\hil_matrix\run_matrix.py --config only_orbslam2_stereo_oracle --dry-run
+#   py scripts\hil_matrix\run_matrix.py --config only_orbslam2_stereo_oracle --doctor
+#   py scripts\hil_matrix\run_matrix.py --config only_orbslam2_stereo_oracle --trials 1
+
+# --- what to fly ----------------------------------------------------------
+arms:
+  - {name: orbslam2_stereo, config: orbslam2_stereo_oracle, scene: parking_lot_far, dds: fastrtps, stereo: true, init_patience_sec: 60}
+
+trials: 10          # trials PER ARM
+vx: 2.0            # mission cruise speed, m/s
+run_tag: ''        # bag name prefix; the arm name is appended automatically
+
+# --- evaluation -----------------------------------------------------------
+end_pad: 3
+
+# --- gates ----------------------------------------------------------------
+min_free_mb: 8000      # below this Simulink stops holding real time
+min_poses: 20          # non-zero /slam/pose in the bag; fewer means no map
+pacing_lo: 0.85        # sim-time advance per wall second
+pacing_hi: 1.15
+respawn_tol_m: 2.0     # drone must be back at spawn before a trial starts
+
+# --- hosts and paths ------------------------------------------------------
+pi: amaraly@192.168.1.60
+pi_repo: ~/ROS2-slam-hil
+matlab_dir: C:\Users\homie\Desktop\ROS2-slam-hil\matlab
+# The file run_matrix.py backs up (.matrixbak) and restores around the matrix.
+calib: src/orbslam2/ros2-ORB_SLAM2/src/stereo/hil_sim.yaml
+desktop: true
+probe_timeout: 400

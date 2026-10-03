@@ -1,0 +1,32 @@
+# OV2SLAM fast-CLAHE, MONO, UNPINNED, over WiFi/CycloneDDS -- 10 trials.
+# Single-variable replication of the August 2026-08-15 success (init_dist=0.783m,
+# matrix_20260815_231824, recovered from the ROS2-PROJECT-SPRING2026 worktree).
+# Only DDS transport differs from tonight's two fastrtps batches
+# (matrix_20260916_012729, matrix_20260916_052337, both 0/10) -- see
+# ov2slam_fast_clahe_diag_nopin_cyclone.yaml's own header for the full
+# reasoning on why pinning and interface are deliberately NOT also changed here.
+#
+#   py scripts\hil_matrix\run_matrix.py --config only_ov2_fast_clahe_mono_nopin_cyclone --dry-run
+#   py scripts\hil_matrix\run_matrix.py --config only_ov2_fast_clahe_mono_nopin_cyclone
+
+arms:
+  - {name: ov2_fast_clahe_cyclone, config: ov2slam_fast_clahe_diag_nopin_cyclone, scene: parking_lot_far, dds: cyclonedds, init_patience_sec: 60}
+
+trials: 10
+vx: 2.0
+run_tag: 'CLAHE_CYCLONE'
+
+end_pad: 3
+
+min_free_mb: 8000
+min_poses: 20
+pacing_lo: 0.85
+pacing_hi: 1.15
+respawn_tol_m: 2.0
+
+pi: amaraly@192.168.1.60
+pi_repo: ~/ROS2-slam-hil
+matlab_dir: C:\Users\homie\Desktop\ROS2-slam-hil\matlab
+calib: camera_calib/hil_sim_ov2slam_accurate.yaml
+desktop: true
+probe_timeout: 400

@@ -1,0 +1,44 @@
+# Single-arm scrutiny config: OV2SLAM-accurate, MONO, over WiFi/FastRTPS.
+#
+# Corrected copy of only_ov2_accurate.yaml for the current rig state: that
+# file's arm points at config: ov2slam_oracle_accurate, which is hardwired to
+# 192.168.137.1/eth0/cyclonedds -- and eth0 has been physically down since
+# 2026-09-08 (ip addr show eth0 -> NO-CARRIER, state DOWN, confirmed again
+# 2026-09-12). Running the original file causes every trial to hang forever
+# at "wait for camera frames to flow" (confirmed live, 2026-09-12: two
+# separate attempts, both timed out ~3.5min in, 0 trials completed).
+#
+# This copy points the arm at config: ov2slam_oracle_accurate_wifi instead
+# (the actual config Part F's mono numbers came from, per this session's own
+# manifest.json tracing) and bakes in the same corrected host/repo/matlab_dir
+# only_ov2_stereo_oracle.yaml already uses, so mono and stereo run against
+# the identical current rig.
+#
+#   py scripts\hil_matrix\run_matrix.py --config only_ov2_accurate_wifi_freshreplicate --trials 1
+#   py scripts\hil_matrix\run_matrix.py --config only_ov2_accurate_wifi_freshreplicate --trials 3
+
+# --- what to fly ----------------------------------------------------------
+arms:
+  - {name: ov2_accurate, config: ov2slam_oracle_accurate_wifi, scene: parking_lot_far, dds: fastrtps}
+
+trials: 10          # trials PER ARM (overridden with --trials per invocation)
+vx: 2.0            # mission cruise speed, m/s
+run_tag: ''        # bag name prefix; the arm name is appended automatically
+
+# --- evaluation -----------------------------------------------------------
+end_pad: 3
+
+# --- gates ----------------------------------------------------------------
+min_free_mb: 8000      # below this Simulink stops holding real time
+min_poses: 20          # non-zero /slam/pose in the bag; fewer means no map
+pacing_lo: 0.85        # sim-time advance per wall second
+pacing_hi: 1.15
+respawn_tol_m: 2.0     # drone must be back at spawn before a trial starts
+
+# --- hosts and paths ------------------------------------------------------
+pi: amaraly@192.168.1.60
+pi_repo: ~/ROS2-slam-hil
+matlab_dir: C:\Users\homie\Desktop\ROS2-slam-hil\matlab
+calib: camera_calib/hil_sim_ov2slam_accurate.yaml
+desktop: true
+probe_timeout: 400
