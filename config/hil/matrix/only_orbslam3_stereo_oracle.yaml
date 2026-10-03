@@ -37,3 +37,8 @@ matlab_dir: C:\Users\homie\Desktop\ROS2-slam-hil\matlab
 calib: src/orbslam3/orb_slam3/config/Stereo/HIL_SIM.yaml
 desktop: true
 probe_timeout: 400
+
+# Per-eye image type MATLAB sends (rgb = bgr8, mono = mono8). SLAM gets gray either
+# way; mono only cuts network bytes. Keep left_image: rgb if the YOLO detector runs.
+left_image: rgb
+right_image: rgb

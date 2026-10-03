@@ -88,6 +88,13 @@ DEFAULTS = {
     "pacing_lo": 0.85,
     "pacing_hi": 1.15,
     "respawn_tol_m": 2.0,
+    # Per-eye image type MATLAB sends: "rgb" (bgr8, 921600 B) or "mono" (mono8,
+    # 307200 B). SLAM receives gray from ovcam_bridge either way, so "mono" only
+    # cuts network bytes. Keep left_image "rgb" whenever the YOLO detector runs:
+    # yolo_producer reads the left eye in colour from shared memory.
+    # right_image matters in stereo only.
+    "left_image": "rgb",
+    "right_image": "rgb",
     # Scene is recorded per run and becomes a grouping column in results.csv.
     # A second environment is a new row here, not a code change.
     "arms": [
@@ -565,7 +572,7 @@ def restart_matlab(args):
     start_matlab(args.matlab_dir, args.desktop)
 
 
-def start_stack(dds="cyclonedds", stereo=False):
+def start_stack(dds="cyclonedds", stereo=False, left_image="rgb", right_image="rgb"):
     """stereo=False (default) touches nothing new -- every existing mono arm
     behaves exactly as before. stereo=True calls set_stereo(1) before
     hil_ros_init_LT, per set_stereo.m's own documented call order. Without
@@ -597,6 +604,10 @@ def start_stack(dds="cyclonedds", stereo=False):
         fail("simulink-start",
              f"SimulationStatus={status!r}, expected 'running'. Open "
              f"hil_closed_loop in the MATLAB GUI and press Run to see the error.")
+    for eye, val in (("left_image", left_image), ("right_image", right_image)):
+        if val not in ("rgb", "mono"):
+            fail("image-type", f"{eye}={val!r}; expected 'rgb' or 'mono'")
+    m(f"setenv('CAM_LEFT_IMAGE','{left_image}'); setenv('CAM_RIGHT_IMAGE','{right_image}')")
     m("run sim_camera_publisher_timer_LT", timeout=120)
     nap(2)
     if int(mval("numel(timerfindall('Name','sim_cam_pub_timer_LT'))", dry_value=1)) == 0:
@@ -753,7 +764,8 @@ def run_trial(pi, arm, t, args, run_rel):
     with step(f"{label} / restart MATLAB"):
         restart_matlab(args)
     with step(f"{label} / start Simulink + camera"):
-        start_stack(arm.get("dds", "cyclonedds"), arm.get("stereo", False))
+        start_stack(arm.get("dds", "cyclonedds"), arm.get("stereo", False),
+                    args.left_image, args.right_image)
     with step(f"{label} / verify pacing"):
         pacing = check_pacing(args)
         LOG(f"      pacing {pacing:.3f}")

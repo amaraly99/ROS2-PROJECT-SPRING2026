@@ -8,6 +8,8 @@
 %   - Prints count + live rate every 3 s — no terminal flood
 %   - Stereo (optional): publishes a paired right eye on ONE shared timestamp,
 %     set by set_stereo.m — see the STEREO block below.
+%   - Per-eye image type: env CAM_LEFT_IMAGE / CAM_RIGHT_IMAGE = rgb | mono
+%     (default rgb). The orchestrator sets them from the matrix YAML.
 %
 % To STOP:    stop(sim_cam_pub_timer_LT)
 % To RESTART at new rate: edit PUBLISH_HZ and re-run this script.
@@ -69,6 +71,27 @@ if model_stereo ~= logical(STEREO_ON)
            modes{double(model_stereo)+1}, double(STEREO_ON), double(model_stereo));
 end
 
+% ── Per-eye image type: 'rgb' or 'mono' ───────────────────────────────────
+% CAM_LEFT_IMAGE / CAM_RIGHT_IMAGE choose what each eye sends over the network:
+%   'rgb'  -> bgr8,  921600 B per frame (default; every earlier run used this)
+%   'mono' -> mono8, 307200 B per frame (BT.601 luma, same as the RGB-D timer)
+% The orchestrator sets both from the matrix YAML keys left_image / right_image.
+% The Pi needs no change: sim_camera_bridge converts any encoding with
+% toCvCopy(msg,"rgb8") (sim_camera_bridge_node.cpp:134), and SLAM receives mono8
+% from ovcam_bridge either way. yolo_producer reads the LEFT eye in colour from
+% shared memory, so keep the left eye 'rgb' whenever the YOLO detector runs.
+% CAM_RIGHT_IMAGE only matters in stereo.
+left_image  = lower(strtrim(getenv('CAM_LEFT_IMAGE')));
+right_image = lower(strtrim(getenv('CAM_RIGHT_IMAGE')));
+if isempty(left_image),  left_image  = 'rgb'; end
+if isempty(right_image), right_image = 'rgb'; end
+if ~any(strcmp(left_image,  {'rgb','mono'})), error('CAM_LEFT_IMAGE must be rgb or mono, got "%s".',  left_image);  end
+if ~any(strcmp(right_image, {'rgb','mono'})), error('CAM_RIGHT_IMAGE must be rgb or mono, got "%s".', right_image); end
+cam_msg = set_image_type_LT(cam_msg, left_image);
+if STEREO_ON
+    cam_msg_right = set_image_type_LT(cam_msg_right, right_image);
+end
+
 old = timerfindall('Name','sim_cam_pub_timer_LT');
 if ~isempty(old), stop(old); delete(old); end
 
@@ -87,11 +110,12 @@ sim_cam_pub_timer_LT = timer( ...
 start(sim_cam_pub_timer_LT);
 if STEREO_ON
     fprintf('sim_cam_pub_timer_LT started at %d Hz, STEREO\n', PUBLISH_HZ);
-    fprintf('  left:  /sim/camera/image_raw\n');
-    fprintf('  right: /sim/camera/right/image_raw\n');
+    fprintf('  left:  /sim/camera/image_raw        (%s, %s)\n', left_image,  cam_msg.encoding);
+    fprintf('  right: /sim/camera/right/image_raw  (%s, %s)\n', right_image, cam_msg_right.encoding);
     fprintf('  Wired Ethernet only — stereo roughly doubles the bytes/s.\n');
 else
-    fprintf('sim_cam_pub_timer_LT started at %d Hz, MONO on /sim/camera/image_raw\n', PUBLISH_HZ);
+    fprintf('sim_cam_pub_timer_LT started at %d Hz, MONO on /sim/camera/image_raw (%s, %s)\n', ...
+            PUBLISH_HZ, left_image, cam_msg.encoding);
 end
 fprintf('  Stop:     stop(sim_cam_pub_timer_LT)\n');
 fprintf('  Counters: sim_cam_pub_count_LT   sim_cam_drop_count_LT   sim_cam_pub_count_right_LT\n');
@@ -152,20 +176,34 @@ function publish_frame_LT(pub, msg, pub_r, msg_r)
             else
                 last_cs = cs;
 
-                % RGB→BGR + H×W×C col-major → C×W×H row-major (per-channel 2-D transpose)
-                pdata(1,:) = reshape(frame(:,:,3).', 1, []);
-                pdata(2,:) = reshape(frame(:,:,2).', 1, []);
-                pdata(3,:) = reshape(frame(:,:,1).', 1, []);
-                msg.data = pdata(:);
+                % Each eye is packed to match ITS declared encoding (set from
+                % CAM_LEFT_IMAGE / CAM_RIGHT_IMAGE before the timer started).
+                if strcmp(msg.encoding, 'mono8')
+                    % Gray (BT.601 luma, as rgb2gray) row-major, 307200 B.
+                    g = rgb2gray(frame).';
+                    msg.data = g(:);
+                else
+                    % RGB→BGR + H×W×C col-major → C×W×H row-major (per-channel 2-D transpose)
+                    pdata(1,:) = reshape(frame(:,:,3).', 1, []);
+                    pdata(2,:) = reshape(frame(:,:,2).', 1, []);
+                    pdata(3,:) = reshape(frame(:,:,1).', 1, []);
+                    msg.data = pdata(:);
+                end
 
                 if stereo
-                    % Byte-identical packing to the left eye. Any difference
-                    % here swaps red and blue in one eye only, which degrades
-                    % stereo matching silently.
-                    pdata_right(1,:) = reshape(frame_r(:,:,3).', 1, []);
-                    pdata_right(2,:) = reshape(frame_r(:,:,2).', 1, []);
-                    pdata_right(3,:) = reshape(frame_r(:,:,1).', 1, []);
-                    msg_r.data = pdata_right(:);
+                    % The packing must match the right eye's declared encoding.
+                    % Declaring bgr8 while packing anything else swaps or
+                    % corrupts channels in one eye only, which degrades stereo
+                    % matching silently.
+                    if strcmp(msg_r.encoding, 'mono8')
+                        g_r = rgb2gray(frame_r).';
+                        msg_r.data = g_r(:);
+                    else
+                        pdata_right(1,:) = reshape(frame_r(:,:,3).', 1, []);
+                        pdata_right(2,:) = reshape(frame_r(:,:,2).', 1, []);
+                        pdata_right(3,:) = reshape(frame_r(:,:,1).', 1, []);
+                        msg_r.data = pdata_right(:);
+                    end
                 end
 
                 % ONE clock read, applied to BOTH messages. sim_heartbeat is
@@ -224,5 +262,17 @@ function publish_frame_LT(pub, msg, pub_r, msg_r)
 
     catch err
         fprintf('[cam-LT-err] %s\n', err.message);
+    end
+end
+
+function msg = set_image_type_LT(msg, image_type)
+    % 'rgb' -> bgr8 (3 bytes/pixel), 'mono' -> mono8 (1 byte/pixel). The packing
+    % in publish_frame_LT follows msg.encoding, so the two can never disagree.
+    if strcmp(image_type, 'mono')
+        msg.encoding = 'mono8';
+        msg.step     = uint32(640);
+    else
+        msg.encoding = 'bgr8';
+        msg.step     = uint32(640 * 3);
     end
 end
