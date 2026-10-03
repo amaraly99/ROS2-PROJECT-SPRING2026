@@ -149,6 +149,14 @@ These build outputs are in `.gitignore`, so each new Pi builds them once.
   `src/orbslam3/Pangolin/build`.
 - **Vocabulary files** (large, not in git): `src/orbslam2/Vocabulary/ORBvoc.txt` and
   `src/orbslam3/orb_slam3/Vocabulary/ORBvoc.txt.bin`.
+- **RGB-D builds** (separate install trees, so the stereo builds stay untouched):
+  ORB-SLAM2 builds into `src/orbslam2/install_rgbd/` with
+  `src/orbslam2/build_rgbd_2026-10-01.sh`. ORB-SLAM3 builds into
+  `src/orbslam3/install_rgbd/` with colcon (`--build-base build_rgbd --install-base install_rgbd`)
+  inside `orbslam3_container`. `src/orbslam3/make_orb3_rgbd.py` generates the ORB-SLAM3
+  RGB-D sources.
+- **YOLO model** (not in git): the YOLO detector needs `models/yolo26n_10h.hef`. The
+  oracle detector, which every SLAM benchmark uses, does not.
 
 ### 4. Set the machine-specific values
 
@@ -185,16 +193,19 @@ run hil_ros_init_LT
 
 - **Mono SLAM:** OV2SLAM (accurate, fast, fast with CLAHE), ORB-SLAM2, ORB-SLAM3.
 - **Stereo SLAM:** OV2SLAM (accurate, fast), ORB-SLAM2, ORB-SLAM3, RTAB-Map.
+- **RGB-D SLAM:** RTAB-Map, ORB-SLAM2 and ORB-SLAM3, with depth from the simulator.
+  RTAB-Map and ORB-SLAM2 have full 10-trial sets; the ORB-SLAM3 harness is new and
+  still in its first test trial.
 - **Controllers:** proportional (`hil_servo`), IBVS (`visp_servo`, ViSP), and
   homography-based 2D visual servoing (`h_vs_servo`).
 - **Stereo baseline models:** `matlab/hil_closed_loop_baseline_{011,036,042,054,061}.slx`.
+- **RGB-D model:** `matlab/hil_closed_loop_baseline_RGBD.slx` (left camera plus its depth output).
 - **Orchestration and scoring:** `scripts/hil_matrix/` (`run_matrix.py`,
-  `run_baseline_matrix.py`, `fly_baseline.py`, `aggregate_matrix.py`, `sync_baseline.py`).
+  `run_baseline_matrix.py`, `fly_baseline.py`, `aggregate_matrix.py`, `sync_baseline.py`),
+  plus `run_matrix_rgbd.py` for RGB-D.
 
 **Out:**
 
-- **RGB-D**, for every backend. It exists locally and stays out of this branch until
-  it is reviewed (see [RGB-D to-do list](#rgb-d-to-do-list)).
 - **PBVS** (`visp_pbvs_servo`). The code is present, but PBVS is not supported yet.
 
 ---
@@ -205,7 +216,7 @@ run hil_ros_init_LT
 |---|---|
 | ROS 2 | **Jazzy**, in every Docker image |
 | Domain ID | `0` (`network.ros_domain_id` in every stack config) |
-| DDS | Per stack config, in `network.dds`. 23 configs use `fastrtps` and 24 use `cyclonedds`. The SLAM benchmark configs (`*_stereo_oracle_nopin`, `*_nopin_wifi`) use **fastrtps**. `benchmarks/controller_hil_bench.sh` forces **CycloneDDS**. |
+| DDS | Per stack config, in `network.dds`. 29 configs use `fastrtps` and 24 use `cyclonedds`. The SLAM benchmark configs (`*_stereo_oracle_nopin`, `*_nopin_wifi`) use **fastrtps**. `benchmarks/controller_hil_bench.sh` forces **CycloneDDS**. |
 | Transport | `network.matlab_host_ip` in the stack config. The Pi routes to that address (`ip route get` in `run_stack_hil.sh`), so the address picks Wi-Fi or Ethernet. |
 | ViSP | 3.6.0 (`libvisp-*-dev 3.6.0-2.1build3` in `ros2_perception_stack`) |
 | ORB-SLAM3 | core **V1.0**, ROS 2 wrapper `Mechazo11/ros2_orb_slam3` **v2.0.0** (Jazzy), vendored in `src/orbslam3/` |
@@ -253,6 +264,43 @@ model and syncs the Pi calibration before the first trial:
 py scripts/hil_matrix/run_baseline_matrix.py --config only_ov2_stereo_oracle_nopin --baseline 0.36 --run-tag BASELINE036
 py scripts/hil_matrix/fly_baseline.py --baseline 0.36      # all five stereo arms in order
 ```
+
+**Per-eye image type.** Every stereo matrix config carries two keys:
+
+```yaml
+left_image: rgb     # rgb = bgr8 (921,600 B per frame), mono = mono8 (307,200 B)
+right_image: rgb
+```
+
+The orchestrator passes them to MATLAB (`CAM_LEFT_IMAGE`, `CAM_RIGHT_IMAGE`), and
+`matlab/sim_camera_publisher_timer_LT.m` packs each eye accordingly. SLAM receives gray
+from `ovcam_bridge` either way, so `mono` changes only the network load. The left eye
+must stay `rgb` whenever the YOLO detector runs: `yolo_producer` reads the left eye in
+colour from shared memory. Configs without these keys send `rgb`.
+
+### A2. RGB-D benchmark (Windows, Git Bash)
+
+RGB-D uses its own orchestrator, `run_matrix_rgbd.py`. It loads the RGB-D Simulink
+model, starts the depth publisher and launches `run_stack_hil_rgbd.sh` on the Pi.
+
+```bash
+py scripts/hil_matrix/run_matrix_rgbd.py --config only_orbslam3_rgbd_oracle_nopin --trials 1
+```
+
+| SLAM | Matrix config | Stack config (Pi) |
+|---|---|---|
+| RTAB-Map | `only_rtabmap_rgbd_oracle_nopin` | `rtabmap_rgbd_oracle_nopin_wifi` |
+| ORB-SLAM2 | `only_orbslam2_rgbd_oracle_nopin` | `orbslam2_rgbd_oracle_nopin_wifi` |
+| ORB-SLAM3 | `only_orbslam3_rgbd_oracle_nopin` | `orbslam3_rgbd_oracle_nopin_wifi` |
+
+The image path is the mono path: MATLAB, `sim_camera_bridge`, shared memory,
+`ovcam_bridge`, gray `/ovcam/image_raw`. The only difference is that the RGB-D launch
+keeps MATLAB's timestamp on the image, so it pairs with the depth frame. Depth does not
+go through the bridge. SLAM subscribes to `/sim/camera/depth/image_raw` directly.
+
+The colour stream type comes from `left_image` in the RGB-D matrix config: `mono` sends
+mono8 (`RGBD_COLOUR_MONO=1`), `rgb` sends bgr8, and leaving the key out keeps whatever
+`RGBD_COLOUR_MONO` the environment sets. The ORB-SLAM3 config sets `mono`.
 
 ### B. Controller experiment: standalone bench (Pi, inside the container)
 
@@ -394,6 +442,7 @@ The rates below come from recorded bags, except where marked as configured.
 |---|---|---|
 | `/sim/camera/image_raw` (plus the right eye for stereo) | MATLAB | follows camera delivery: about 16 Hz mono, about 11 Hz stereo |
 | `/ovcam/image_raw`, `/ovcam/right/image_raw` | `ovcam_bridge` (gray) | same as camera delivery |
+| `/sim/camera/depth/image_raw` (RGB-D) | MATLAB | one per colour frame, same stamp; 16UC1 millimetres, 614,400 B |
 | `/sim/drone_pose`, `/sim/heartbeat` | MATLAB | 16.2 Hz in a mono run, 11.0 Hz in a stereo run |
 | `/sim/target_pose` | MATLAB | 0.6 to 0.8 Hz |
 | `/slam/pose` | SLAM sidecar | one pose per tracked frame: 16.0 Hz mono, 10.9 Hz stereo |
@@ -421,6 +470,12 @@ fails.
   focal length of the Simulink camera. The controller's camera model has to match the
   simulator, so change both together if the camera block changes.
 - **PBVS is not supported yet.**
+- **Gray image transport is valid only with the oracle detector.** `yolo_producer` needs
+  the left eye in colour. With YOLO, colour plus depth at 20 Hz (about 30.7 MB/s) exceeds
+  the measured Wi-Fi link (about 25.7 MB/s), and two colour stereo eyes (about 36.9 MB/s)
+  do too. Full-system runs with YOLO need a gigabit link or a lower common rate.
+- **The RGB-D stack script waits only 10 s for the camera shared memory.** The first run
+  after the Pi idles can fail before SLAM starts. A second run works.
 - **`--transport` does not switch the network.** In `run_baseline_matrix.py` it changes
   only the SSH host. `matlab_host_ip` in the Pi stack config decides the camera link.
 - **RTAB-Map stereo runs 3 trials by default.** `only_rtabmap_stereo_oracle_nopin.yaml`
@@ -471,16 +526,18 @@ leaves the view.
 
 ## RGB-D to-do list
 
-RGB-D works locally for RTAB-Map and ORB-SLAM2 but is not part of this branch yet.
+RTAB-Map and ORB-SLAM2 RGB-D have full 10-trial sets. ORB-SLAM3 RGB-D has its stack
+and matrix configs and needs its first validated trial.
 
-- [ ] Review the RGB-D files and decide what enters the branch.
-- [ ] Build the ORB-SLAM3 RGB-D HIL harness: one stack config, one matrix config and
-      a one-trial test runner.
+- [x] Bring the RGB-D pipeline into the branch.
+- [x] Build the ORB-SLAM3 RGB-D harness (stack config and matrix config, mono transport).
+- [ ] Validate one ORB-SLAM3 RGB-D trial, then run the 10-trial set.
 - [ ] Decide how to score ORB-SLAM3 when a tracking loss creates a new map. The live
       pose jumps between map frames, which inflates APE.
 - [ ] Measure why RTAB-Map processes only part of the available RGB-D frames.
 - [ ] Add an "available-frame coverage" column for every RGB-D run.
 - [ ] Test true color input. It needs a gigabit (Cat6) link for 20 Hz color plus depth.
 - [ ] Make the 10 s shared-memory wait in the RGB-D stack script robust to a slow first start.
-- [ ] Re-run stereo under the same transport as RGB-D, so mono, stereo and RGB-D compare
-      on equal terms.
+- [ ] Re-run stereo with `left_image: mono` and `right_image: mono`. SLAM already
+      receives gray, so only the link load drops. Stereo delivery then reaches real time,
+      as mono and RGB-D already do, and the three modes compare on equal terms.
