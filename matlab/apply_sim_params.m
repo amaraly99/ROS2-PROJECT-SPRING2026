@@ -1,12 +1,13 @@
 function out = apply_sim_params(src, dst, start)
 %APPLY_SIM_PARAMS  Copy a HIL model, set the shared camera and start pose, save, print sha256.
 %
-%   out = apply_sim_params(src, dst)            % default start: 30 m from the frozen sign
+%   out = apply_sim_params(src, dst)            % default start: 20 m from the frozen sign
 %   out = apply_sim_params(src, dst, start)     % start = struct with fields x, y, z, yaw (strings)
 %
 %   src    path to an existing .slx (hil_closed_loop.slx or any hil_closed_loop_baseline_*.slx)
 %   dst    new model name, no extension, e.g. 'hil_closed_loop_shared_v1'. Saved next to src.
-%   start  optional; the default is the 30 m start on the current bearing to the frozen sign.
+%   start  optional; the default is the 20 m start on the current bearing to the frozen sign.
+%          For 30 m:  struct('x','5.13','y','4.30','z','10','yaw','2*pi-0.0460')
 %          For 33 m:  struct('x','2.14','y','4.44','z','10','yaw','2*pi-0.0461')
 %
 % What it changes (and nothing else):
@@ -24,7 +25,7 @@ function out = apply_sim_params(src, dst, start)
 % Record the printed hash; do not expect to reproduce it by rerunning.
 
 if nargin < 3 || isempty(start)
-    start = struct('x', '5.13', 'y', '4.30', 'z', '10', 'yaw', '2*pi-0.0460');
+    start = struct('x', '15.12', 'y', '3.84', 'z', '10', 'yaw', '2*pi-0.0460');
 end
 FX = '[554, 554]';
 CC = '[320, 240]';

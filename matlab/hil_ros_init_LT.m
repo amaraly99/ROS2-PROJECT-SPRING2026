@@ -31,11 +31,12 @@ assert(any(contains(topics,'/rosout')), 'ROS failed. Restart MATLAB and rerun.')
 disp('ROS OK')
 
 % Camera publisher — BEST_EFFORT to match Pi subscriber QoS
-% Intrinsics: fx=fy=1200 px, cx=320, cy=240, HFOV=29.9 deg.
-% NOT 554/60deg — that was an assumption written into the configs and never
-% checked against the block. Confirmed 2026-08-24 two independent ways:
-% check_camera_fov (warp test, r=0.94) and check_stereo_geometry (fx=1236 from
-% disparity vs ground-truth depth). See camera-focal-length memory.
+% Intrinsics: fx=fy=554 px, cx=320, cy=240, HFOV=60.0 deg, VFOV=46.8 deg.
+% Shared model since 2026-10-04 (Amar's 4490660 + apply_sim_params, see SIM_PARAMS.md).
+% The 2026-08-24 tests (check_camera_fov warp test r=0.94, check_stereo_geometry
+% fx=1236 vs ground truth) proved the block's FocalLength drives the render, so
+% with the block at [554, 554] the render really is 554. Older runs used 1200;
+% that model is kept as hil_closed_loop_fx1200_45m_946390cf.slx.
 cam_pub = ros2publisher(node, '/sim/camera/image_raw', 'sensor_msgs/Image', ...
     'Reliability','besteffort','Durability','volatile','Depth',5);
 
@@ -120,7 +121,8 @@ heartbeat_msg = ros2message('std_msgs/Float64');
 target_pose_pub = ros2publisher(node, '/sim/target_pose', 'std_msgs/Float64MultiArray', ...
     'Reliability','reliable','Durability','transientlocal');
 target_pose_msg = ros2message('std_msgs/Float64MultiArray');
-target_pose_msg.data = double([35.5; 23.7; 3.2; pi]);
+% frozen sign, fitted from detector boxes, 2026-10-04; old value (35.5, 23.7, 3.2) was the second sign
+target_pose_msg.data = double([35.1; 2.92; 3.08; pi]);
 send(target_pose_pub, target_pose_msg);
 
 % /vo_pose subscriber — receives ov2slam output for SLAM experiment logging.
