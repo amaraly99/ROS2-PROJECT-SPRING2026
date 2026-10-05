@@ -1,8 +1,8 @@
-function vel = read_cmdvel_live_interp(~, pitch_angle, x_pos, y_pos, z_pos, yaw_angle)
+function vel = read_cmdvel_live_interp(t, pitch_angle, x_pos, y_pos, z_pos, yaw_angle)
 % Reads live /cmd_vel values from MATLAB base workspace.
 %
 % Inputs (via Mux, u(1)..u(6)):
-%   u(1) = clock          (ignored)
+%   u(1) = clock          (s, sim time; used only for the held start below)
 %   u(2) = pitch_angle    (rad, from pitch_integrator, +ve = nose down)
 %   u(3) = x_pos          (m, from x_integrator)
 %   u(4) = y_pos          (m, from y_integrator)
@@ -20,7 +20,7 @@ function vel = read_cmdvel_live_interp(~, pitch_angle, x_pos, y_pos, z_pos, yaw_
 % them as external calls rather than attempting (and failing) to compile
 % them.  Without this declaration the entire function degrades to
 % interpreted mode, erasing any JIT benefit for the arithmetic below.
-coder.extrinsic('assignin', 'evalin');
+coder.extrinsic('assignin', 'evalin', 'find_system', 'get_param', 'set_param');
 
 % --- Write pose to base workspace (2 calls; unavoidable) ----------------
 % These feed the 20 Hz pitch/pose/heartbeat ROS state publisher.
@@ -47,4 +47,21 @@ end
 
 % Safety clamp (vectorized — no per-element branches)
 vel = max(min(cached_vel, [2; 2; 1; 1; 1]), [-2; -2; -1; -1; -1]);
+
+% --- Held start (2026-10-05) ---------------------------------------------
+% hil_run_supervisor's 'start_hold' sets base-workspace sim_hold_at (s). When
+% the sim clock reaches it, clear it and pause the running model, so every hold
+% lands on the same step. Inert when sim_hold_at does not exist, which is the
+% case for a plain 'start' and for any session without the supervisor.
+if evalin('base', 'exist(''sim_hold_at'', ''var'')')
+    if t >= evalin('base', 'sim_hold_at') - 1e-9
+        evalin('base', 'clear sim_hold_at');
+        mdls = find_system('SearchDepth', 0, 'type', 'block_diagram');
+        for k = 1:numel(mdls)
+            if strcmp(get_param(mdls{k}, 'SimulationStatus'), 'running')
+                set_param(mdls{k}, 'SimulationCommand', 'pause');
+            end
+        end
+    end
+end
 end
