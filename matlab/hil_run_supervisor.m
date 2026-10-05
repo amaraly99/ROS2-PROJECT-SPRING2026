@@ -59,8 +59,11 @@
 %         sim_hold_at = HOLD_AT_S before 'start', and read_cmdvel_live_interp.m,
 %         which runs on every model step, pauses the model when the sim clock
 %         reaches it. 'start', 'stop' and 'resume' clear sim_hold_at, so a plain
-%         'start' never pauses. The supervisor reports 'held' once the model is
-%         paused and latest_frame differs from the frame seen before 'start'.
+%         'start' never pauses. For a hold, latest_frame is cleared before
+%         'start', and the supervisor reports 'held' once the model is paused
+%         and latest_frame holds a frame from this run that is not all black.
+%         (Comparing with the frame before 'start' does not work: two holds at
+%         the same sim time render the same frame, which read as 'frozen'.)
 %
 % SETUP (run AFTER the normal HIL session is already streaming ~20 Hz):
 %   1. clear all + your 3x setenv(...)
@@ -131,7 +134,7 @@ function supervisor_poll(serverSock, model)
                           % take ~8 s. The Pi waits up to 45 s, so 30 s here still
                           % fails before the Pi's own timeout.
     HOLD_AT_S = 0.25;     % sim time of a 'start_hold' pause; a multiple of the 1/20 s step
-    persistent restartPending settlePolls verifyPolls lastCs tStart holdPending preStartCs
+    persistent restartPending settlePolls verifyPolls lastCs tStart holdPending
     if isempty(restartPending), restartPending = false; end
     if isempty(settlePolls),    settlePolls    = 0;     end
     if isempty(verifyPolls),    verifyPolls    = -1;    end   % -1 = not verifying
@@ -153,6 +156,7 @@ function supervisor_poll(serverSock, model)
                 % (d): a hold pauses inside the model step at HOLD_AT_S.
                 if holdPending
                     assignin('base', 'sim_hold_at', HOLD_AT_S);
+                    assignin('base', 'latest_frame', []);   % any frame at the hold is from this run
                 else
                     clear_hold_at();
                 end
@@ -161,7 +165,6 @@ function supervisor_poll(serverSock, model)
                 settlePolls = 0;
                 verifyPolls = 0;                 % start watching latest_frame
                 lastCs = frame_checksum();
-                preStartCs = lastCs;
                 tStart = tic;
                 assignin('base', 'hil_supervisor_state', 'verifying');
                 fprintf('[supervisor] start issued — waiting for new frames (up to %.0f s)\n', VERIFY_POLLS * 0.2);
@@ -178,15 +181,16 @@ function supervisor_poll(serverSock, model)
         simst = get_param(model, 'SimulationStatus');
         if holdPending && strcmp(simst, 'paused')
             % (d): read_cmdvel_live_interp paused the model at HOLD_AT_S. It only
-            % counts as held if the 3D engine delivered a frame since 'start'.
-            if ~isempty(cs) && (isempty(preStartCs) || cs ~= preStartCs)
+            % counts as held if this run wrote a frame (latest_frame was cleared
+            % before 'start') and the frame is not all black.
+            if ~isempty(cs) && cs > 0
                 assignin('base', 'hil_supervisor_state', 'held');
                 fprintf('[supervisor] HELD at sim %.2f s, %.1f s after start, at initial condition. Waiting for "resume"\n', ...
                         get_param(model, 'SimulationTime'), toc(tStart));
             else
                 assignin('base', 'hil_supervisor_state', 'frozen');
-                fprintf(2, ['[supervisor] WARNING: paused at sim %.2f s but latest_frame is unchanged ' ...
-                            'since before start. This hold is FROZEN.\n'], get_param(model, 'SimulationTime'));
+                fprintf(2, ['[supervisor] WARNING: paused at sim %.2f s but this run wrote no frame, ' ...
+                            'or only a black one. This hold is FROZEN.\n'], get_param(model, 'SimulationTime'));
             end
             holdPending = false;
             verifyPolls = -1;
