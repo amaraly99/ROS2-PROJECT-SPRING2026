@@ -1,0 +1,50 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# ctrl_bench.yaml — ALL run settings of the HIL controller benchmark, in one place.
+#
+#   Run it:      ./run_controller_benchmark.sh                (reads this file)
+#   Override:    ./run_controller_benchmark.sh --runs 10 --camera-pub off
+#   Guide:       benchmarks/CONTROLLER_BENCHMARK.md
+#
+# A command-line option always wins over this file. Every session copies the file it
+# used (plus the files listed under `also_used`) into reports/ctrl_<tag>_<stamp>/settings/.
+# Approved by Amar Aly, 2026-10-17.
+# ─────────────────────────────────────────────────────────────────────────────
+
+session:
+  controller: proportional      # proportional | ibvs | h_vs | pbvs
+  runs: 10                       # runs PER camera condition (camera_pub: ab gives 2 x runs)
+  camera_pub: off                # MATLAB camera publisher: off | on | ab (alternate OFF, ON, ...)
+  camera_pub_hz: 20             # rate when the publisher is on
+  flight_s: 150                 # seconds of flight recorded after 'resume' (stopwatch t = 0)
+  cooldown_s: 10                # pause after each run
+  tag: P_unified_N3             # name of the session: reports/ctrl_<tag>_<stamp>/
+
+matlab:                         # the Windows PC that runs MATLAB + Simulink (hil_session_start.m)
+  host: 192.168.1.201
+  port: 55556                   # hil_run_supervisor.m (TCP)
+  windows_user: homie           # SSH user, used to read the Windows Wi-Fi (netsh)
+  wait_s: 180                   # wait this long for MATLAB to answer, then stop
+  hold_timeout_s: 45            # start_hold must reach 'held' within this time
+
+network:
+  dds: fastrtps                 # must match MATLAB (hil_session_start.m sets Fast DDS)
+  ros_domain_id: 0
+  wifi_min_pct: 90              # live link, Windows scale: % = 2 x (dBm + 100), max 100 -> 90 % = -55 dBm
+  check_windows_wifi: true      # false only with a reason: it is logged as a deviation
+
+pi:                             # the Raspberry Pi 5 that runs the controller (in Docker)
+  boot_timeout_s: 60            # the bench must reach its record gate within this time
+  controller_cores: none        # none = the OS decides | "3" = pin the controller to core 3 (taskset)
+  runner_cores: none            # none | "0-2" = keep the runner + its samplers on cores 0-2
+  cpu_governor: leave           # leave = do not touch | performance = set for the session, restore after
+  net_buffers: leave            # leave = do not touch | hil = same sysctl values as run_stack_hil.sh
+
+also_used:                      # files that also configure a run (the runner does not change them)
+  fsm: config/hil/bench_fsm.yaml                    # shared FSM + camera (fx 554, stop ratio 0.55, limits)
+  gains: config/hil/bench_<controller>.yaml          # controller gains, e.g. bench_proportional.yaml
+  oracle: config/hil/bench_oracle.yaml              # perfect detector (target 1.5 m, 20 Hz, no noise)
+  dds_profile_pi: config/hil/fastrtps_hil.xml       # Pi Fast DDS profile (IPs filled at start)
+  dds_profile_matlab: config/hil/fastrtps_matlab.xml  # MATLAB Fast DDS profile (filled by hil_session_start.m)
+  bag_qos: config/hil/bench_bag_qos.yaml
+  geometry: benchmarks/bench_geometry.py            # standoff 3.15 m (scorer + runner)
+  matlab_session: matlab/hil_session_start.m        # model hil_closed_loop_unified + its start pose

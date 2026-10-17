@@ -32,12 +32,9 @@ try:
 except ImportError as e:
     sys.exit(f"missing dependency: {e}\n  pip install rosbags matplotlib numpy")
 
-# Must match bench_fsm.yaml.
-FY = 554.0
-KNOWN_H = 1.5
-IMG_H = 480
-TARGET_BBOX_RATIO = 0.55
-STANDOFF = FY * KNOWN_H / (TARGET_BBOX_RATIO * IMG_H)   # ≈ 3.15 m stop range
+# Camera + stop distance (must match bench_fsm.yaml): one place, benchmarks/bench_geometry.py.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from bench_geometry import FY, KNOWN_H, IMG_H, TARGET_BBOX_RATIO, STANDOFF  # noqa: E402,F401
 SETTLE_BAND = 0.30     # m, |dist - standoff| considered "settled"
 SETTLE_HOLD = 2.0      # s the band must be held
 
@@ -52,6 +49,73 @@ def find_bag(rundir: Path) -> Path:
     if cands:
         return cands[0].parent
     sys.exit(f"no rosbag (metadata.yaml) found under {rundir}")
+
+
+def read_meta(rundir: Path) -> dict:
+    """key=value lines of meta.txt (the last value wins)."""
+    meta = rundir / 'meta.txt'
+    out = {}
+    if meta.exists():
+        for line in meta.read_text().splitlines():
+            if '=' in line:
+                k, v = line.split('=', 1)
+                out[k.strip()] = v.strip()
+    return out
+
+
+def read_resume_time(rundir: Path):
+    """resume_wall_ns from meta.txt (written by ctrl_runner.py) as seconds, else None."""
+    try:
+        return int(read_meta(rundir)['resume_wall_ns']) * 1e-9
+    except (KeyError, ValueError):
+        return None
+
+
+def heartbeat_t0(rundir: Path, bagdir: Path):
+    """Stopwatch start of a runner run (approved by Amar Aly, 2026-10-17):
+    the first /sim/heartbeat after the hold, i.e. the first one whose sim time is
+    larger than the held value — the moment the simulator itself starts to move.
+    The held value is the last heartbeat at or before the Pi sent 'resume'
+    (resume_sent_ns), else the first heartbeat in the bag.
+
+    Returns (t0_s, rule, resume_ok_minus_t0_s). Runs without resume_wall_ns in
+    meta.txt return (None, None, None): the caller keeps its older rule.
+    """
+    meta = read_meta(rundir)
+    if 'resume_wall_ns' not in meta:
+        return None, None, None
+    ok_t = int(meta['resume_wall_ns']) * 1e-9
+    sent_t = int(meta['resume_sent_ns']) * 1e-9 if 'resume_sent_ns' in meta else None
+    hb = []
+    with AnyReader([bagdir]) as reader:
+        conns = [c for c in reader.connections if c.topic == '/sim/heartbeat']
+        for conn, ts, raw in reader.messages(connections=conns):
+            hb.append((ts * 1e-9, float(reader.deserialize(raw, conn.msgtype).data)))
+    if not hb:
+        return ok_t, 'resume_ok (no heartbeat in bag)', 0.0
+    before = [v for t, v in hb if sent_t is not None and t <= sent_t]
+    held = before[-1] if before else hb[0][1]
+    start = (sent_t if sent_t is not None else hb[0][0])
+    moved = next((t for t, v in hb if t >= start and v > held + 1e-6), None)
+    if moved is None:
+        return ok_t, 'resume_ok (no heartbeat moved after the hold)', 0.0
+    return moved, 'heartbeat_after_hold', ok_t - moved
+
+
+def settling_time(tt, err):
+    """First t where |err| <= SETTLE_BAND and stays there for SETTLE_HOLD s; NaN if never."""
+    for i in range(len(tt)):
+        if abs(err[i]) <= SETTLE_BAND:
+            j = i
+            while j < len(tt) and tt[j] - tt[i] < SETTLE_HOLD:
+                if abs(err[j]) > SETTLE_BAND:
+                    break
+                j += 1
+            else:
+                return float(tt[i])
+            if j < len(tt) and abs(err[j]) <= SETTLE_BAND:
+                return float(tt[i])
+    return float('nan')
 
 
 def read_bag(bagdir: Path):
@@ -85,15 +149,21 @@ def main():
         sys.exit("bag missing /sim/drone_pose or /sim/target_pose — nothing to analyse")
     tx, ty, tz = target[-1]
 
-    # t=0 = first APPROACHING edge (search phase ignored, per design).
-    t0 = None
-    for t, s in state:
-        if s == 'APPROACHING':
-            t0 = t
-            break
-    if t0 is None:
+    # t=0. Runner runs (benchmarks/ctrl_runner.py) write resume_wall_ns into
+    # meta.txt: the shared start protocol holds the sim at its initial condition
+    # (start_hold) while the controller boots, and the controller already reports
+    # APPROACHING during that hold. So the stopwatch starts at 'resume', the moment
+    # the drone can move. Older runs (manual Stop+Run, no hold) keep the original
+    # rule: t=0 = first APPROACHING edge (search phase ignored, per design).
+    first_approaching = next((t for t, s in state if s == 'APPROACHING'), None)
+    hb_t0, hb_rule, ok_minus_t0 = heartbeat_t0(rundir, bagdir)
+    if hb_t0 is not None:
+        t0, t0_rule = hb_t0, hb_rule
+    elif first_approaching is not None:
+        t0, t0_rule = first_approaching, 'first_approaching'
+    else:
         print("WARN: no APPROACHING state seen — using first drone sample as t=0")
-        t0 = drone[0][0]
+        t0, t0_rule = drone[0][0], 'first_drone_sample'
 
     d = np.array([r for r in drone if r[0] >= t0])
     if len(d) < 3:
@@ -113,20 +183,17 @@ def main():
     itae = float(_trapz(np.abs(err) * tt, tt))
 
     # settling time: first t where |err|<band and stays for SETTLE_HOLD.
-    settle = float('nan')
-    for i in range(len(tt)):
-        if abs(err[i]) <= SETTLE_BAND:
-            j = i
-            while j < len(tt) and tt[j] - tt[i] < SETTLE_HOLD:
-                if abs(err[j]) > SETTLE_BAND:
-                    break
-                j += 1
-            else:
-                settle = tt[i]
-                break
-            if j < len(tt) and abs(err[j]) <= SETTLE_BAND:
-                settle = tt[i]
-                break
+    settle = settling_time(tt, err)
+    # The same, with the original stopwatch (first APPROACHING edge in the bag),
+    # kept as an extra column. In runner runs the bag starts just before 'resume',
+    # after the controller already reported APPROACHING, so this edge is the first
+    # recorded sample, not the true engage moment.
+    settle_old = float('nan')
+    if first_approaching is not None:
+        d_old = np.array([r for r in drone if r[0] >= first_approaching])
+        if len(d_old) >= 3:
+            dist_old = np.sqrt((tx - d_old[:, 1]) ** 2 + (ty - d_old[:, 2]) ** 2 + (tz - d_old[:, 3]) ** 2)
+            settle_old = settling_time(d_old[:, 0] - first_approaching, dist_old - STANDOFF)
 
     # steady-state error: mean |err| over last 3 s.
     tail = err[tt >= (tt[-1] - 3.0)]
@@ -182,6 +249,9 @@ def main():
         'rms_cmd_speed': rms_v, 'total_variation': total_var,
         'cpu_mean_pct': cpu_mean, 'mem_rss_mb': mem_rss_mb,
         'standoff_m': STANDOFF,
+        't0_rule': t0_rule,
+        'resume_ok_minus_t0_s': ok_minus_t0 if ok_minus_t0 is not None else float('nan'),
+        'settling_time_first_approaching_s': settle_old,
     }
 
     # ── write metrics.csv ──

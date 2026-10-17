@@ -1,5 +1,11 @@
 # Controller Benchmark — IBVS (TS1) vs Proportional (TS2)
 
+> **How to run it today:** `./run_controller_benchmark.sh` (settings in
+> `config/hil/ctrl_bench.yaml`, guide in `benchmarks/CONTROLLER_BENCHMARK.md`).
+> This file is the June 2026 design. Two points changed: the DDS is Fast DDS, and
+> the controller is **not** pinned to a core unless `pi.controller_cores` is set.
+
+
 **Branch:** `controller-benchmark` · **DDS:** CycloneDDS only · **Mode:** real-time HIL, closed-loop, N-run.
 
 This benchmarks two *servoing laws* on the identical plant, FSM, safety
@@ -99,7 +105,7 @@ removes the detector as a variable. (Phase-2: dial in `pixel_noise_std` /
   settling, overshoot or stability — it deletes the thing under test. So every
   run is live against the MATLAB plant.
 - **Variance is controlled, not feared.** Everything controllable is pinned
-  (fixed IC, deterministic oracle, fixed rates, one DDS, pinned core). The only
+  (fixed IC, deterministic oracle, fixed rates, one DDS; core pinning only if `pi.controller_cores` is set). The only
   residual is real-time timing jitter — which we *report* (cross-run spread) as
   a robustness result, not hide.
 - **Measure from search-exit.** The FSM/search phase is identical and out of

@@ -92,7 +92,9 @@
 %   anything else   -> reply: error
 % A refused connection => supervisor not running => the Pi prompts the operator.
 
-MODEL_NAME = 'hil_closed_loop';
+% Model to control: env HIL_MODEL (set by hil_session_start.m), else 'hil_closed_loop' as before.
+MODEL_NAME = getenv('HIL_MODEL');
+if isempty(MODEL_NAME), MODEL_NAME = 'hil_closed_loop'; end
 PORT = 55556;
 
 if strcmp(MODEL_NAME, 'CHANGE_ME_TO_YOUR_MODEL_NAME')

@@ -754,7 +754,7 @@ fi
 
 # Wait for sim_camera_bridge to create the SHM (it does this on construction)
 log "Waiting for /dev/shm/ovcam_frames to appear..."
-for i in $(seq 1 20); do
+for i in $(seq 1 120); do   # 60 s: a cold `ros2 launch` on the Pi can take >10 s
     [[ -e /dev/shm/ovcam_frames ]] && break
     sleep 0.5
 done
@@ -769,7 +769,7 @@ log "SHM created."
 # detector is deliberately monocular and never touches the right-eye shm.
 if [[ "${STEREO_ON:-false}" == "true" ]]; then
     log "Waiting for /dev/shm/ovcam_frames_right to appear..."
-    for i in $(seq 1 20); do
+    for i in $(seq 1 120); do   # 60 s: a cold `ros2 launch` on the Pi can take >10 s
         [[ -e /dev/shm/ovcam_frames_right ]] && break
         sleep 0.5
     done
@@ -800,7 +800,7 @@ elif [[ "$DETECTOR" == "yolo" ]]; then
         --hef "${WS}/models/yolo26n_10h.hef" --no-image --conf 0.20 \
         > /tmp/yolo_producer.log 2>&1 &
     YOLO_PID=$!
-    for i in $(seq 1 20); do
+    for i in $(seq 1 120); do   # 60 s: a cold `ros2 launch` on the Pi can take >10 s
         [[ -e /dev/shm/yolo_shm ]] && break
         sleep 0.5
     done

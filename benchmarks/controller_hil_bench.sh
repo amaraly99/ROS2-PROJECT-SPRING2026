@@ -6,10 +6,11 @@
 #       [run_num] [duration_sec] [benchmark_mode]
 #
 # Run this FROM INSIDE the container (enter_container.sh first).
-# CycloneDDS ONLY. YOLO-AGNOSTIC: oracle detector replaces all perception.
+# DDS from env DDS=cyclonedds|fastrtps (default cyclonedds).
+# YOLO-AGNOSTIC: oracle detector replaces all perception.
 #
-# !! DDS WARNING: MATLAB and the Pi must use the SAME DDS. This script forces
-# !! CycloneDDS. The stack configs are mixed: `network.dds` in config/hil/stack/*.yaml
+# !! DDS WARNING: MATLAB and the Pi must use the SAME DDS. This script uses
+# !! $DDS (default CycloneDDS). The stack configs are mixed: `network.dds` in config/hil/stack/*.yaml
 # !! (the SLAM benchmark configs behind the published results, *_stereo_oracle_nopin
 # !! and *_nopin_wifi, use fastrtps). MATLAB takes its DDS from RMW_IMPLEMENTATION at
 # !! init (matlab/hil_ros_init_LT.m:19), so when switching between this bench and a
@@ -25,7 +26,7 @@
 #           approaches with NO Stop→Run needed. Use for demos / live flights.
 #
 # Flow (benchmark_mode=true):
-#   1. MATLAB already up (init + Simulink running, CycloneDDS, domain 0).
+#   1. MATLAB already up (init + Simulink running, same DDS as $DDS, domain 0).
 #   2. Run this script — it starts recording immediately.
 #   3. STOP + START the Simulink sim → controller resets to SEARCHING (clean t=0).
 #   4. Let it approach + hold REACHED, then Ctrl-C.
@@ -37,6 +38,14 @@
 # Required env:
 #   MATLAB_HOST_IP   Windows host IP for unicast DDS discovery
 #   ROS_DOMAIN_ID    default 0
+# Optional env:
+#   DDS              cyclonedds | fastrtps  (default cyclonedds)
+#   RUN_TAG          free-text batch tag, written to meta.txt only
+#   RECORD_GATE      path of a file; when set, recording starts only once that
+#                    file exists (benchmarks/ctrl_runner.py opens it at 'resume')
+#   RECORD_GATE_TIMEOUT  seconds to wait for the gate (default 120)
+#   CTRL_CORE        CPU core(s) for the controller node (taskset), e.g. 3 or 2,3;
+#                    unset / none = not pinned (controller_bench.launch.py ctrl_core)
 # ─────────────────────────────────────────────────────────────────
 set -u
 cd "$(dirname "$0")/.."
@@ -60,6 +69,12 @@ esac
 command -v envsubst >/dev/null || die "'envsubst' missing — apt install gettext-base"
 : "${MATLAB_HOST_IP:?set MATLAB_HOST_IP to your Windows host IP}"
 ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-0}"
+DDS="${DDS:-cyclonedds}"
+RUN_TAG="${RUN_TAG:-}"
+case "$DDS" in
+    cyclonedds|fastrtps) ;;
+    *) die "DDS must be 'cyclonedds' or 'fastrtps' (got '$DDS')" ;;
+esac
 
 # ── ROS2 environment (already inside container) ──
 # Disable strict mode while sourcing — ROS2 setup scripts have unbound
@@ -80,7 +95,6 @@ set -u
     || die "oracle_detector not found in install/ — run: colcon build --packages-select oracle_detector --symlink-install"
 log "Packages verified: hil_servo oracle_detector"
 
-export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export ROS_DOMAIN_ID
 export LD_LIBRARY_PATH="${WS}/opencv/build/lib:${LD_LIBRARY_PATH:-}"
 
@@ -94,12 +108,27 @@ fi
 [[ -z "${PI_INTERFACE:-}" ]] && die "cannot detect network interface — set manually: export PI_INTERFACE=wlan0"
 log "Network interface: $PI_INTERFACE"
 
-DDS_RESOLVED=/tmp/cyclonedds_hil.resolved.xml
-MATLAB_HOST_IP="$MATLAB_HOST_IP" PI_INTERFACE="$PI_INTERFACE" \
-    envsubst < "$WS/config/hil/cyclonedds_hil.xml" > "$DDS_RESOLVED" \
-    || die "envsubst of cyclone profile failed"
-export CYCLONEDDS_URI="file://$DDS_RESOLVED"
-log "CycloneDDS: peer=$MATLAB_HOST_IP iface=$PI_INTERFACE"
+if [[ "$DDS" == "cyclonedds" ]]; then
+    export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+    DDS_RESOLVED=/tmp/cyclonedds_hil.resolved.xml
+    MATLAB_HOST_IP="$MATLAB_HOST_IP" PI_INTERFACE="$PI_INTERFACE" \
+        envsubst < "$WS/config/hil/cyclonedds_hil.xml" > "$DDS_RESOLVED" \
+        || die "envsubst of cyclone profile failed"
+    export CYCLONEDDS_URI="file://$DDS_RESOLVED"
+    log "CycloneDDS: peer=$MATLAB_HOST_IP iface=$PI_INTERFACE"
+else
+    # Same profile and PI_LOCAL_IP resolution as run_stack_hil.sh (fastrtps branch).
+    export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+    PI_LOCAL_IP=$(ip -4 addr show "$PI_INTERFACE" 2>/dev/null | grep -oP 'inet \K[0-9.]+' | head -1)
+    [[ -z "${PI_LOCAL_IP:-}" ]] && PI_LOCAL_IP=$(ip route get "$MATLAB_HOST_IP" 2>/dev/null | grep -oP 'src \K[0-9.]+' | head -1)
+    [[ -z "${PI_LOCAL_IP:-}" ]] && die "cannot resolve PI_LOCAL_IP on $PI_INTERFACE"
+    DDS_RESOLVED=/tmp/fastrtps_hil.resolved.xml
+    MATLAB_HOST_IP="$MATLAB_HOST_IP" PI_LOCAL_IP="$PI_LOCAL_IP" PI_ADDR="$PI_LOCAL_IP" PI_INTERFACE="$PI_INTERFACE" \
+        envsubst < "$WS/config/hil/fastrtps_hil.xml" > "$DDS_RESOLVED" \
+        || die "envsubst of fastrtps profile failed"
+    export FASTRTPS_DEFAULT_PROFILES_FILE="$DDS_RESOLVED"
+    log "FastRTPS: peer=$MATLAB_HOST_IP local=$PI_LOCAL_IP iface=$PI_INTERFACE"
+fi
 
 # ── Output dir ──
 STAMP=$(date +%Y%m%d_%H%M%S)
@@ -113,7 +142,8 @@ GIT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo nogit)
   echo "git_sha=$GIT_SHA"
   echo "stamp=$STAMP"
   echo "matlab_host_ip=$MATLAB_HOST_IP"
-  echo "dds=cyclonedds domain=$ROS_DOMAIN_ID"
+  echo "dds=$DDS domain=$ROS_DOMAIN_ID"
+  echo "run_tag=$RUN_TAG"
 } > "$WS/$RUNREL/meta.txt"
 log "Run dir: $RUNREL  (git $GIT_SHA)"
 
@@ -162,6 +192,7 @@ log "Launching oracle + $CONTROLLER (output visible below)..."
 ros2 launch /workspace/benchmarks/controller_bench.launch.py \
     controller:="$CONTROLLER" workspace:=/workspace \
     benchmark_mode:="$BENCHMARK_MODE" \
+    ctrl_core:="${CTRL_CORE:-none}" \
     2>&1 | tee "$WS/$RUNREL/launch.log" &
 LAUNCH_PID=$!
 
@@ -187,6 +218,24 @@ if [[ ${#MISSING[@]} -gt 0 ]]; then
 fi
 log "Nodes confirmed running: oracle_detector + $NODE_EXEC"
 
+# Record gate (benchmarks/ctrl_runner.py): with RECORD_GATE set, wait for that file
+# before recording, so nothing is recorded while the sim sits in start_hold. The
+# runner creates it, waits until the recorder has subscribed, then sends 'resume'.
+if [[ -n "${RECORD_GATE:-}" ]]; then
+    GATE_TIMEOUT="${RECORD_GATE_TIMEOUT:-120}"
+    log "waiting for record gate $RECORD_GATE (max ${GATE_TIMEOUT}s)"
+    for ((i = 0; i < GATE_TIMEOUT * 10; i++)); do
+        [[ -e "$RECORD_GATE" ]] && break
+        sleep 0.1
+    done
+    if [[ ! -e "$RECORD_GATE" ]]; then
+        log "ERROR: record gate not opened within ${GATE_TIMEOUT}s"
+        kill "$LAUNCH_PID" 2>/dev/null
+        exit 1
+    fi
+    log "record gate open"
+fi
+
 # CPU sampler — 1 Hz, robust PID resolution + /proc instantaneous %CPU.
 "$WS/benchmarks/cpu_sampler.sh" "$NODE_EXEC" "$WS/$RUNREL/cpu.csv" 1 &
 CPU_PID=$!
@@ -198,7 +247,9 @@ ros2 bag record -o "$WS/$RUNREL/bag" \
     > "$WS/$RUNREL/bag_record.log" 2>&1 &
 BAG_PID=$!
 
-if [[ "$BENCHMARK_MODE" == "true" ]]; then
+if [[ -n "${RECORD_GATE:-}" ]]; then
+    log "recording — runner mode: the runner sends 'resume' once the recorder is subscribed"
+elif [[ "$BENCHMARK_MODE" == "true" ]]; then
     log "recording — restart the Simulink sim NOW for clean t=0"
 else
     log "recording — SCOUT mode: drone is searching/approaching on its own"

@@ -1,0 +1,8 @@
+#!/bin/bash
+# Launcher: runs benchmarks/ctrl_runner.py with the venv that has `rich`.
+#   benchmarks/ctrl_runner proportional --runs 3 --camera-pub ab
+#   benchmarks/ctrl_runner proportional --dry-run
+# One-time setup: python3 -m venv ~/.venvs/hilrun && ~/.venvs/hilrun/bin/pip install rich
+VENV_PY="${HILRUN_PYTHON:-$HOME/.venvs/hilrun/bin/python}"
+[[ -x "$VENV_PY" ]] || { echo "missing $VENV_PY — run: python3 -m venv ~/.venvs/hilrun && ~/.venvs/hilrun/bin/pip install rich" >&2; exit 1; }
+exec "$VENV_PY" "$(dirname "$0")/ctrl_runner.py" "$@"

@@ -4,6 +4,10 @@ Branch: `benchmarks/slam-hil`
 
 **Maintainer:** Amar Aly
 
+> **Run the controller benchmark:** `./run_controller_benchmark.sh` on the Pi, after
+> `hil_session_start` in MATLAB. All settings: `config/hil/ctrl_bench.yaml`.
+> Guide: [`benchmarks/CONTROLLER_BENCHMARK.md`](benchmarks/CONTROLLER_BENCHMARK.md).
+
 > **Hardcoded addresses.** Several configs and scripts contain the maintainer's IP
 > addresses, SSH login and Windows paths (for example `amaraly@192.168.1.60`,
 > `192.168.1.201`, `192.168.137.1`, `C:\Users\homie\...`). Nothing works on another
@@ -216,7 +220,7 @@ run hil_ros_init_LT
 |---|---|
 | ROS 2 | **Jazzy**, in every Docker image |
 | Domain ID | `0` (`network.ros_domain_id` in every stack config) |
-| DDS | Per stack config, in `network.dds`. 29 configs use `fastrtps` and 24 use `cyclonedds`. The SLAM benchmark configs (`*_stereo_oracle_nopin`, `*_nopin_wifi`) use **fastrtps**. `benchmarks/controller_hil_bench.sh` forces **CycloneDDS**. |
+| DDS | Per stack config, in `network.dds`. 29 configs use `fastrtps` and 24 use `cyclonedds`. The SLAM benchmark configs (`*_stereo_oracle_nopin`, `*_nopin_wifi`) use **fastrtps**. The controller benchmark uses `network.dds` in `config/hil/ctrl_bench.yaml` (**fastrtps**); `benchmarks/controller_hil_bench.sh` alone defaults to CycloneDDS. |
 | Transport | `network.matlab_host_ip` in the stack config. The Pi routes to that address (`ip route get` in `run_stack_hil.sh`), so the address picks Wi-Fi or Ethernet. |
 | ViSP | 3.6.0 (`libvisp-*-dev 3.6.0-2.1build3` in `ros2_perception_stack`) |
 | ORB-SLAM3 | core **V1.0**, ROS 2 wrapper `Mechazo11/ros2_orb_slam3` **v2.0.0** (Jazzy), vendored in `src/orbslam3/` |
@@ -302,17 +306,27 @@ The colour stream type comes from `left_image` in the RGB-D matrix config: `mono
 mono8 (`RGBD_COLOUR_MONO=1`), `rgb` sends bgr8, and leaving the key out keeps whatever
 `RGBD_COLOUR_MONO` the environment sets. The ORB-SLAM3 config sets `mono`.
 
-### B. Controller experiment: standalone bench (Pi, inside the container)
+### B. Controller experiment: standalone bench (Pi)
 
-```bash
-./enter_container.sh
-MATLAB_HOST_IP=<windows-ip> ./benchmarks/controller_hil_bench.sh <proportional|ibvs|h_vs> [run_num] [duration_sec] [benchmark_mode]
-python3 benchmarks/plot_controller_hil.py bags/ctrl_<controller>_N<run>_<stamp>
+```
+# Windows, MATLAB:
+cd C:\Users\homie\Desktop\ROS2-sim-unified-start\matlab
+hil_session_start
 ```
 
-This path uses the oracle detector, starts no SLAM and forces CycloneDDS. The
-full runbook is `benchmarks/CONTROLLER_BENCH_PLAN.md`. `benchmarks/compare_controllers.py`
-compares runs across controllers.
+```bash
+# Pi, repo root:
+./run_controller_benchmark.sh --dry-run   # checks only
+./run_controller_benchmark.sh             # N runs, scored, summary in reports/ctrl_<tag>_<stamp>/
+```
+
+All settings (controller, runs, camera publisher, flight time, DDS, Wi-Fi limit, core
+pinning, CPU governor) are in `config/hil/ctrl_bench.yaml`; a command-line option wins
+over the file. This path uses the oracle detector, starts no SLAM and uses **Fast DDS**
+(the `network.dds` key). The full guide is
+[`benchmarks/CONTROLLER_BENCHMARK.md`](benchmarks/CONTROLLER_BENCHMARK.md). The runner
+calls `benchmarks/controller_hil_bench.sh` for each flight; do not call that script by
+hand for paper runs. `benchmarks/compare_controllers.py` compares runs across controllers.
 
 ### C. Controller experiment: full stack (Pi)
 
