@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>pose PBVS is not IBVS</title>
+<style>
+  :root { --bg:#f6f5f1; --surface:#ffffff; --fg:#1b1c1e; --mute:#5f6368; --line:#dcd9d0; --card:#efece4; --a:#1f5fa8; --ok:#1d7a46; --bad:#b3261e; --warn:#a15c00; --okbg:#e3f2e8; --badbg:#fbe6e4; --warnbg:#fbefd9; --abg:#e2edf9; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#121316; --surface:#1b1c20; --fg:#ecebe6; --mute:#a3a6ad; --line:#34353b; --card:#25262b; --a:#7db3f0; --ok:#6cd391; --bad:#ff8a80; --warn:#e6b450; --okbg:#173023; --badbg:#3a1d1b; --warnbg:#38290f; --abg:#16283d; color-scheme: dark; } }
+  * { box-sizing:border-box; }
+  html { scroll-behavior:smooth; scroll-padding-top:64px; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  nav { position:sticky; top:0; z-index:5; background:var(--surface); border-bottom:1px solid var(--line); overflow-x:auto; white-space:nowrap; }
+  nav div { max-width:1080px; margin:0 auto; padding:0 16px; display:flex; gap:4px; }
+  nav a { color:var(--mute); text-decoration:none; font-size:14px; padding:14px 10px; border-bottom:3px solid transparent; }
+  nav a:hover { color:var(--fg); border-bottom-color:var(--a); }
+  main { max-width:1080px; margin:0 auto; padding:0 16px 120px; }
+  header.hero { padding:48px 0 24px; }
+  .chip { display:inline-block; font-size:12px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; padding:4px 10px; border-radius:99px; background:var(--warnbg); color:var(--warn); }
+  .chip.ok { background:var(--okbg); color:var(--ok); } .chip.bad { background:var(--badbg); color:var(--bad); } .chip.a { background:var(--abg); color:var(--a); }
+  h1 { font-size:clamp(28px,5vw,42px); line-height:1.15; margin:16px 0 12px; letter-spacing:-.02em; }
+  .lead { font-size:18px; color:var(--mute); max-width:760px; line-height:2.5; margin:0; }
+  .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:16px; margin:32px 0 8px; }
+  .kpi { background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:20px 22px; }
+  .kpi b { display:block; font-size:38px; line-height:1.1; letter-spacing:-.02em; }
+  .kpi span { display:block; margin-top:8px; color:var(--mute); font-size:14px; line-height:1.5; }
+  .kpi.bad b { color:var(--bad); } .kpi.ok b { color:var(--ok); } .kpi.a b { color:var(--a); }
+  section { margin-top:96px; }
+  h2 { font-size:28px; line-height:1.2; margin:0 0 8px; letter-spacing:-.01em; }
+  h3 { font-size:17px; margin:24px 0 8px; }
+  .take { background:var(--abg); border-left:5px solid var(--a); border-radius:0 12px 12px 0; padding:14px 20px; margin:16px 0 28px; font-size:18px; font-weight:600; line-height:1.5; }
+  .take.bad { background:var(--badbg); border-color:var(--bad); } .take.ok { background:var(--okbg); border-color:var(--ok); } .take.warn { background:var(--warnbg); border-color:var(--warn); }
+  .figure { background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:16px 18px 10px; margin:20px 0; overflow-x:auto; }
+  .figure h3 { margin:0 0 4px; font-size:16px; }
+  .card { background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:18px 22px; overflow-x:auto; }
+  code { background:var(--card); padding:2px 6px; border-radius:5px; font-size:13px; }
+  svg { width:100%; height:auto; display:block; }
+  svg text { fill:var(--fg); font:13px system-ui,sans-serif; }
+  svg .b { fill:var(--card); stroke:var(--line); stroke-width:1.5; }
+  svg .bn { fill:var(--okbg); stroke:var(--ok); stroke-width:1.8; }
+  svg .bo { fill:var(--warnbg); stroke:var(--warn); stroke-width:1.8; }
+  svg .bb { fill:var(--badbg); stroke:var(--bad); stroke-width:1.8; }
+  svg .k { fill:none; stroke:var(--a); stroke-width:2; }
+  svg .n { fill:var(--mute); font-size:12px; } svg .bt { font-weight:600; font-size:14px; } svg .h { font-weight:700; font-size:15px; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(310px,1fr)); gap:16px; }
+  .q { background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:18px 20px; display:flex; flex-direction:column; gap:10px; min-width:0; }
+  .q h4 { margin:0; font-size:17px; line-height:1.3; }
+  .q p { margin:0; line-height:1.7; font-size:15px; color:var(--mute); }
+  .q .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:auto; }
+  .q .ans { font-size:13px; color:var(--mute); border:1.5px dashed var(--line); border-radius:8px; padding:4px 12px; }
+  table { border-collapse:collapse; width:100%; font-size:14px; line-height:1.7; }
+  th, td { padding:9px 12px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+  th { color:var(--mute); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.05em; }
+  td.same { background:var(--okbg); } td.diff { background:var(--warnbg); } td.new { background:var(--abg); } td.badc { background:var(--badbg); }
+  .tw { overflow-x:auto; background:var(--surface); border:1px solid var(--line); border-radius:14px; }
+  .done { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:10px; margin-top:16px; }
+  .done div { background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:10px 14px 10px 38px; font-size:14px; line-height:1.6; position:relative; }
+  .done div::before { content:"\2713"; color:var(--ok); font-weight:800; position:absolute; left:14px; top:10px; }
+  .done div.todo::before { content:"?"; color:var(--bad); }
+  details { background:var(--surface); border:1px solid var(--line); border-radius:12px; margin:14px 0; }
+  details > summary { cursor:pointer; padding:14px 20px; font-weight:600; list-style:none; display:flex; justify-content:space-between; gap:12px; }
+  details > summary::after { content:"+"; color:var(--a); font-size:20px; line-height:1; }
+  details[open] > summary::after { content:"\2212"; }
+  details > .in { padding:0 20px 14px; }
+  details .in p { margin:8px 0; line-height:1.8; font-size:15px; }
+  .steps { display:grid; grid-template-columns:1fr; gap:10px; counter-reset:s; margin:16px 0; }
+  .steps div { background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:12px 16px 12px 56px; position:relative; font-size:15px; line-height:1.7; counter-increment:s; }
+  .steps div::before { content:counter(s); position:absolute; left:14px; top:12px; width:28px; height:28px; border-radius:50%; background:var(--a); color:var(--bg); display:grid; place-items:center; font-weight:700; font-size:14px; }
+  .eq { font-family:ui-monospace,monospace; font-size:13.5px; background:var(--card); border-radius:8px; padding:6px 12px; display:inline-block; margin:2px 0; line-height:1.7; }
+  footer { margin-top:96px; color:var(--mute); font-size:14px; line-height:1.8; }
+</style></head>
+<body>
+<nav><div><a href="#def">Definition</a><a href="#today">Today's code</a><a href="#pa">Proof A: algebra</a><a href="#pb">Proof B: structure</a><a href="#pc">Proof C: measured</a><a href="#leaks">Leaks</a><a href="#tests">Test list</a><a href="#ask">Questions</a><a href="#log">Actions</a></div></nav>
+<main>
+
+<header class="hero"><span class="chip">Design and scratch evidence &middot; not approved &middot; 2026-10-18</span>
+<h1>Proof: pose PBVS does not secretly become IBVS</h1>
+<p class="lead">Three independent proofs: algebra, structure, measured behaviour. Plus one bad news: today's "PBVS" already fails the test.</p>
+<div class="kpis">
+<div class="kpi bad"><b>1 of 3</b><span>axes of today's <code>pbvs_controller.cpp</code> use the pose. The other two use image features.</span></div>
+<div class="kpi ok"><b>3.35 s</b><span>vertical decay time of the pure law at 10 m and at 30 m. Same value: it ignores range.</span></div>
+<div class="kpi bad"><b>8.65 s / 26.0 s</b><span>the same measure for today's law at 10 m and 30 m. It scales with range: the image-feature signature.</span></div>
+<div class="kpi a"><b>0</b><span>image fields reachable by the pure law. The compiler enforces it (proof B).</span></div>
+</div></header>
+
+<section id="def"><h2>What the words mean here</h2>
+<div class="take">The litmus test: does the command depend on the image only through the 3D pose? If yes, it is PBVS. If it needs a pixel or a box size, it is IBVS.</div>
+<div class="tw"><table>
+<tr><th></th><th>IBVS</th><th>PBVS</th><th>Hybrid (today)</th></tr>
+<tr><td>Feature s</td><td>image values: u, v, box size</td><td>3D target position in the camera frame: (Xc, Yc, Zc)</td><td>mixed per axis</td></tr>
+<tr><td>Error</td><td>s &minus; s* in pixels</td><td>(Xc, Yc, Zc) &minus; (0, 0, Zc*) in metres</td><td>mixed</td></tr>
+<tr><td>Law</td><td>v = &minus;&lambda; L<sup>+</sup> (s &minus; s*)</td><td>v = &lambda; (P &minus; P*)</td><td>mixed</td></tr>
+<tr><td>Needs the camera model</td><td>in L (depth Z)</td><td>only to build P</td><td>yes</td></tr>
+<tr><td>Behaviour signature</td><td>decay rate depends on range</td><td>decay rate is the gain, at any range</td><td>depends on the axis</td></tr>
+</table></div></section>
+
+<section id="today"><h2>Verdict on today's code</h2>
+<div class="take bad">The existing <code>pbvs_controller.cpp</code> is PBVS on one axis only.</div>
+<div class="tw"><table>
+<tr><th>Axis</th><th>Formula in the code</th><th>Feature</th><th>Verdict</th></tr>
+<tr><td>vy (lateral)</td><td><code>&minus;0.3 &middot; (cx&minus;cx0)/fx &middot; Z</code>, Z = fy&middot;1.5/bh</td><td>reconstructs Xc exactly (algebra cancels)</td><td class="same">PBVS</td></tr>
+<tr><td>vx (forward)</td><td><code>3.0 &middot; max(0.55 &minus; bh/480, 0)</code></td><td>box height ratio</td><td class="badc">image feature (IBVS)</td></tr>
+<tr><td>vz (vertical)</td><td><code>&minus;0.5 &middot; (cy&minus;240)/240</code></td><td>pixel offset</td><td class="badc">image feature (IBVS)</td></tr>
+<tr><td>wz (yaw)</td><td><code>0</code></td><td>none</td><td class="diff">unused</td></tr>
+</table></div>
+<p style="color:var(--mute);font-size:14px;line-height:1.8">Verified by reading <code>src/visp_pbvs_servo/src/pbvs_controller.cpp</code>. This also shows the new bridge idea (the "ratio" laws of my previous page) is not PBVS. It reproduces this hybrid. I must not call it PBVS.</p>
+</section>
+
+<section id="pa"><h2>Proof A: the algebra</h2>
+<div class="take">With the pose as feature, the closed loop is a straight exponential on each axis, independent of the camera.</div>
+<div class="steps">
+<div><b>Point motion.</b> The camera moves with velocity v (right, down, forward) and no rotation. The target point P = (Xc, Yc, Zc) in the camera frame moves as <span class="eq">dP/dt = &minus;v</span>. So the interaction matrix is L = &minus;I<sub>3</sub>. It has no dependence on Z, f or the image.</div>
+<div><b>Control law.</b> Choose <span class="eq">v = &lambda; (P &minus; P*)</span>, with P* = (0, 0, Zc*). In the body frame: <span class="eq">vx = &lambda;(Zc &minus; Zc*)</span>, <span class="eq">vy = &minus;&lambda; Xc</span>, <span class="eq">vz = &minus;&lambda; Yc</span> (body: vy left+, vz up+).</div>
+<div><b>Closed loop.</b> Let e = P &minus; P*. Then <span class="eq">de/dt = &minus;&lambda; e</span>, so <span class="eq">e(t) = e(0) &middot; exp(&minus;&lambda; t)</span>. The time constant is 1/&lambda; = 3.33 s for &lambda; = 0.3. It does not contain Zc, fx, fy or known_h.</div>
+<div><b>Straight line.</b> P(t) = P* + (P(0) &minus; P*) e<sup>&minus;&lambda;t</sup>. All points lie on the line from P(0) to P*. Equal &lambda; on the three axes is the condition. Euler steps keep this exactly: each step scales e by (1 &minus; &lambda; dt).</div>
+<div><b>Stability with limits.</b> V = &frac12;|e|&sup2;. Each clamp keeps the sign of its command equal to the sign of its error component. So dV/dt &le; 0, and dV/dt = 0 only at e = 0 (or on the one-sided vx floor, see below).</div>
+<div><b>Contrast.</b> Today's vertical law is vz = &minus;0.5 &middot; fy&middot;Yc/(240&middot;Zc). Then <span class="eq">dYc/dt = &minus;(0.5 fy / 240) &middot; Yc / Zc</span>. The time constant is 0.866 &middot; Zc. It grows with range. That is the image-feature signature.</div>
+</div>
+<h3>What the proof does not cover</h3>
+<div class="tw"><table>
+<tr><th>Limit</th><th>Effect</th><th>Handling</th></tr>
+<tr><td>Speed cap vx_max = 1.65 and FSM clamp 3.0</td><td>Straight line is lost while the cap is active (far range). Stability stays.</td><td>Proof test T5 runs uncapped. Real flight is reported with the cap.</td></tr>
+<tr><td>Unequal gains (k_x 0.35, &lambda; 0.3, k_z 0.3)</td><td>Each axis is exponential but the path bends.</td><td>Set all three to 0.3 as default.</td></tr>
+<tr><td>vx floor at 0 (no backward flight)</td><td>If Zc &lt; Zc*, e<sub>z</sub> stays negative. The REACHED test ends the approach.</td><td>Same as today. Documented.</td></tr>
+<tr><td>Pitch return (angular.y) adds a rotation &omega;</td><td>dP/dt = &minus;v &minus; &omega;&times;P. A small disturbance; the pose is re-read each tick, so it is corrected.</td><td>Measured in the simulator, not proven.</td></tr>
+<tr><td>Ramp 1.5 per tick, 20 Hz</td><td>Adds a small delay. &lambda; dt = 0.015, far from instability.</td><td>Checked in T4 with the real filters.</td></tr>
+</table></div></section>
+
+<section id="pb"><h2>Proof B: the structure forbids it</h2>
+<div class="take ok">The pure controller cannot read an image field, because its input type has none. The compiler proves it.</div>
+<div class="figure"><svg viewBox="0 0 960 330" role="img" aria-label="Three controllers">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--a)"/></marker></defs>
+<rect class="b" x="10" y="20" width="270" height="120" rx="8"/><text class="bt" x="20" y="44">ServoInputs (existing)</text><text class="n" x="20" y="64">ex, ey, cx, cy, bw, bh, ratio, Z,</text><text class="n" x="20" y="80">fx, fy, cx0, cy0, known_h ...</text><text class="n" x="20" y="100">image side + camera model</text>
+<rect class="bn" x="10" y="170" width="270" height="120" rx="8"/><text class="bt" x="20" y="194">PoseInputs (NEW)</text><text class="n" x="20" y="214">Xc, Yc, Zc, bearing, stop_distance</text><text class="n" x="20" y="234">nothing else</text><text class="n" x="20" y="254">no pixel, no box, no intrinsics</text>
+<rect class="bb" x="370" y="20" width="270" height="56" rx="8"/><text class="bt" x="380" y="44">PBVSController (existing)</text><text class="n" x="380" y="62">hybrid. Keeps its name "pbvs".</text>
+<rect class="bo" x="370" y="86" width="270" height="56" rx="8"/><text class="bt" x="380" y="110">PBVSBridgeController (NEW)</text><text class="n" x="380" y="128">ratio laws. Name "pbvs_pose_ratio_bridge".</text>
+<rect class="bn" x="370" y="170" width="270" height="120" rx="8"/><text class="bt" x="380" y="194">PBVSPoseController (NEW)</text><text class="n" x="380" y="214">implements IPoseController</text><text class="n" x="380" y="234">computeApproach(const PoseInputs&amp;)</text><text class="n" x="380" y="254">name "pbvs_pose"</text>
+<path class="k" d="M280 60 L370 48" marker-end="url(#ar)"/><path class="k" d="M280 100 L370 114" marker-end="url(#ar)"/><path class="k" d="M280 230 L370 230" marker-end="url(#ar)"/>
+<rect class="b" x="700" y="20" width="250" height="270" rx="8"/><text class="bt" x="710" y="44">Guards</text>
+<text class="n" x="710" y="70">1. type: PoseInputs has no image field</text><text class="n" x="710" y="94">2. include: pbvs_pose_controller.cpp</text><text class="n" x="710" y="110">does not include servo_controller.hpp</text><text class="n" x="710" y="134">3. grep test: no ex, ey, ratio, bw, bh,</text><text class="n" x="710" y="150">cx, cy, fx, fy, known_h in that file</text><text class="n" x="710" y="174">4. name: "pbvs_pose" only for the</text><text class="n" x="710" y="190">pure class; ratio laws cannot use it</text><text class="n" x="710" y="214">5. mutation test: a copy that reads</text><text class="n" x="710" y="230">ey_norm must fail guards 2 and 3</text>
+</svg></div>
+<h3>Change to the previous design</h3>
+<div class="tw"><table>
+<tr><th>Before (previous page)</th><th>Now</th><th>Reason</th></tr>
+<tr><td>One class <code>PBVSPoseController</code> with <code>vx_law</code>, <code>vz_law</code> = ratio or metric</td><td>Two classes. The pure one has no switch. The ratio laws live in <code>PBVSBridgeController</code>.</td><td>A config value could silently turn the pure law into the hybrid</td></tr>
+<tr><td>New fields inside <code>ServoInputs</code></td><td>New struct <code>PoseInputs</code> and interface <code>IPoseController</code> in <code>servo_core</code></td><td>Gives the compile-time guarantee</td></tr>
+<tr><td>k_x default 0.35</td><td>k_x = &lambda; = k_z = 0.3</td><td>Equal gains make the straight-line property true</td></tr>
+<tr><td>Q4 recommendation: ratio laws first</td><td>Ratio laws are a regression bridge only. Reports show the pure law only.</td><td>Ratio laws are not PBVS (see "Today's code")</td></tr>
+</table></div>
+</section>
+
+<section id="pc"><h2>Proof C: measured signatures</h2>
+<div class="take warn">Scratch evidence. A Python kinematic point model, not the simulator, and not a test file in the repo.</div>
+<p style="color:var(--mute);font-size:15px;line-height:1.8">Model: P in the camera frame, no rotation, Euler step 0.05 s, laws copied from the formulas on this page. Script: <code>pbvs_proof.py</code> and <code>pbvs_proof2.py</code> in the session scratchpad.</p>
+<div class="figure"><h3>Vertical 1/e time, range frozen, Yc0 = 2 m (seconds)</h3>
+<svg viewBox="0 0 960 250" role="img" aria-label="Vertical decay time">
+<line class="n" x1="120" y1="20" x2="120" y2="210" stroke="var(--line)"/>
+<text class="n" x="10" y="64">today, Z = 10 m</text><rect x="120" y="46" width="332" height="26" rx="4" fill="var(--bad)"/><text class="bt" x="460" y="64">8.65 s</text>
+<text class="n" x="10" y="104">today, Z = 30 m</text><rect x="120" y="86" width="800" height="26" rx="4" fill="var(--bad)"/><text class="bt" x="780" y="104" style="fill:#fff">26.0 s</text>
+<text class="n" x="10" y="144">pure, Z = 10 m</text><rect x="120" y="126" width="128" height="26" rx="4" fill="var(--ok)"/><text class="bt" x="256" y="144">3.35 s</text>
+<text class="n" x="10" y="184">pure, Z = 30 m</text><rect x="120" y="166" width="128" height="26" rx="4" fill="var(--ok)"/><text class="bt" x="256" y="184">3.35 s</text>
+<text class="n" x="120" y="236">Theory for the pure law: 1/&lambda; = 3.33 s. Theory for today: 0.866 &middot; Z = 8.66 s and 26.0 s.</text>
+</svg></div>
+<div class="tw"><table>
+<tr><th>Measure</th><th>Today (hybrid)</th><th>Pure PBVS</th><th>Reading</th></tr>
+<tr><td>vz time constant, 10 m and 30 m</td><td class="badc">8.65 s, 26.0 s (ratio 3.0 = range ratio)</td><td class="same">3.35 s, 3.35 s</td><td>Today depends on range. Pure does not.</td></tr>
+<tr><td>vy time constant, 10 m and 30 m</td><td class="same">3.35 s, 3.35 s</td><td class="same">3.35 s, 3.35 s</td><td>Lateral is already PBVS today.</td></tr>
+<tr><td>Same pose, known_h 1.5 to 3.0</td><td class="badc">vx 1.131 to 0.611 m/s</td><td class="same">unchanged: (1.65, &minus;0.15, &minus;0.30)</td><td>Today depends on the camera and target model.</td></tr>
+<tr><td>3D path deviation from a straight line, ideal (no clamp, equal gains)</td><td>not run</td><td class="same">0.0000 m</td><td>Proof A, straight line.</td></tr>
+<tr><td>3D path deviation, with FSM clamp and vx cap</td><td>1.579 m</td><td class="diff">1.747 m</td><td>The cap bends the path. Honest limit.</td></tr>
+<tr><td>Final error, all runs</td><td>0.0000</td><td>0.0000</td><td>Both converge to Zc* = 3.148 m.</td></tr>
+</table></div>
+<p style="color:var(--mute);font-size:14px;line-height:1.8">Start pose of the path runs: (Xc, Yc, Zc) = (4.0, 4.42, 20.0) m. I first added an IBVS stand-in for comparison. Its first command was 32 m/s without clamps, so its path numbers are not reliable. I dropped them. The real IBVS controller of the repo (<code>visp_servo</code>) is the right negative control for the later test.</p>
+</section>
+
+<section id="leaks"><h2>Where it could still become IBVS</h2>
+<div class="take warn">The law can be pure while the system around it is not. These are the remaining leaks and the guard for each.</div>
+<div class="tw"><table>
+<tr><th>Leak</th><th>Why it matters</th><th>Guard</th></tr>
+<tr><td>Ratio laws selected by config</td><td>The output becomes today's hybrid</td><td>Separate class and name (proof B)</td></tr>
+<tr><td>FSM decisions in image units: lock-on |ex| &lt; 0.5, REACHED ratio &ge; 0.50 and |ex|,|ey| &lt; 0.12</td><td>They end the run. They do not enter the velocity. But REACHED then depends on image thresholds.</td><td>Report them as "termination region", computed from the pose (Zc &le; 3.46 m, same cone). Option: a pose-space REACHED test.</td></tr>
+<tr><td>Smoothing on Xc, Yc, Zc</td><td>Adds lag; not image dependence</td><td>Default off</td></tr>
+<tr><td>Pose source built from the box (not ground truth)</td><td>Then the pose carries box noise and the law is "PBVS on an IBVS measurement"</td><td>Source must be <code>IPoseSource</code>; test T3 checks Zc does not change with known_h</td></tr>
+<tr><td>Ground truth gives the same information as the box</td><td>With no noise, the two paths cannot be told apart by their data</td><td>Tell them apart by law dependence (A, B, C). Add <code>pose_noise_std</code> later: PBVS then reacts to pose noise, IBVS to pixel noise.</td></tr>
+<tr><td>Pitch-return rotation</td><td>Adds &omega;&times;P to the dynamics</td><td>Measured in the simulator. Not proven.</td></tr>
+</table></div></section>
+
+<section id="tests"><h2>Test list, waiting for your yes</h2>
+<div class="take">I wrote no test file. Each row gives the input, the literal expected value and the bug it catches.</div>
+<div class="tw"><table>
+<tr><th>#</th><th>Input</th><th>Literal expected value</th><th>Bug it catches</th></tr>
+<tr><td>T1</td><td>grep of <code>pbvs_pose_controller.cpp</code> for ex, ey, ratio, bw, bh, cx, cy, fx, fy, known_h, <code>ServoInputs</code></td><td>0 matches</td><td>a hidden image dependence</td></tr>
+<tr><td>T2</td><td><code>PoseInputs{Xc 0.5, Yc 1.0, Zc 10.0, stop 3.148}</code>, then <code>{0.5, 1.0, 6.0, 3.148}</code></td><td>(vx 1.65, vy &minus;0.15, vz &minus;0.30, wz 0). Then (0.8557 &plusmn; 1e-4, &minus;0.15, &minus;0.30, 0).</td><td>wrong sign, gain or cap</td></tr>
+<tr><td>T3</td><td>Same world pose through the FSM pipeline with known_h 1.5 and 3.0, and fx 554 and 900</td><td>Xc, Yc, Zc equal to 1e-9; controller output identical</td><td>pose built from the box</td></tr>
+<tr><td>T4</td><td>Kinematic loop with the real controller, Yc0 = 2 m, range frozen, Zc 10 and 30</td><td>1/e time 3.35 s &plusmn; 0.1 s at both ranges. Negative control: today's controller gives 8.65 s and 26.0 s.</td><td>range-dependent decay</td></tr>
+<tr><td>T5</td><td>Loop from (4.0, 4.42, 20.0), no clamp, no cap, all gains 0.3</td><td>deviation from the straight line &lt; 1e-9 m. With cap and clamp: 1.747 m &plusmn; 0.01 (recorded, not a failure).</td><td>unequal gains, hidden nonlinearity</td></tr>
+<tr><td>T6</td><td>Temporary copy of the controller with <code>vz = &minus;0.5&middot;ey_norm</code></td><td>T1 fails and T4 fails</td><td>the guards themselves do not detect anything</td></tr>
+<tr><td>T7</td><td><code>pbvs_variant = pose</code> with the bridge selected</td><td><code>name()</code> = "pbvs_pose_ratio_bridge", never "pbvs_pose"</td><td>a bridge run reported as PBVS</td></tr>
+<tr><td>T8</td><td>Real <code>visp_servo</code> IBVS controller in the T4 loop</td><td>1/e time differs between Z = 10 m and 30 m (value recorded)</td><td>the test cannot tell IBVS from PBVS</td></tr>
+</table></div></section>
+
+<section id="ask"><h2>Questions. Recommendation first.</h2>
+<div class="cards">
+  <div class="q"><h4>1. Two controller classes?</h4><p>Pure <code>PBVSPoseController</code> on <code>PoseInputs</code>. Ratio laws only in <code>PBVSBridgeController</code>.</p><div class="row"><span class="chip ok">Rec: yes</span><span class="ans">or one class with a switch</span></div></div>
+  <div class="q"><h4>2. Equal gains 0.3?</h4><p>k_x = &lambda; = k_z = 0.3. Straight-line property holds when uncapped.</p><div class="row"><span class="chip ok">Rec: 0.3 on all</span><span class="ans">or keep 0.35</span></div></div>
+  <div class="q"><h4>3. Pose-space REACHED?</h4><p>Keep the image thresholds first (same stop as today). Add a pose-space test later.</p><div class="row"><span class="chip ok">Rec: keep now</span><span class="ans">or change now</span></div></div>
+  <div class="q"><h4>4. Approve tests T1 to T8?</h4><p>I write them after your yes. T8 needs the repo IBVS controller as negative control.</p><div class="row"><span class="chip ok">Rec: approve all</span><span class="ans">or drop T8</span></div></div>
+</div></section>
+
+<section id="log"><h2>Actions this turn</h2>
+<details><summary>Amar, I DID run two scratch Python scripts <span class="chip ok">no repo files</span></summary><div class="in">
+<p><b>Because:</b> you asked for proof, so I needed measured numbers for the three laws. <b>Impact:</b> two files in the session scratchpad only. No repo change.</p>
+<p><b>TESTED:</b> <code>python3 -I pbvs_proof2.py</code> in the scratchpad directory, for the numbers in "Proof C" only. It is a point model without the simulator, the FSM ramp or rotation. It does NOT test the real nodes. These scripts are analysis, not the test list T1 to T8.</p></div></details>
+<details><summary>Amar, I DID write this page <span class="chip a">1 untracked file</span></summary><div class="in">
+<p><b>Because:</b> you asked for a proof, and your rules ask for an HTML answer. <b>Impact:</b> new file <code>benchmarks/PBVS_NOT_IBVS_PROOF.html</code>. No commit. No artifact published. The page <code>PBVS_IDEAL_POSE_DESIGN.html</code> is not edited; this page lists its changes.</p>
+<p><b>TESTED:</b> <code>ls -l benchmarks/PBVS_NOT_IBVS_PROOF.html</code> for file existence only. I did NOT test the page in a browser.</p></div></details>
+<p style="color:var(--mute)">I changed no source file. I wrote no test file in the repo.</p>
+</section>
+
+<footer>Sources: pbvs_controller.cpp, servo_fsm_node.cpp, oracle_detector_node.py (worktree /home/amaraly/ROS2-slam-hil), scratch scripts pbvs_proof.py and pbvs_proof2.py.</footer>
+</main></body></html>

@@ -1,0 +1,40 @@
+{
+  "valid": true,
+  "reason": "ok",
+  "sequence": [
+    "APPROACHING",
+    "REACHED"
+  ],
+  "t0_rule": "heartbeat_after_hold",
+  "window_s": 151.0509798526764,
+  "timing": {
+    "/sim/heartbeat": {
+      "count": 2442,
+      "rate_hz": 16.16672730214488,
+      "gap_p50_ms": 56.005239486694336,
+      "gap_p95_ms": 98.10233116149902,
+      "gap_max_ms": 124.76730346679688,
+      "gaps_over_0.2s": 0
+    },
+    "/sim/drone_pose": {
+      "count": 2441,
+      "rate_hz": 16.160107020694372,
+      "gap_p50_ms": 55.98282814025879,
+      "gap_p95_ms": 98.06715250015257,
+      "gap_max_ms": 125.24700164794922,
+      "gaps_over_0.2s": 0
+    },
+    "/cmd_vel": {
+      "count": 3021,
+      "rate_hz": 19.999870261990043,
+      "gap_p50_ms": 49.99661445617676,
+      "gap_p95_ms": 50.72433948516846,
+      "gap_max_ms": 54.90517616271973,
+      "gaps_over_0.2s": 0
+    }
+  },
+  "wifi": {
+    "rx_mean_MBps": 0.02812133333333333,
+    "rx_max_MBps": 0.3574
+  }
+}

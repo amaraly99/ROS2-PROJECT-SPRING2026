@@ -1,0 +1,586 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>pose PBVS class design</title>
+<style>
+  :root { --bg:#f6f5f1; --surface:#ffffff; --fg:#1b1c1e; --mute:#5f6368; --line:#dcd9d0; --card:#efece4; --a:#1f5fa8; --ok:#1d7a46; --bad:#b3261e; --warn:#a15c00; --okbg:#e3f2e8; --badbg:#fbe6e4; --warnbg:#fbefd9; --abg:#e2edf9; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#121316; --surface:#1b1c20; --fg:#ecebe6; --mute:#a3a6ad; --line:#34353b; --card:#25262b; --a:#7db3f0; --ok:#6cd391; --bad:#ff8a80; --warn:#e6b450; --okbg:#173023; --badbg:#3a1d1b; --warnbg:#38290f; --abg:#16283d; color-scheme: dark; } }
+  * { box-sizing:border-box; }
+  html { scroll-behavior:smooth; scroll-padding-top:64px; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  nav { position:sticky; top:0; z-index:5; background:var(--surface); border-bottom:1px solid var(--line); overflow-x:auto; white-space:nowrap; }
+  nav div { max-width:1080px; margin:0 auto; padding:0 16px; display:flex; gap:4px; }
+  nav a { color:var(--mute); text-decoration:none; font-size:14px; padding:14px 10px; border-bottom:3px solid transparent; }
+  nav a:hover { color:var(--fg); border-bottom-color:var(--a); }
+  main { max-width:1080px; margin:0 auto; padding:0 16px 120px; }
+  header.hero { padding:48px 0 24px; }
+  .chip { display:inline-block; font-size:12px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; padding:4px 10px; border-radius:99px; background:var(--warnbg); color:var(--warn); }
+  .chip.ok { background:var(--okbg); color:var(--ok); } .chip.bad { background:var(--badbg); color:var(--bad); } .chip.a { background:var(--abg); color:var(--a); }
+  h1 { font-size:clamp(28px,5vw,42px); line-height:1.15; margin:16px 0 12px; letter-spacing:-.02em; }
+  .lead { font-size:18px; color:var(--mute); max-width:760px; line-height:2.5; margin:0; }
+  .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:16px; margin:32px 0 8px; }
+  .kpi { background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:20px 22px; }
+  .kpi b { display:block; font-size:38px; line-height:1.1; letter-spacing:-.02em; }
+  .kpi span { display:block; margin-top:8px; color:var(--mute); font-size:14px; line-height:1.5; }
+  .kpi.bad b { color:var(--bad); } .kpi.ok b { color:var(--ok); } .kpi.a b { color:var(--a); }
+  section { margin-top:96px; }
+  h2 { font-size:28px; line-height:1.2; margin:0 0 8px; letter-spacing:-.01em; }
+  h3 { font-size:17px; margin:24px 0 8px; }
+  .take { background:var(--abg); border-left:5px solid var(--a); border-radius:0 12px 12px 0; padding:14px 20px; margin:16px 0 28px; font-size:18px; font-weight:600; line-height:1.5; }
+  .take.bad { background:var(--badbg); border-color:var(--bad); } .take.ok { background:var(--okbg); border-color:var(--ok); } .take.warn { background:var(--warnbg); border-color:var(--warn); }
+  .figure { background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:16px 18px 10px; margin:20px 0; overflow-x:auto; }
+  .figure h3 { margin:0 0 4px; font-size:16px; }
+  .card { background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:18px 22px; overflow-x:auto; }
+  code { background:var(--card); padding:2px 6px; border-radius:5px; font-size:13px; }
+  svg { width:100%; height:auto; display:block; }
+  svg text { fill:var(--fg); font:13px system-ui,sans-serif; }
+  svg .b { fill:var(--card); stroke:var(--line); stroke-width:1.5; }
+  svg .bn { fill:var(--okbg); stroke:var(--ok); stroke-width:1.8; }
+  svg .bo { fill:var(--warnbg); stroke:var(--warn); stroke-width:1.8; }
+  svg .k { fill:none; stroke:var(--a); stroke-width:2; }
+  svg .n { fill:var(--mute); font-size:12px; } svg .bt { font-weight:600; font-size:14px; } svg .h { font-weight:700; font-size:15px; }
+  svg .ax { stroke:var(--line); } svg .gr { stroke:var(--line); stroke-width:.6; stroke-dasharray:3 4; }
+  svg .s1 { fill:none; stroke:var(--warn); stroke-width:2.5; } svg .s2 { fill:none; stroke:var(--ok); stroke-width:2.5; } svg .s3 { fill:none; stroke:var(--a); stroke-width:2; stroke-dasharray:6 4; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(310px,1fr)); gap:16px; }
+  .q { background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:18px 20px; display:flex; flex-direction:column; gap:10px; min-width:0; }
+  .q h4 { margin:0; font-size:17px; line-height:1.3; }
+  .q p { margin:0; line-height:1.7; font-size:15px; color:var(--mute); }
+  .q .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:auto; }
+  .q .ans { font-size:13px; color:var(--mute); border:1.5px dashed var(--line); border-radius:8px; padding:4px 12px; }
+  table { border-collapse:collapse; width:100%; font-size:14px; line-height:1.7; }
+  th, td { padding:9px 12px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+  th { color:var(--mute); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.05em; }
+  td.same { background:var(--okbg); } td.diff { background:var(--warnbg); } td.new { background:var(--abg); }
+  table.map td:first-child { font-family:ui-monospace,monospace; font-size:12.5px; }
+  .tw { overflow-x:auto; background:var(--surface); border:1px solid var(--line); border-radius:14px; }
+  .done { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:10px; margin-top:16px; }
+  .done div { background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:10px 14px 10px 38px; font-size:14px; line-height:1.6; position:relative; }
+  .done div::before { content:"\2713"; color:var(--ok); font-weight:800; position:absolute; left:14px; top:10px; }
+  .done div.todo::before { content:"?"; color:var(--bad); }
+  details { background:var(--surface); border:1px solid var(--line); border-radius:12px; margin:14px 0; }
+  details > summary { cursor:pointer; padding:14px 20px; font-weight:600; list-style:none; display:flex; justify-content:space-between; gap:12px; }
+  details > summary::after { content:"+"; color:var(--a); font-size:20px; line-height:1; }
+  details[open] > summary::after { content:"\2212"; }
+  details > .in { padding:0 20px 14px; }
+  details .in p { margin:8px 0; line-height:1.8; font-size:15px; }
+  .legend { display:flex; gap:16px; flex-wrap:wrap; font-size:13px; color:var(--mute); margin:8px 0 12px; }
+  .legend i { display:inline-block; width:14px; height:14px; border-radius:4px; vertical-align:-2px; margin-right:6px; border:2px solid; }
+  .mod { background:var(--surface); border:1px solid var(--line); border-radius:16px; margin:28px 0; overflow:hidden; }
+  .mod > header { display:flex; flex-wrap:wrap; gap:10px; align-items:center; padding:16px 22px; background:var(--card); border-bottom:1px solid var(--line); }
+  .mod > header code { font-size:15px; font-weight:700; background:transparent; padding:0; }
+  .mod .role { padding:12px 22px 0; margin:0; color:var(--mute); line-height:1.8; font-size:15px; }
+  .mod .cols { display:grid; grid-template-columns:minmax(280px,5fr) 7fr; }
+  @media (max-width:820px) { .mod .cols { grid-template-columns:1fr; } }
+  .mod .cols > div { padding:6px 22px 18px; min-width:0; }
+  .mod .cols > div + div { border-left:1px solid var(--line); }
+  @media (max-width:820px) { .mod .cols > div + div { border-left:0; border-top:1px solid var(--line); } }
+  .mod h4 { margin:14px 0 6px; font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--mute); }
+  .fld { width:100%; font-size:13px; line-height:1.55; }
+  .fld td { padding:6px 6px; vertical-align:top; }
+  .fld td:first-child { font-weight:700; white-space:nowrap; font-family:ui-monospace,monospace; font-size:12.5px; }
+  .dflt { display:inline-block; background:var(--abg); color:var(--a); border-radius:6px; padding:0 7px; font-size:12px; font-weight:600; margin-right:4px; }
+  .opt { display:inline-block; background:var(--card); border-radius:6px; padding:0 7px; font-size:12px; margin:0 3px 3px 0; }
+  .nt { display:block; color:var(--mute); font-size:12.5px; }
+  .fn { border-bottom:1px solid var(--line); padding:10px 0 8px; }
+  .fn:last-child { border-bottom:0; }
+  .fn .sig { font-family:ui-monospace,monospace; font-size:13px; font-weight:700; }
+  .fn .sig .ret { color:var(--ok); font-weight:600; }
+  .fn ol { margin:6px 0 4px; padding-left:22px; font-size:13.5px; line-height:1.6; }
+  .fn li { margin:0; line-height:1.6; }
+  .fn .from { font-size:12px; color:var(--mute); }
+  .fn .from b { color:var(--warn); } .fn .from i { color:var(--ok); font-style:normal; font-weight:700; }
+  .idx { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:10px; margin:16px 0; }
+  .idx a { background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:10px 14px; text-decoration:none; color:var(--fg); font-size:14px; line-height:1.5; }
+  .idx a:hover { border-color:var(--a); }
+  .idx a b { display:block; font-family:ui-monospace,monospace; font-size:13px; color:var(--a); }
+  .idx a span { color:var(--mute); font-size:13px; }
+  footer { margin-top:96px; color:var(--mute); font-size:14px; line-height:1.8; }
+</style></head>
+<body>
+<nav><div><a href="#layers">Layers</a><a href="#rule">One switch</a><a href="#compare">Box vs pose</a><a href="#index">Modules</a><a href="#cards">Class cards</a><a href="#map">Old to new</a><a href="#ask">Questions</a><a href="#facts">Facts</a><a href="#log">Actions</a></div></nav>
+<main>
+
+<header class="hero"><span class="chip">Design only &middot; not approved &middot; 2026-10-18</span>
+<h1>servo_core + visp_pbvs_servo: PBVS from an ideal pose, what every module holds and does</h1>
+<p class="lead">Each card lists the fields (default and options) and the functions with their steps. "moved from" points to the code that the function copies or replaces.</p>
+<div class="kpis">
+<div class="kpi a"><b>3</b><span>new modules: <code>pose_geometry</code>, <code>pose_source</code>, <code>pose_perception</code></span></div>
+<div class="kpi ok"><b>0</b><span>"if pose" branches inside the controllers. They see only <code>ServoInputs</code>.</span></div>
+<div class="kpi a"><b>1</b><span>switch in the FSM: <code>perception_source</code> = box or pose</span></div>
+<div class="kpi bad"><b>0</b><span>source files edited so far. Nothing is tested in the simulator.</span></div>
+</div></header>
+
+<section id="layers"><h2>Layers: who may import whom</h2>
+<div class="take">A module imports only modules below it. The controllers never see a pose source. The pose source never sees a controller.</div>
+<div class="figure"><svg viewBox="0 0 960 440" role="img" aria-label="Module layers">
+<rect class="bn" x="10" y="10" width="940" height="52" rx="8"/><text class="bt" x="20" y="32">L4  visp_pbvs_main.cpp</text><text class="n" x="20" y="52">wires the FSM, one controller and one pose source from parameters</text>
+<rect class="bo" x="10" y="70" width="940" height="52" rx="8"/><text class="bt" x="20" y="92">L3  servo_fsm_node.cpp</text><text class="n" x="20" y="112">states, safety filters, output; the ONE switch perception_source; calls controllers only through IServoController</text>
+<rect class="b" x="10" y="130" width="940" height="52" rx="8"/><text class="bt" x="20" y="152">L2  pose_perception.hpp / .cpp</text><text class="n" x="20" y="172">age gate, noise, dropout, visibility, smoothing: turns a PoseSample into one Percept</text>
+<rect class="b" x="10" y="190" width="460" height="52" rx="8"/><text class="bt" x="20" y="212">L1  pose_source.hpp / .cpp</text><text class="n" x="20" y="232">IPoseSource; GroundTruthPoseSource now, SLAM later</text>
+<rect class="b" x="490" y="190" width="460" height="52" rx="8"/><text class="bt" x="500" y="212">L1  pbvs_controller.cpp   pbvs_pose_controller.cpp</text><text class="n" x="500" y="232">the two laws; each reads only ServoInputs</text>
+<rect class="b" x="10" y="250" width="940" height="52" rx="8"/><text class="bt" x="20" y="272">L0  pose_geometry.hpp   servo_controller.hpp</text><text class="n" x="20" y="292">pure math (no ROS) and plain structs: CameraModel, PoseSample, Percept, ServoInputs, ServoVel</text>
+<text class="n" x="10" y="332">Rule: a box may import only boxes below it.</text>
+<text class="n" x="10" y="352">L1 pbvs_*_controller imports L0 only. L1 pose_source imports L0 only.</text>
+<text class="n" x="10" y="372">L3 imports L2, L1 pose_source and the L0 interface. It never imports a concrete controller.</text>
+<text class="n" x="10" y="392">Guard (proposed): a script greps that pbvs_*_controller.cpp contains neither "pose_source" nor "/slam".</text>
+</svg></div>
+<div class="figure"><h3>Topics: who writes them and who reads them</h3><svg viewBox="0 0 960 300" role="img" aria-label="Topics">
+<text class="bt" x="10" y="26">/sim/drone_pose  [x y z pitch yaw]</text><text class="n" x="360" y="26">MATLAB writes. Read by: oracle, FSM (floor clamp), GroundTruthPoseSource (NEW)</text>
+<text class="bt" x="10" y="62">/sim/target_pose  [x y z yaw]</text><text class="n" x="360" y="62">MATLAB writes, latched. Read by: oracle, FSM (diag), GroundTruthPoseSource (NEW)</text>
+<text class="bt" x="10" y="98">/sim/pitch_angle</text><text class="n" x="360" y="98">MATLAB writes. Read by: FSM (pitch return)</text>
+<text class="bt" x="10" y="134">/yolo/detections</text><text class="n" x="360" y="134">oracle or YOLO writes. Read by: FSM. In pose mode the FSM ignores it.</text>
+<text class="bt" x="10" y="170">/slam/pose</text><text class="n" x="360" y="170">SLAM writes. Read by: slam_eval only. Later: SlamPoseSource (not in this change)</text>
+<text class="bt" x="10" y="206">/cmd_vel</text><text class="n" x="360" y="206">FSM writes (publish_cmd_vel) in both modes</text>
+<text class="bt" x="10" y="242">/bench/state</text><text class="n" x="360" y="242">FSM writes "STATE,sim_time,controller". Controller name becomes pbvs_pose.</text>
+<text class="n" x="10" y="280">Source: servo_fsm_node.cpp lines 236 to 242, oracle_detector_node.py, benchmarks/slam_eval/base.py</text>
+</svg></div></section>
+
+<section id="rule"><h2>The rule: one switch, at the input</h2>
+<div class="take">The FSM chooses where the target comes from. After that point, nothing asks whether the target came from a box or a pose.</div>
+<div class="figure"><svg viewBox="0 0 960 300" role="img" aria-label="One switch">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--a)"/></marker></defs>
+<text class="h" x="10" y="22">INPUT (two sources)</text>
+<rect class="bo" x="10" y="34" width="250" height="56" rx="8"/><text class="bt" x="20" y="56">box: on_detections</text><text class="n" x="20" y="74">class, conf, jump gate, smoothing</text>
+<rect class="bn" x="10" y="100" width="250" height="56" rx="8"/><text class="bt" x="20" y="122">pose: pose_tick (NEW)</text><text class="n" x="20" y="140">PosePerception.sample()</text>
+<text class="h" x="330" y="22">SWITCH</text>
+<rect class="b" x="330" y="34" width="250" height="122" rx="8"/><text class="bt" x="340" y="58">perception_source</text><text class="n" x="340" y="78">box (default) or pose</text><text class="n" x="340" y="98">the other path returns at once</text><text class="n" x="340" y="118">same state machine after this</text>
+<text class="h" x="650" y="22">COMMON (unchanged)</text>
+<rect class="b" x="650" y="34" width="300" height="122" rx="8"/><text class="bt" x="660" y="58">update_state, build_command</text><text class="n" x="660" y="78">make_inputs: box fields AND pose fields</text><text class="n" x="660" y="98">controller.computeApproach</text><text class="n" x="660" y="118">publish_cmd_vel: clamp, floor, ramp</text>
+<path class="k" d="M260 62 L330 80" marker-end="url(#ar)"/><path class="k" d="M260 128 L330 112" marker-end="url(#ar)"/><path class="k" d="M580 95 L650 95" marker-end="url(#ar)"/>
+<rect class="bn" x="10" y="190" width="940" height="90" rx="8"/><text class="bt" x="20" y="214">Why a switch and not two FSMs</text><text class="n" x="20" y="234">The state machine, the search pattern, the sim-health hold and the ramp are the shared fairness layer (bench_fsm.yaml).</text><text class="n" x="20" y="252">A second FSM would change them. One switch changes only the input.</text><text class="n" x="20" y="270">Danger: if the oracle still runs in pose mode, on_detections must return at once. Else two clocks drive the same command.</text>
+</svg></div>
+<h3>Alternatives I rejected</h3>
+<div class="tw"><table>
+<tr><th>Alternative</th><th>Problem</th><th>Chosen instead</th></tr>
+<tr><td>Pose math inside <code>make_inputs</code></td><td>The FSM learns frames and pitch signs. SLAM cannot reuse it without more edits in the FSM.</td><td><code>pose_geometry.hpp</code> (pure, unit tested)</td></tr>
+<tr><td>Controller subscribes to <code>/sim/*</code> itself</td><td>The controller no longer compares fairly with the other four. It cannot take a SLAM pose.</td><td>The controller reads only <code>ServoInputs</code></td></tr>
+<tr><td>Keep the oracle as the clock, add a pose to the message</td><td>The oracle stays in the loop. The yolo message type changes.</td><td>FSM timer, <code>pose_rate_hz</code></td></tr>
+<tr><td>New executable <code>visp_pbvs_pose_node</code></td><td>Five places list the executables: <code>hil_simulation.launch.py:45</code>, <code>controller_bench.launch.py:94</code>, <code>controller_hil_bench.sh:56 and 149</code>, <code>run_stack_hil.sh:385 and 574</code>. Two belong to the controller bench.</td><td>Same executable, parameter <code>pbvs_variant</code></td></tr>
+<tr><td>Edit the oracle to publish a pose</td><td>The oracle is the control group. It must not change.</td><td>Oracle untouched</td></tr>
+</table></div></section>
+
+<section id="compare"><h2>Box PBVS vs pose PBVS: exact comparison</h2>
+<div class="take warn">The oracle box already holds the exact pose. The pose path adds no information in the simulator. It changes the interface, the clock, the lag, the gates and the law.</div>
+
+<div class="figure"><h3>Path A: oracle box (today)</h3><svg viewBox="0 0 1000 150" role="img" aria-label="Path A">
+  <defs><marker id="ara" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--a)"/></marker></defs>
+  <rect class="b" x="5" y="30" width="130" height="70" rx="8"/><text class="bt" x="13" y="52">sim poses</text><text class="n" x="13" y="70">drone x y z p yaw</text><text class="n" x="13" y="86">target x y z yaw</text>
+  <rect class="bo" x="175" y="30" width="140" height="70" rx="8"/><text class="bt" x="183" y="52">oracle.project</text><text class="n" x="183" y="70">20 Hz timer</text><text class="n" x="183" y="86">pose to u v bw bh</text>
+  <rect class="b" x="355" y="30" width="120" height="70" rx="8"/><text class="bt" x="363" y="52">/yolo/detect</text><text class="n" x="363" y="70">BEST_EFFORT</text>
+  <rect class="b" x="515" y="30" width="150" height="70" rx="8"/><text class="bt" x="523" y="52">FSM box filters</text><text class="n" x="523" y="70">class, conf, jump 30%</text><text class="n" x="523" y="86">mean of last 5</text>
+  <rect class="b" x="705" y="30" width="130" height="70" rx="8"/><text class="bt" x="713" y="52">make_inputs</text><text class="n" x="713" y="70">Z = fy x 1.5 / bh</text>
+  <rect class="b" x="875" y="30" width="120" height="70" rx="8"/><text class="bt" x="883" y="52">PBVS</text><text class="n" x="883" y="70">box law</text>
+  <path class="k" d="M135 65 L175 65" marker-end="url(#ara)"/><path class="k" d="M315 65 L355 65" marker-end="url(#ara)"/><path class="k" d="M475 65 L515 65" marker-end="url(#ara)"/><path class="k" d="M665 65 L705 65" marker-end="url(#ara)"/><path class="k" d="M835 65 L875 65" marker-end="url(#ara)"/>
+  <text class="n" x="5" y="135">Control clock = the arrival of each detection message. An empty array still fires it.</text>
+</svg></div>
+<div class="figure"><h3>Path B: ideal pose (proposed)</h3><svg viewBox="0 0 1000 150" role="img" aria-label="Path B">
+  <defs><marker id="arb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--a)"/></marker></defs>
+  <rect class="b" x="5" y="30" width="150" height="70" rx="8"/><text class="bt" x="13" y="52">IPoseSource</text><text class="n" x="13" y="70">ground truth now</text><text class="n" x="13" y="86">SLAM later</text>
+  <rect class="bn" x="215" y="30" width="200" height="70" rx="8"/><text class="bt" x="223" y="52">PosePerception</text><text class="n" x="223" y="70">gate, geometry, visible</text><text class="n" x="223" y="86">noise, smoothing</text>
+  <rect class="bn" x="475" y="30" width="200" height="70" rx="8"/><text class="bt" x="483" y="52">FSM pose_tick</text><text class="n" x="483" y="70">own timer, 20 Hz</text><text class="n" x="483" y="86">make_inputs (pose fields)</text>
+  <rect class="bn" x="735" y="30" width="240" height="70" rx="8"/><text class="bt" x="743" y="52">PBVSPoseController</text><text class="n" x="743" y="70">vx_law, vz_law: ratio | metric</text><text class="n" x="743" y="86">k_yaw: 0 first</text>
+  <path class="k" d="M155 65 L215 65" marker-end="url(#arb)"/><path class="k" d="M415 65 L475 65" marker-end="url(#arb)"/><path class="k" d="M675 65 L735 65" marker-end="url(#arb)"/>
+  <text class="n" x="5" y="135">After this point: update_state, build_command, clamp 3.0 / 0.8, floor clamp, ramp 1.5 per tick, /cmd_vel.</text>
+</svg></div>
+
+<h3>Stage by stage</h3>
+<div class="legend"><span><i style="background:var(--okbg);border-color:var(--ok)"></i>same</span><span><i style="background:var(--warnbg);border-color:var(--warn)"></i>different</span><span><i style="background:var(--abg);border-color:var(--a)"></i>new</span></div>
+<div class="tw"><table>
+<tr><th>Stage</th><th>Path A: oracle box + PBVS</th><th>Path B: ideal pose + PBVS</th></tr>
+<tr><td>Truth source</td><td class="same"><code>/sim/drone_pose</code>, <code>/sim/target_pose</code></td><td class="same">same two topics</td></tr>
+<tr><td>Pose age gate</td><td class="diff">oracle drops the frame if the drone pose is older than 0.3 s</td><td class="new">PosePerception copies it: <code>pose_stale_sec</code> = 0.3. The FSM has only 2.0 s, for the floor clamp.</td></tr>
+<tr><td>World to camera</td><td class="diff">in <code>oracle.project()</code>: yaw, then pitch with <code>pitch_sign</code>, then axis swap</td><td class="new">same math in <code>pose_geometry::world_to_camera</code></td></tr>
+<tr><td>Pitch source</td><td class="diff">element 3 of <code>/sim/drone_pose</code> &times; <code>pitch_sign</code> 1.0</td><td class="new">same element. The FSM today reads <code>/sim/pitch_angle</code> for the pitch return.</td></tr>
+<tr><td>Visibility</td><td class="diff">Zc &gt; 0.1; pixel inside the image; optional max range; else empty array</td><td class="new">same tests in <code>pose_geometry::visible</code>; result = reason code</td></tr>
+<tr><td>Control clock</td><td class="diff">each detection message, 20 Hz</td><td class="new">FSM timer, <code>pose_rate_hz</code> = 20</td></tr>
+<tr><td>Class and confidence</td><td class="diff">"stop sign", 0.99, FSM needs &ge; 0.20</td><td class="new">none</td></tr>
+<tr><td>30% jump gate</td><td class="diff">a centre jump &gt; 30% drops the frame</td><td class="new">none</td></tr>
+<tr><td>Smoothing</td><td class="diff">mean of 5 values of cx, cy, bw, bh (about 0.1 s average lag)</td><td class="new">none by default; <code>smoothing_window</code> option on Xc, Yc, Zc</td></tr>
+<tr><td>Normalised error</td><td class="diff">ex = (cx&minus;320)/320; ey = (cy&minus;240)/240</td><td class="new">ex = fx&middot;Xc/Zc/320; ey = fy&middot;Yc/Zc/240</td></tr>
+<tr><td>Depth Z</td><td class="diff">fy&middot;1.5/bh; 50 m if bh &lt; 1</td><td class="new">Zc directly</td></tr>
+<tr><td>Box ratio</td><td class="diff">bh/480</td><td class="new">fy&middot;1.5/(Zc&middot;480)</td></tr>
+<tr><td>Lock-on</td><td class="same">2 ticks and |ex| &lt; 0.5</td><td class="same">same test on computed ex</td></tr>
+<tr><td>REACHED</td><td class="same">ratio &ge; 0.50, |ex|,|ey| &lt; 0.12, 8 ticks</td><td class="same">same test on computed values (ratio 0.50 = Zc 3.46 m)</td></tr>
+<tr><td>Bearing memory</td><td class="diff">yaw &minus; atan(ex&middot;320/fx)</td><td class="new">yaw &minus; atan2(Xc, Zc): same number</td></tr>
+<tr><td>vx</td><td class="diff">3.0&middot;max(0.55 &minus; ratio, 0); peak 1.65 m/s</td><td class="new">ratio law: same. Metric law: clamp(k_x&middot;(Zc &minus; Zc*), 0, vx_max)</td></tr>
+<tr><td>vy (left+)</td><td class="same">clamp(&minus;0.3&middot;tx, &plusmn;1.5)</td><td class="same">same with Xc</td></tr>
+<tr><td>vz (up+)</td><td class="diff">&minus;0.5&middot;ey (pixel gain)</td><td class="new">ratio law: same. Metric law: &minus;k_z&middot;Yc</td></tr>
+<tr><td>wz</td><td class="diff">0.0</td><td class="new">&minus;k_yaw&middot;bearing; k_yaw = 0 first</td></tr>
+<tr><td>Output filters</td><td class="same">clamp 3.0 / 0.8; floor 0.5 m; ramp 1.5; sim-health hold</td><td class="same">same function <code>publish_cmd_vel</code></td></tr>
+<tr><td>Missing target</td><td class="diff">empty array, then REACQUIRE, then SEARCHING</td><td class="new">invalid Percept: same <code>handle_no_detection</code></td></tr>
+<tr><td>Noise tests</td><td class="diff">pixel_noise_std, dropout_prob (0)</td><td class="new">pose_noise_std (m), pose_dropout_prob (0)</td></tr>
+</table></div>
+
+<h3>Worked numbers</h3>
+<div class="take warn">Computed by a Python script on the frozen start pose. This is not a simulation run.</div>
+<div class="tw"><table>
+<tr><th>Quantity</th><th>Value</th><th>How</th></tr>
+<tr><td>Drone / target</td><td>(15.12, 3.84, 7.5), yaw 2&pi;&minus;0.0460 / (35.1, 2.92, 3.08)</td><td>SIM_PARAMS start, frozen sign</td></tr>
+<tr><td>Zc, Xc, Yc</td><td>20.0012, 0.00027, 4.42 m</td><td>yaw rotation, axis swap</td></tr>
+<tr><td>Box u, v, bh</td><td>320.0, 362.4, 41.55 px (ratio 0.0866)</td><td>oracle projection</td></tr>
+<tr><td>Path A Z, tx</td><td>20.0012, 0.00027</td><td>equal to Zc, Xc: the box is lossless</td></tr>
+<tr><td>Stop distance Zc*</td><td>3.148 m</td><td>fy &middot; 1.5 / (0.55 &middot; 480)</td></tr>
+<tr><td>Path A vx, vy, vz</td><td>+1.390, &minus;0.0001, &minus;0.255 m/s</td><td>3.0&middot;(0.55&minus;0.0866); &minus;0.3&middot;tx; &minus;0.5&middot;0.51</td></tr>
+</table></div>
+<div class="figure"><h3>vx against range: box-ratio law and metric law</h3>
+<svg viewBox="0 0 960 300" role="img" aria-label="vx against range" id="vxchart"></svg>
+<p style="color:var(--mute);font-size:13px;margin:4px 0 8px">Orange: today (peak 1.65 m/s, hyperbolic). Green: metric, k_x = 0.35, vx_max = 1.65. Blue dashed: stop distance 3.148 m.</p></div>
+<div class="tw"><table>
+<tr><th>Range Zc (Yc = 4.42 m)</th><th>Path A vz (pixel gain)</th><th>Path B metric vz, k_z = 0.3</th></tr>
+<tr><td>20 m</td><td>&minus;0.255 m/s</td><td>&minus;1.33 m/s</td></tr>
+<tr><td>10 m</td><td>&minus;0.51 m/s</td><td>&minus;1.33 m/s</td></tr>
+<tr><td>5 m</td><td>&minus;1.02 m/s</td><td>&minus;1.33 m/s</td></tr>
+</table></div>
+</section>
+
+<section id="index"><h2>Modules</h2><div class="take">Click a card to jump to its design.</div>
+<div class="idx">
+<a href="#c_or"><b>oracle_detector_node.py</b><span>existing, not changed</span></a>
+<a href="#c_geo"><b>pose_geometry.hpp</b><span>NEW: pure math</span></a>
+<a href="#c_src"><b>pose_source.hpp</b><span>NEW: where the pose comes from</span></a>
+<a href="#c_per"><b>pose_perception</b><span>NEW: gate, noise, smoothing</span></a>
+<a href="#c_in"><b>servo_controller.hpp</b><span>CHANGED: ServoInputs</span></a>
+<a href="#c_fsm"><b>servo_fsm_node.cpp</b><span>CHANGED: pose_tick + switch</span></a>
+<a href="#c_pb"><b>pbvs_controller.cpp</b><span>existing, not changed</span></a>
+<a href="#c_pp"><b>pbvs_pose_controller.cpp</b><span>NEW: pose law</span></a>
+<a href="#c_main"><b>visp_pbvs_main.cpp</b><span>CHANGED: wiring</span></a>
+<a href="#c_cfg"><b>bench_pbvs.yaml</b><span>CHANGED: parameters</span></a>
+</div></section>
+
+<section id="cards"><h2>Class cards</h2>
+<div class="take warn">"default" = today's value. NEW = my proposal. You change any of them.</div>
+
+<article class="mod" id="c_or"><header><code>src/oracle_detector/oracle_detector/oracle_detector_node.py</code><span class="chip ok">existing, not changed</span></header>
+<p class="role">The control group. It turns the true pose into the perfect box on <code>/yolo/detections</code> at 20 Hz. Path B copies its math and its gates; it does not edit it.</p>
+<div class="cols"><div><h4>Fields (parameters)</h4><table class="fld">
+<tr><td>cam_fx, cam_fy</td><td><span class="dflt">default 554.0</span></td></tr>
+<tr><td>cam_cx, cam_cy</td><td><span class="dflt">default 320, 240</span></td></tr>
+<tr><td>image_width, height</td><td><span class="dflt">default 640, 480</span></td></tr>
+<tr><td>known_target_height</td><td><span class="dflt">default 1.5</span><span class="nt">m; equals the FSM value</span></td></tr>
+<tr><td>target_aspect</td><td><span class="dflt">default 1.0</span></td></tr>
+<tr><td>confidence</td><td><span class="dflt">default 0.99</span></td></tr>
+<tr><td>publish_rate</td><td><span class="dflt">default 20.0</span><span class="nt">Hz</span></td></tr>
+<tr><td>pitch_sign</td><td><span class="dflt">default 1.0</span></td></tr>
+<tr><td>edge_margin_px</td><td><span class="dflt">default 0.0</span></td></tr>
+<tr><td>pixel_noise_std</td><td><span class="dflt">default 0.0</span><span class="nt">px</span></td></tr>
+<tr><td>dropout_prob</td><td><span class="dflt">default 0.0</span></td></tr>
+<tr><td>max_detection_range_m</td><td><span class="dflt">default 0.0</span><span class="nt">0 = unlimited</span></td></tr>
+<tr><td>pose_stale_sec</td><td><span class="dflt">default 0.3</span></td></tr>
+</table></div><div><h4>Functions</h4>
+<div class="fn"><div class="sig">project() <span class="ret">&rarr; (u, v, bw, bh) | None</span></div><ol>
+<li>no drone or no target pose yet: None</li>
+<li>drone pose older than pose_stale_sec: None</li>
+<li>delta = target &minus; drone (world)</li>
+<li>fwd = dx&middot;cos(yaw) + dy&middot;sin(yaw); left = &minus;dx&middot;sin(yaw) + dy&middot;cos(yaw); up = dz</li>
+<li>th = pitch_sign &times; pitch; fwd_p = fwd&middot;cos(th) + up&middot;sin(th); up_p = &minus;fwd&middot;sin(th) + up&middot;cos(th)</li>
+<li>Zc = fwd_p; Xc = &minus;left; Yc = &minus;up_p</li>
+<li>Zc &le; 0.1: None. Max range set and Zc above it: None.</li>
+<li>u = fx&middot;Xc/Zc + cx0; v = fy&middot;Yc/Zc + cy0</li>
+<li>outside image plus margin: None</li>
+<li>bh = fy&middot;known_h/Zc; bw = bh&times;aspect</li></ol><div class="from"><i>steps 2 to 9 move into pose_geometry and PosePerception (copied, not removed)</i></div></div>
+<div class="fn"><div class="sig">tick() <span class="ret">&rarr; publish</span></div><ol>
+<li>proj = project()</li>
+<li>proj exists and a random draw &ge; dropout_prob: add noise, fill one Detection</li>
+<li>publish the array (empty if no target)</li>
+<li>log once per second, with the reason when not visible</li></ol></div>
+</div></div></article>
+
+<article class="mod" id="c_geo"><header><code>src/servo_core/include/servo_core/pose_geometry.hpp</code><span class="chip bad">NEW, header only, no ROS</span></header>
+<p class="role">Pure functions and plain structs. A unit test can run them without a node. The test feeds the same inputs as the Python oracle and compares the outputs.</p>
+<div class="cols"><div><h4>Fields (structs)</h4><table class="fld">
+<tr><td>CameraModel</td><td><span class="nt">fx, fy, cx0, cy0, width, height, known_h</span><span class="dflt">defaults 554, 554, 320, 240, 640, 480, 1.5</span></td></tr>
+<tr><td>Pose6</td><td><span class="nt">x, y, z, pitch, yaw (drone). Target uses x, y, z, yaw.</span></td></tr>
+<tr><td>CamPoint</td><td><span class="nt">Xc (right+), Yc (down+), Zc (forward+), metres</span></td></tr>
+<tr><td>VisReason</td><td><span class="opt">OK</span><span class="opt">BEHIND</span><span class="opt">OFFSCREEN</span><span class="opt">OUT_OF_RANGE</span></td></tr>
+</table></div><div><h4>Functions</h4>
+<div class="fn"><div class="sig">world_to_camera(drone, target, pitch_sign) <span class="ret">&rarr; CamPoint</span></div><ol>
+<li>delta = target &minus; drone</li>
+<li>rotate by yaw: fwd, left, up</li>
+<li>rotate by th = pitch_sign &times; pitch</li>
+<li>Zc = fwd_p; Xc = &minus;left; Yc = &minus;up_p</li></ol><div class="from">moved from <b>oracle_detector_node.py: project, steps 3 to 6</b></div></div>
+<div class="fn"><div class="sig">project_pixel(p, cam) <span class="ret">&rarr; (u, v)</span></div><ol><li>u = fx&middot;Xc/Zc + cx0; v = fy&middot;Yc/Zc + cy0</li></ol><div class="from">moved from <b>oracle: project, step 8</b></div></div>
+<div class="fn"><div class="sig">visible(p, cam, margin, max_range) <span class="ret">&rarr; VisReason</span></div><ol>
+<li>Zc &le; 0.1: BEHIND</li>
+<li>max_range &gt; 0 and Zc &gt; max_range: OUT_OF_RANGE</li>
+<li>pixel outside image plus margin: OFFSCREEN</li>
+<li>else OK</li></ol><div class="from">moved from <b>oracle: project, steps 7 and 9</b></div></div>
+<div class="fn"><div class="sig">ratio_from_Zc(Zc, cam) / Zc_from_ratio(r, cam)</div><ol><li>ratio = fy&middot;known_h/(Zc&middot;height); the inverse for the stop distance Zc*</li></ol><div class="from"><i>NEW function</i></div></div>
+<div class="fn"><div class="sig">ex_ey(p, cam) <span class="ret">&rarr; (ex, ey)</span></div><ol><li>ex = fx&middot;Xc/Zc/(width/2); ey = fy&middot;Yc/Zc/(height/2)</li></ol><div class="from"><i>NEW function</i></div></div>
+</div></div></article>
+
+<article class="mod" id="c_src"><header><code>src/servo_core/include/servo_core/pose_source.hpp</code><span class="chip bad">NEW</span></header>
+<p class="role">The answer to "where does the pose come from". Today: the simulator. Later: SLAM. The rest of the code does not change when the source changes.</p>
+<div class="cols"><div><h4>Fields</h4><table class="fld">
+<tr><td>PoseSample</td><td><span class="nt">drone Pose6, target Pose6, drone_stamp, valid flags</span></td></tr>
+<tr><td><b>GroundTruthPoseSource</b></td><td></td></tr>
+<tr><td>drone_topic</td><td><span class="dflt">NEW default /sim/drone_pose</span></td></tr>
+<tr><td>target_topic</td><td><span class="dflt">NEW default /sim/target_pose</span></td></tr>
+<tr><td>QoS drone</td><td><span class="dflt">RELIABLE, VOLATILE, depth 10</span><span class="nt">same as the oracle</span></td></tr>
+<tr><td>QoS target</td><td><span class="dflt">RELIABLE, TRANSIENT_LOCAL, depth 1</span><span class="nt">latched, same as the oracle</span></td></tr>
+<tr><td><b>SlamPoseSource</b></td><td><span class="chip">later, not in this change</span><span class="nt">needs T_world_slam and the target in the SLAM frame</span></td></tr>
+</table></div><div><h4>Functions</h4>
+<div class="fn"><div class="sig">IPoseSource::latest(out) <span class="ret">&rarr; bool</span></div><ol><li>fill PoseSample with the newest drone and target pose</li><li>false if either pose never arrived</li></ol></div>
+<div class="fn"><div class="sig">GroundTruthPoseSource(node)</div><ol>
+<li>create two subscriptions on the FSM node</li>
+<li>drone callback: store 5 values and the receive time (node clock)</li>
+<li>target callback: store 4 values</li>
+<li>both callbacks run on the single-threaded executor, so no lock is needed</li></ol><div class="from">moved from <b>oracle: on_drone, on_target</b></div></div>
+<div class="fn"><div class="sig">age_s(now) <span class="ret">&rarr; seconds</span></div><ol><li>now &minus; time of the last drone callback</li></ol><div class="from">moved from <b>oracle: project, step 2</b></div></div>
+</div></div></article>
+
+<article class="mod" id="c_per"><header><code>src/servo_core/include/servo_core/pose_perception.hpp</code><span class="chip bad">NEW</span></header>
+<p class="role">Replaces the oracle and the box filters together. It reads a pose source and returns one Percept per tick.</p>
+<div class="cols"><div><h4>Fields</h4><table class="fld">
+<tr><td>pose_stale_sec</td><td><span class="dflt">NEW default 0.3</span></td></tr>
+<tr><td>pitch_sign</td><td><span class="dflt">NEW default 1.0</span></td></tr>
+<tr><td>edge_margin_px</td><td><span class="dflt">NEW default 0.0</span></td></tr>
+<tr><td>max_range_m</td><td><span class="dflt">NEW default 0.0</span><span class="nt">0 = unlimited</span></td></tr>
+<tr><td>smoothing_window</td><td><span class="dflt">NEW default 1</span><span class="nt">1 = off; 5 = same lag as the box</span></td></tr>
+<tr><td>pose_noise_std</td><td><span class="dflt">NEW default 0.0</span><span class="nt">m, Gaussian on Xc, Yc, Zc</span></td></tr>
+<tr><td>pose_dropout_prob</td><td><span class="dflt">NEW default 0.0</span></td></tr>
+<tr><td>Percept</td><td><span class="nt">valid, reason, Xc, Yc, Zc, ex, ey, ratio, bearing, age_s</span></td></tr>
+<tr><td>reason</td><td><span class="opt">OK</span><span class="opt">NO_POSE</span><span class="opt">STALE</span><span class="opt">BEHIND</span><span class="opt">OFFSCREEN</span><span class="opt">OUT_OF_RANGE</span><span class="opt">DROPOUT</span></td></tr>
+</table></div><div><h4>Functions</h4>
+<div class="fn"><div class="sig">sample(now) <span class="ret">&rarr; Percept</span></div><ol>
+<li>source.latest() false: NO_POSE</li>
+<li>age_s &gt; pose_stale_sec: STALE (the sim just restarted)</li>
+<li>CamPoint = world_to_camera(drone, target, pitch_sign)</li>
+<li>draw dropout: DROPOUT</li>
+<li>add noise to Xc, Yc, Zc</li>
+<li>visible(): a reason other than OK ends here</li>
+<li>push into the smoothing buffers; take the means</li>
+<li>fill ex, ey, ratio, bearing = atan2(Xc, Zc); valid = true</li></ol><div class="from">moved from <b>oracle: project + tick; FSM: push_smooth, avg</b></div></div>
+<div class="fn"><div class="sig">reset() <span class="ret">&rarr; None</span></div><ol><li>clear the smoothing buffers</li><li>called by <code>handle_sim_restart</code></li></ol><div class="from">moved from <b>servo_fsm_node.cpp: handle_sim_restart (buffer clear)</b></div></div>
+<div class="fn"><div class="sig">last_reason_text() <span class="ret">&rarr; string</span></div><ol><li>text for the 1 Hz log, as the oracle prints "NOT visible (reason)"</li></ol><div class="from">moved from <b>oracle: tick (log)</b></div></div>
+</div></div></article>
+
+<article class="mod" id="c_in"><header><code>src/servo_core/include/servo_core/servo_controller.hpp</code><span class="chip">CHANGED: ServoInputs</span></header>
+<p class="role">The old fields stay. Four box controllers keep working. The new fields are filled in both modes, so the old ratio law can also run on a pose.</p>
+<div class="cols"><div><h4>New fields</h4><table class="fld">
+<tr><td>pose_valid</td><td><span class="dflt">NEW default false</span><span class="nt">true only in pose mode</span></td></tr>
+<tr><td>Xc</td><td><span class="dflt">NEW default 0.0</span><span class="nt">m, right+</span></td></tr>
+<tr><td>Yc</td><td><span class="dflt">NEW default 0.0</span><span class="nt">m, down+</span></td></tr>
+<tr><td>Zc</td><td><span class="dflt">NEW default 0.0</span><span class="nt">m, forward+</span></td></tr>
+<tr><td>bearing</td><td><span class="dflt">NEW default 0.0</span><span class="nt">rad, atan2(Xc, Zc)</span></td></tr>
+<tr><td>stop_distance</td><td><span class="dflt">NEW default 3.148</span><span class="nt">Zc*, from target_bbox_ratio</span></td></tr>
+</table></div><div><h4>Contract</h4><div class="fn"><div class="sig">who reads what</div><ol>
+<li>A box controller reads box fields and ignores pose_valid.</li>
+<li>A pose controller returns zero velocity when pose_valid is false.</li>
+<li>In pose mode the box fields hold the values the box would have (ex, ey, ratio, Z = Zc). So the ratio law reproduces Path A.</li></ol></div></div></div></article>
+
+<article class="mod" id="c_fsm"><header><code>src/servo_core/src/servo_fsm_node.cpp</code><span class="chip">CHANGED: one switch and one timer</span></header>
+<p class="role">Today the FSM runs a control step only when a detection message arrives, or when the watchdog sees 0.4 s of silence. Pose mode adds a timer. The box path stays as it is.</p>
+<div class="cols"><div><h4>Fields</h4><table class="fld">
+<tr><td colspan="2"><b>new</b></td></tr>
+<tr><td>perception_source</td><td><span class="dflt">NEW default box</span><span class="opt">box</span><span class="opt">pose</span></td></tr>
+<tr><td>pose_rate_hz</td><td><span class="dflt">NEW default 20.0</span></td></tr>
+<tr><td>the PosePerception parameters</td><td><span class="nt">listed on its card</span></td></tr>
+<tr><td colspan="2"><b>used, not changed</b></td></tr>
+<tr><td>min_confidence</td><td><span class="dflt">default 0.20</span></td></tr>
+<tr><td>smoothing_window (box)</td><td><span class="dflt">default 5</span></td></tr>
+<tr><td>target_bbox_ratio</td><td><span class="dflt">default 0.55</span></td></tr>
+<tr><td>hold_bbox_ratio</td><td><span class="dflt">default 0.50</span></td></tr>
+<tr><td>hold_center_tol</td><td><span class="dflt">default 0.12</span></td></tr>
+<tr><td>reach_consec_ticks</td><td><span class="dflt">default 8</span></td></tr>
+<tr><td>lockon_consec, lockon_ex_tol</td><td><span class="dflt">default 2, 0.5</span></td></tr>
+<tr><td>image_x_yaw_sign</td><td><span class="dflt">default &minus;1.0</span></td></tr>
+<tr><td>max_linear, max_angular</td><td><span class="dflt">default 3.0, 0.8</span></td></tr>
+<tr><td>vel_ramp_rate</td><td><span class="dflt">default 1.5</span></td></tr>
+<tr><td>watchdog_period_sec</td><td><span class="dflt">default 0.20</span></td></tr>
+</table></div><div><h4>Functions</h4>
+<div class="fn"><div class="sig">on_detections(msg) <span class="ret">change: one line</span></div><ol>
+<li>NEW first line: perception_source is pose: count the message, return</li>
+<li>the rest (best detection, jump gate, 5-sample mean, state update, command) is unchanged</li></ol></div>
+<div class="fn"><div class="sig">pose_tick() <span class="ret">NEW &rarr; publishes cmd_vel</span></div><ol>
+<li>perception_source is box: return</li>
+<li>p = perception.sample(now)</li>
+<li>not p.valid: consecutive_dets = 0; handle_no_detection(); log the reason; return</li>
+<li>last_pose_tick_time = now (feeds the watchdog)</li>
+<li>bearing memory = drone yaw &minus; p.bearing; have_last_bearing = true</li>
+<li>consecutive_dets++; update_state_on_detection(p.ratio, p.ex, p.ey)</li>
+<li>build_command(p.ex, p.ey, p.ratio) with the inputs from make_inputs_from_percept</li>
+<li>publish_cmd_vel(cmd)</li></ol><div class="from"><i>mirrors on_detections, steps 5 to 8</i></div></div>
+<div class="fn"><div class="sig">make_inputs_from_percept(p) <span class="ret">&rarr; ServoInputs</span></div><ol>
+<li>box fields from p: cx, cy, bw, bh as the box would be (u, v, bw, bh), Z = Zc</li>
+<li>pose fields: pose_valid = true, Xc, Yc, Zc, bearing, stop_distance</li>
+<li>intrinsics and target_bbox_ratio as in make_inputs</li></ol><div class="from"><i>NEW function; make_inputs is unchanged</i></div></div>
+<div class="fn"><div class="sig">watchdog_tick() <span class="ret">change</span></div><ol><li>in pose mode the age is now &minus; last_pose_tick_time, not the /yolo age</li></ol></div>
+<div class="fn"><div class="sig">handle_sim_restart() <span class="ret">change</span></div><ol><li>also calls perception.reset()</li></ol></div>
+<div class="fn"><div class="sig">publish_cmd_vel(cmd)</div><ol><li>sim unhealthy: zero command</li><li>clamp to 3.0 and 0.8</li><li>floor clamp: z below 0.5 m and vz &lt; 0: vz = 0</li><li>ramp each axis by at most 1.5</li><li>publish; update /bench/state</li></ol><div class="from"><i>shared by both paths, not changed</i></div></div>
+</div></div>
+<div class="figure" style="margin:0;border:0;border-top:1px solid var(--line);border-radius:0"><h3>One pose_tick, step by step</h3><svg viewBox="0 0 960 250" role="img" aria-label="pose tick">
+<defs><marker id="arc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--a)"/></marker></defs>
+<rect class="b" x="10" y="20" width="130" height="58" rx="8"/><text class="bt" x="20" y="42">timer 20 Hz</text><text class="n" x="20" y="60">pose_tick()</text>
+<rect class="bn" x="180" y="20" width="170" height="58" rx="8"/><text class="bt" x="190" y="42">perception.sample</text><text class="n" x="190" y="60">gate, geometry, smooth</text>
+<rect class="bo" x="390" y="20" width="150" height="58" rx="8"/><text class="bt" x="400" y="42">p.valid ?</text>
+<rect class="bn" x="580" y="20" width="170" height="58" rx="8"/><text class="bt" x="590" y="42">update_state</text><text class="n" x="590" y="60">lock-on, REACHED</text>
+<rect class="bn" x="790" y="20" width="160" height="58" rx="8"/><text class="bt" x="800" y="42">controller</text><text class="n" x="800" y="60">computeApproach</text>
+<path class="k" d="M140 49 L180 49" marker-end="url(#arc)"/><path class="k" d="M350 49 L390 49" marker-end="url(#arc)"/><path class="k" d="M540 49 L580 49" marker-end="url(#arc)"/><path class="k" d="M750 49 L790 49" marker-end="url(#arc)"/>
+<text class="n" x="545" y="40">yes</text>
+<rect class="b" x="390" y="120" width="150" height="58" rx="8"/><text class="bt" x="400" y="142">no: handle_no_detection</text><text class="n" x="400" y="160">REACQUIRE, then SEARCH</text>
+<path class="k" d="M465 78 L465 120" marker-end="url(#arc)"/><text class="n" x="472" y="104">no</text>
+<rect class="b" x="790" y="120" width="160" height="58" rx="8"/><text class="bt" x="800" y="142">publish_cmd_vel</text><text class="n" x="800" y="160">clamp, floor, ramp</text>
+<path class="k" d="M870 78 L870 120" marker-end="url(#arc)"/>
+<text class="n" x="10" y="215">Both branches end in publish_cmd_vel. The 0.4 s watchdog still fires if the timer stops.</text>
+</svg></div></article>
+
+<article class="mod" id="c_pb"><header><code>src/visp_pbvs_servo/src/pbvs_controller.cpp</code><span class="chip ok">existing, not changed</span></header>
+<p class="role">The baseline. A hybrid: metric lateral term, box-ratio forward term, pixel vertical term. It stays so that you can compare the two controllers in the same stack.</p>
+<div class="cols"><div><h4>Fields</h4><table class="fld">
+<tr><td>lambda</td><td><span class="dflt">default 0.3</span><span class="nt">lateral gain</span></td></tr>
+<tr><td>k_fwd</td><td><span class="dflt">default 3.0</span><span class="nt">gain on the ratio error</span></td></tr>
+</table></div><div><h4>Functions</h4>
+<div class="fn"><div class="sig">computeApproach(in) <span class="ret">&rarr; ServoVel</span></div><ol>
+<li>Z &lt; 0.5: zero velocity</li>
+<li>tx = (cx &minus; cx0)/fx &middot; Z</li>
+<li>vx = k_fwd &middot; max(target_ratio &minus; ratio, 0)</li>
+<li>vy = clamp(&minus;lambda &middot; tx, &minus;1.5, 1.5)</li>
+<li>vz = &minus;0.5 &middot; ey_norm</li>
+<li>wz = 0</li></ol></div></div></div></article>
+
+<article class="mod" id="c_pp"><header><code>src/visp_pbvs_servo/src/pbvs_pose_controller.cpp</code><span class="chip bad">NEW</span></header>
+<p class="role">The pose law. It reads Xc, Yc, Zc. With both laws on <code>ratio</code> and <code>k_yaw</code> = 0 it gives the same numbers as the old controller.</p>
+<div class="cols"><div><h4>Fields</h4><table class="fld">
+<tr><td>lambda</td><td><span class="dflt">NEW default 0.3</span><span class="nt">equals the old lateral gain</span></td></tr>
+<tr><td>vx_law</td><td><span class="dflt">NEW default ratio</span><span class="opt">ratio</span><span class="opt">metric</span></td></tr>
+<tr><td>k_fwd</td><td><span class="dflt">NEW default 3.0</span><span class="nt">law ratio</span></td></tr>
+<tr><td>k_x</td><td><span class="dflt">NEW default 0.35</span><span class="nt">law metric, m/s per m</span></td></tr>
+<tr><td>vx_max</td><td><span class="dflt">NEW default 1.65</span><span class="nt">law metric; the peak of the old law</span></td></tr>
+<tr><td>vz_law</td><td><span class="dflt">NEW default ratio</span><span class="opt">ratio</span><span class="opt">metric</span></td></tr>
+<tr><td>k_z</td><td><span class="dflt">NEW default 0.3</span><span class="nt">law metric</span></td></tr>
+<tr><td>k_yaw</td><td><span class="dflt">NEW default 0.0</span><span class="nt">rad/s per rad; 0 = off</span></td></tr>
+</table></div><div><h4>Functions</h4>
+<div class="fn"><div class="sig">computeApproach(in) <span class="ret">&rarr; ServoVel</span></div><ol>
+<li>pose_valid false or Zc &lt; 0.5: zero velocity</li>
+<li>vx: law ratio = k_fwd&middot;max(target_ratio &minus; ratio, 0). Law metric = clamp(k_x&middot;(Zc &minus; stop_distance), 0, vx_max).</li>
+<li>vy = clamp(&minus;lambda&middot;Xc, &minus;1.5, 1.5)</li>
+<li>vz: law ratio = &minus;0.5&middot;ey_norm. Law metric = &minus;k_z&middot;Yc.</li>
+<li>wz = &minus;k_yaw&middot;bearing</li></ol><div class="from">moved from <b>pbvs_controller.cpp: computeApproach</b> (ratio laws), <i>metric laws NEW</i></div></div>
+<div class="fn"><div class="sig">name() <span class="ret">&rarr; "pbvs_pose"</span></div><ol><li>stamped into /bench/state, so the analysis separates the two variants</li></ol></div>
+</div></div></article>
+
+<article class="mod" id="c_main"><header><code>src/visp_pbvs_servo/src/visp_pbvs_main.cpp</code><span class="chip">CHANGED: wiring, 12 lines to about 25</span></header>
+<p class="role">Still one executable <code>visp_pbvs_node</code>. A parameter picks the variant, so no launch file or whitelist changes.</p>
+<div class="cols"><div><h4>Fields</h4><table class="fld">
+<tr><td>pbvs_variant</td><td><span class="dflt">NEW default box</span><span class="opt">box</span><span class="opt">pose</span></td></tr>
+</table></div><div><h4>Functions</h4>
+<div class="fn"><div class="sig">main() </div><ol>
+<li>create the ServoFsmNode "visp_pbvs_node"</li>
+<li>read pbvs_variant</li>
+<li>box: set_controller(PBVSController)</li>
+<li>pose: set_controller(PBVSPoseController); set_pose_source(GroundTruthPoseSource)</li>
+<li>pbvs_variant pose with perception_source box: print a warning (the pose law would get no pose)</li>
+<li>spin</li></ol><div class="from">moved from <b>visp_pbvs_main.cpp: main</b></div></div></div></div></article>
+
+<article class="mod" id="c_cfg"><header><code>config/hil/bench_pbvs.yaml</code> and <code>CMakeLists.txt</code><span class="chip">CHANGED</span></header>
+<p class="role">All new parameters get a default that keeps today's behaviour. A run without edits flies Path A.</p>
+<div class="cols"><div><h4>Fields</h4><table class="fld">
+<tr><td>pbvs_variant</td><td><span class="dflt">box</span></td></tr>
+<tr><td>perception_source</td><td><span class="dflt">box</span></td></tr>
+<tr><td>vx_law, vz_law</td><td><span class="dflt">ratio</span></td></tr>
+<tr><td>k_x, vx_max, k_z, k_yaw</td><td><span class="dflt">0.35, 1.65, 0.3, 0.0</span></td></tr>
+<tr><td>smoothing_window (pose)</td><td><span class="dflt">1</span></td></tr>
+</table></div><div><h4>Build</h4><div class="fn"><div class="sig">CMakeLists.txt </div><ol><li>add <code>pbvs_pose_controller.cpp</code> to the one executable</li><li>servo_core installs the three new headers</li></ol></div>
+<div class="fn"><div class="sig">how a run turns pose on </div><ol><li>set pbvs_variant = pose and perception_source = pose</li><li>the way a stack config passes these two values is NOT yet checked (see assumptions)</li></ol></div></div></div></article>
+</section>
+
+<section id="map"><h2>Old to new: where each part goes</h2>
+<div class="take">Nothing is deleted. The oracle and the box path stay as the control group.</div>
+<div class="card"><table class="map">
+<tr><th>In the existing code</th><th>New home</th></tr>
+<tr><td>oracle.project steps 3 to 6 (yaw, pitch, axis swap)</td><td>pose_geometry::world_to_camera</td></tr>
+<tr><td>oracle.project steps 7 to 9 (behind, range, off-screen)</td><td>pose_geometry::visible</td></tr>
+<tr><td>oracle.project step 8 (pixel)</td><td>pose_geometry::project_pixel</td></tr>
+<tr><td>oracle.on_drone, on_target</td><td>GroundTruthPoseSource</td></tr>
+<tr><td>oracle pose_stale_sec gate</td><td>PosePerception.sample step 2</td></tr>
+<tr><td>oracle pixel_noise_std, dropout_prob</td><td>PosePerception pose_noise_std, pose_dropout_prob</td></tr>
+<tr><td>FSM push_smooth, avg (5 samples)</td><td>PosePerception smoothing_window (default 1)</td></tr>
+<tr><td>FSM on_detections: class, confidence, jump gate</td><td>no home: a pose has no class and no jump</td></tr>
+<tr><td>FSM make_inputs</td><td>unchanged; plus make_inputs_from_percept</td></tr>
+<tr><td>FSM bearing memory</td><td>pose_tick step 5 (same value)</td></tr>
+<tr><td>FSM update_state_on_detection, build_command, publish_cmd_vel</td><td>unchanged, shared</td></tr>
+<tr><td>FSM handle_sim_restart</td><td>unchanged; plus perception.reset()</td></tr>
+<tr><td>PBVSController.computeApproach</td><td>unchanged; its ratio laws are copied into PBVSPoseController</td></tr>
+<tr><td>visp_pbvs_main main</td><td>main with pbvs_variant</td></tr>
+</table></div></section>
+
+<section id="ask"><h2>Questions. Recommendation first.</h2>
+<div class="cards">
+  <div class="q"><h4>1. What is the "ideal pose"?</h4><p>Simulator ground truth, with a noise knob in metres.</p><div class="row"><span class="chip ok">Rec: ground truth</span><span class="ans">or truth + noise now</span></div></div>
+  <div class="q"><h4>2. Where does the math live?</h4><p>Header-only <code>pose_geometry.hpp</code>, tested against the Python oracle on the same inputs.</p><div class="row"><span class="chip ok">Rec: new header</span><span class="ans">or inside the FSM</span></div></div>
+  <div class="q"><h4>3. Control clock</h4><p>FSM timer at 20 Hz in pose mode. The oracle may keep running, but the FSM ignores it.</p><div class="row"><span class="chip ok">Rec: own timer</span><span class="ans">or oracle as clock</span></div></div>
+  <div class="q"><h4>4. Which laws first?</h4><p><code>ratio</code> laws first. This proves Path B equals Path A. Then <code>metric</code>.</p><div class="row"><span class="chip ok">Rec: ratio, then metric</span><span class="ans">or metric only</span></div></div>
+  <div class="q"><h4>5. Yaw term</h4><p>Off first. One change at a time. A separate run turns it on.</p><div class="row"><span class="chip ok">Rec: k_yaw = 0</span><span class="ans">or on at start</span></div></div>
+  <div class="q"><h4>6. Smoothing in pose mode</h4><p>Off by default. The option matches the 0.1 s box lag.</p><div class="row"><span class="chip ok">Rec: off, option kept</span><span class="ans">or 5 always</span></div></div>
+  <div class="q"><h4>7. How is the variant chosen?</h4><p>Same executable, parameter <code>pbvs_variant</code>. No change in the controller-bench files.</p><div class="row"><span class="chip ok">Rec: parameter</span><span class="ans">or new executable</span></div></div>
+  <div class="q"><h4>8. SLAM pose now?</h4><p>No. The interface <code>IPoseSource</code> is ready. The SLAM frame, scale and target placement come later.</p><div class="row"><span class="chip ok">Rec: later</span><span class="ans">or now</span></div></div>
+  <div class="q"><h4>9. Where do I work?</h4><p>slam-hil has uncommitted edits in <code>servo_fsm_node.cpp</code>. I did not check this worktree's file.</p><div class="row"><span class="chip ok">Rec: this worktree</span><span class="ans">or slam-hil</span></div></div>
+</div>
+<h3>Test list, waiting for your yes</h3>
+<div class="tw"><table>
+<tr><th>Input</th><th>Literal expected value</th><th>Bug it catches</th></tr>
+<tr><td>Start pose and sign above, pitch 0</td><td>Xc = 0.00027, Yc = 4.42, Zc = 20.0012</td><td>wrong sign or order in the rotation</td></tr>
+<tr><td>Same pose, pitch 0.2 rad</td><td>equals the Python <code>oracle.project()</code> back-projection within 1e-6</td><td>wrong pitch sign or source</td></tr>
+<tr><td>Zc = 20, ratio laws, k_yaw = 0</td><td>vx = 1.390, vy = &minus;0.0001, vz = &minus;0.255, wz = 0</td><td>pose law differs from box law</td></tr>
+<tr><td>Target behind the camera (Zc = 0.05)</td><td>reason BEHIND, valid = false</td><td>false lock on a hidden target</td></tr>
+<tr><td>Drone pose 0.4 s old</td><td>reason STALE, handle_no_detection called</td><td>stale pose after a sim restart</td></tr>
+<tr><td>pose mode, oracle still publishing</td><td>on_detections returns at once; one command per timer tick</td><td>two clocks drive one command</td></tr>
+</table></div>
+</section>
+
+<section id="facts"><h2>Facts and assumptions</h2>
+<div class="done">
+  <div>Xc, Zc pass through the box exactly (script)</div>
+  <div>FSM publishes only in <code>on_detections</code> and the watchdog</div>
+  <div>FSM reads elements 0, 1, 2, 4 of the drone pose only</div>
+  <div>FSM smoothing window 5, jump gate 30%</div>
+  <div><code>main</code> uses <code>rclcpp::spin</code> (single-threaded)</div>
+  <div>No controller reads <code>/slam/pose</code></div>
+  <div>slam-hil: <code>servo_fsm_node.cpp</code> has uncommitted edits</div>
+  <div class="todo">Axis and pitch signs match the real simulator (oracle header says "validate")</div>
+  <div class="todo">Element 3 of the drone pose equals <code>/sim/pitch_angle</code></div>
+  <div class="todo"><code>/sim/target_pose</code> exists in every stack config</div>
+  <div class="todo">A stack config can pass <code>pbvs_variant</code> and <code>perception_source</code> to the node</div>
+  <div class="todo">The record gate and <code>init_gate</code> do not need a live <code>/yolo/detections</code> in pose mode</div>
+  <div class="todo">This worktree has the same <code>servo_core</code> code</div>
+  <div class="todo">The metric law is stable at HIL rate and delay</div>
+</div></section>
+
+<section id="log"><h2>Actions this turn</h2>
+<details><summary>Amar, I DID read the launch and build files of the PBVS package <span class="chip ok">read only</span></summary><div class="in">
+<p><b>Because:</b> I had to know how a controller type reaches an executable. <b>Impact:</b> none. It showed that five places list the executables.</p>
+<p><b>TESTED:</b> <code>grep -n -i "pbvs" src/sim_camera_bridge/launch/hil_simulation.launch.py run_stack_hil.sh benchmarks/controller_bench.launch.py benchmarks/controller_hil_bench.sh</code> for the full Z. It shows text only.</p></div></details>
+<details><summary>Amar, I DID read your reference page <span class="chip ok">read only</span></summary><div class="in">
+<p><b>Because:</b> you asked me to write like it. <b>Impact:</b> none.</p>
+<p><b>TESTED:</b> <code>grep -n -o -E '&lt;(section|article|h[1-4])[^&gt;]*&gt;' hilbench_class_design.html</code> for the page structure only.</p></div></details>
+<details><summary>Amar, I DID rewrite this page in the class-design format <span class="chip a">1 untracked file</span></summary><div class="in">
+<p><b>Because:</b> you asked for the same format: layers, rule, module index, class cards, old to new map. <b>Impact:</b> <code>benchmarks/PBVS_IDEAL_POSE_DESIGN.html</code> changed. No commit. No artifact published.</p>
+<p><b>TESTED:</b> <code>ls -l benchmarks/PBVS_IDEAL_POSE_DESIGN.html</code> for file existence only. I did NOT test the page in a browser.</p></div></details>
+<p style="color:var(--mute)">I changed no source file. I did NOT test the proposed design.</p>
+</section>
+
+<footer>Sources: oracle_detector_node.py, servo_fsm_node.cpp, pbvs_controller.cpp, visp_pbvs_main.cpp, servo_controller.hpp, bench_oracle.yaml, bench_fsm.yaml, bench_pbvs.yaml, hil_simulation.launch.py (worktree /home/amaraly/ROS2-slam-hil).</footer>
+</main>
+<script>
+(function(){
+  var svg=document.getElementById('vxchart'); if(!svg) return;
+  var X0=60,X1=930,Y0=260,Y1=20,zmin=3,zmax=20,vmax=3;
+  function px(z){return X0+(z-zmin)/(zmax-zmin)*(X1-X0);}
+  function py(v){return Y0-(v/vmax)*(Y0-Y1);}
+  var fy=554,H=480,kh=1.5,zstar=fy*kh/(0.55*H);
+  var h='';
+  for(var v=0;v<=3;v+=0.5){h+='<line class="gr" x1="'+X0+'" x2="'+X1+'" y1="'+py(v)+'" y2="'+py(v)+'"/><text class="n" x="14" y="'+(py(v)+4)+'">'+v.toFixed(1)+'</text>';}
+  [4,6,8,10,12,14,16,18,20].forEach(function(z){h+='<text class="n" x="'+(px(z)-6)+'" y="282">'+z+'</text>';});
+  h+='<line class="ax" x1="'+X0+'" x2="'+X1+'" y1="'+Y0+'" y2="'+Y0+'"/><text class="n" x="'+(X1-140)+'" y="298">range Zc (m)</text><text class="n" x="14" y="14">vx (m/s)</text>';
+  h+='<line class="s3" x1="'+px(zstar)+'" x2="'+px(zstar)+'" y1="'+Y1+'" y2="'+Y0+'"/>';
+  var a=[],b=[];
+  for(var z=zmin;z<=zmax+0.01;z+=0.25){
+    var vo=3*Math.max(0.55-fy*kh/(z*H),0);
+    var vm=Math.min(Math.max(0.35*(z-zstar),0),1.65);
+    a.push(px(z).toFixed(1)+','+py(vo).toFixed(1)); b.push(px(z).toFixed(1)+','+py(vm).toFixed(1));
+  }
+  h+='<polyline class="s1" points="'+a.join(' ')+'"/><polyline class="s2" points="'+b.join(' ')+'"/>';
+  svg.innerHTML=h;
+})();
+</script>
+</body></html>

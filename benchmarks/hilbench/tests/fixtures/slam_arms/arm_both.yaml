@@ -1,0 +1,7 @@
+name: arm_both
+slam_type: ov2slam
+ready_signal: timing_csv
+init_patience_s: 9
+stack:
+  mono: unified_arm_both_mono
+  stereo: unified_arm_both_stereo

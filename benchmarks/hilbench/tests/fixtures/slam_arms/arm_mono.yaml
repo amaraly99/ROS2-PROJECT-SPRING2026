@@ -1,0 +1,6 @@
+name: arm_mono
+slam_type: orbslam3
+ready_signal: handshake_ack
+init_patience_s: 9
+stack:
+  mono: unified_arm_mono_mono

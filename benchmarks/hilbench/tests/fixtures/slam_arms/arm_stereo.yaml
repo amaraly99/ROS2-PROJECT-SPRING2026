@@ -1,0 +1,6 @@
+name: arm_stereo
+slam_type: orbslam2
+ready_signal: timing_csv
+init_patience_s: 60
+stack:
+  stereo: unified_arm_stereo_stereo

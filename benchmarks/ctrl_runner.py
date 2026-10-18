@@ -961,6 +961,9 @@ def main():
     cfg_path = Path(a.config)
     cfg = yaml.safe_load(cfg_path.read_text()) if cfg_path.exists() else {}
     a.config_found = cfg_path.exists()
+    sess = cfg.get("session") or {}
+    if isinstance(sess.get("camera_pub"), bool):  # YAML reads bare off/on as False/True
+        sess["camera_pub"] = "on" if sess["camera_pub"] else "off"
     a.overridden = []
     for name, (section, key, fallback) in SETTINGS.items():
         cli = getattr(a, name, None)

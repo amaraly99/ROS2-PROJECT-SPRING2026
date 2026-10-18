@@ -1,0 +1,16 @@
+# fixture: a settings file in the layout of CONTRACT.md section 2
+session:
+  tag: "from_yaml_unified"
+  runs: 4
+  cooldown_s: 2
+  pace_guard: "warn"
+matlab:
+  port: 6000
+network:
+  dds: "cyclonedds"
+  wifi_min_pct: 80
+pi:
+  controller_cores: "3"
+fake:
+  mode: "b"
+  count: 5
