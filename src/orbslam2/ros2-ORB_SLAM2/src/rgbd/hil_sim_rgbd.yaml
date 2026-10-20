@@ -38,14 +38,14 @@ Camera.height: 480
 Camera.fps: 20.0
 
 # Stereo baseline times fx
-Camera.bf: 60.94
+Camera.bf: 337.94
 DepthMapFactor: 1000.0
 
 # Color order (ignored: input is mono8)
 Camera.RGB: 0
 
 # Close/Far threshold. Baseline times.
-ThDepth: 400.0
+ThDepth: 72.1
 
 #--------------------------------------------------------------------------------------------
 # ORB Parameters -- identical to ../monocular/hil_sim.yaml

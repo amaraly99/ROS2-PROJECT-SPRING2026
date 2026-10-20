@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>RGB-D and Stereo Results</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: one reading column. Banner, summary, setup, RGB-D table, stereo table, protocol differences, open issues, sources. */
+:root {
+  --bg: #fbfbf9; --surface: #ffffff; --fg: #121211; --muted: #55544f; --faint: #8b8a84; --rule: #d6d5cf; --code: #f1efe9;
+  --warn-bg: #fff4d6; --warn-fg: #6b4a00; --warn-line: #e0a400; --good: #0b7a0b; --bad: #b42828;
+  --f-display: Georgia, "Times New Roman", serif; --f-body: "Segoe UI", system-ui, -apple-system, sans-serif; --f-mono: Consolas, "SFMono-Regular", monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #161615; --surface: #1d1d1c; --fg: #f0efec; --muted: #c3c2b7; --faint: #8f8e86; --rule: #3a3a37; --code: #23221f;
+  --warn-bg: #3a2e0a; --warn-fg: #ffd98a; --warn-line: #c98a00; --good: #4cc74c; --bad: #ff7b7b; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #161615; --surface: #1d1d1c; --fg: #f0efec; --muted: #c3c2b7; --faint: #8f8e86; --rule: #3a3a37; --code: #23221f;
+  --warn-bg: #3a2e0a; --warn-fg: #ffd98a; --warn-line: #c98a00; --good: #4cc74c; --bad: #ff7b7b; color-scheme: dark; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--fg); font: 16px/2.5 var(--f-body); }
+.wrap { max-width: 1000px; margin: 0 auto; padding-block: 32px 96px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.stack { display: flex; flex-direction: column; gap: 2.5em; }
+h1 { font: 600 clamp(1.7rem, 4vw, 2.3rem)/1.25 var(--f-display); margin: 0; text-wrap: balance; }
+h2 { font: 600 1.3rem/1.35 var(--f-display); margin: 0; text-wrap: balance; }
+p, ul { margin: 0; max-width: 72ch; }
+ul { padding-left: 1.2em; }
+.muted { color: var(--muted); }
+.eyebrow { font: 500 .75rem/1.6 var(--f-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
+code { font: .86em var(--f-mono); background: var(--code); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+.banner { background: var(--warn-bg); color: var(--warn-fg); border: 1px solid var(--warn-line); border-left-width: 6px; border-radius: 6px;
+  padding: 10px 16px; font-weight: 600; line-height: 1.8; }
+section { display: flex; flex-direction: column; gap: 14px; padding-top: 28px; border-top: 1px solid var(--rule); }
+.tw { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; line-height: 1.7; font-variant-numeric: tabular-nums; }
+th, td { text-align: right; padding: 7px 10px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; white-space: normal; }
+th { color: var(--muted); font-weight: 600; }
+td.best { font-weight: 700; }
+.note { border-left: 3px solid var(--faint); padding: 2px 0 2px 14px; color: var(--muted); line-height: 1.8; }
+.good { color: var(--good); font-weight: 600; } .bad { color: var(--bad); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="wrap stack">
+
+<header class="stack" style="gap:1em">
+  <div class="eyebrow">HIL SLAM benchmark · unified start (15.12, 3.84, 7.5) → sign (35.1, 2.92, 3.08) · Raspberry Pi 5 · branch sim/unified-start-2026-10-04</div>
+  <h1>RGB-D and stereo 0.61 m results</h1>
+  <div class="banner" role="note">Unverified, Amar pushed on date 2026-10-20 but he will check it and update the readme.md</div>
+  <p class="muted">This report collects the RGB-D results (campaign <code>versoH</code>, 2026-10-19/20) and the stereo results with the 0.61 m baseline (2026-10-18). All runs fly the same scripted path. The RGB-D and stereo sets used different run protocols; section 5 lists the differences.</p>
+</header>
+
+<section>
+  <div class="eyebrow">1 · Summary</div>
+  <h2>Main results</h2>
+  <ul>
+    <li><b>No camera mode reaches the 0.10 m target yet.</b> The best healthy-run means are OV²SLAM-A stereo 0.075 m (8 runs, not 10), ORB-SLAM3 stereo 0.108 m (7 runs) and ORB-SLAM2 RGB-D 0.119 m (10 runs).</li>
+    <li><b>RGB-D, ORB family:</b> ORB-SLAM2 0.119 ± 0.014 m and ORB-SLAM3 0.125 ± 0.021 m, 10 of 10 attempts healthy each, no blow-ups. The VERSO reference for ORB-SLAM2 RGB-D is 0.108 m.</li>
+    <li><b>RGB-D, RTAB-Map:</b> 0.235 ± 0.087 m, and only 14 of 32 attempts were healthy.</li>
+    <li><b>Stereo:</b> every arm except RTAB-Map had blow-ups (ATE &gt; 1 m) in some runs. The stereo sets were not repeated to 10 healthy runs.</li>
+    <li><b>Two fixes made these numbers possible:</b> OpenGV built into OV²SLAM (stereo had run away to 10⁶ m without it), and the ORB RGB-D virtual baseline set to 0.61 m (was 0.11 m: ATE 0.41 m).</li>
+  </ul>
+</section>
+
+<section>
+  <div class="eyebrow">2 · Shared setup</div>
+  <h2>Flight, camera and scorer</h2>
+  <div class="tw"><table>
+    <tr><th>Item</th><th style="text-align:left">Value</th></tr>
+    <tr><td>Flight</td><td style="text-align:left;white-space:normal"><code>matlab/slam_traj_probe_unified.m</code> (stereo) and <code>matlab/slam_traj_probe_rgbd_unified.m</code> (RGB-D) differ by one comment line only, so both modes fly the same commanded path. Mode <code>TRAJ_MODE = "sixdof"</code>, four phases:
+      <ol style="margin:0;padding-left:1.3em">
+        <li><b>Wait:</b> the drone hovers at the start (15.12, 3.84, 7.5), heading 357.4° (pointing at the sign), while SLAM starts and the runner opens the record gate.</li>
+        <li><b>Side step</b> (start-up leg): 3.0 m sideways at vy −0.8 m/s with a small climb at vz +0.2 m/s (<code>INIT_LATERAL</code>, <code>INIT_VY</code>, <code>INIT_VZ</code>), then 2 s still (<code>INIT_SETTLE</code>); limit 20 s. Sideways motion gives SLAM parallax to start its map; forward motion toward the scene gives almost none. Measured: y 3.84 → 0.76 m, z 7.5 → 8.27 m.</li>
+        <li><b>Wavy cruise:</b> forward at 2.0 m/s for 13 m (1 wave of 13 m; run values <code>vx 2.0</code>, <code>cycles 1</code>, <code>wavelength 13</code>). The path is a helix: sideways ±0.5 m/s and up-down ±0.35 m/s, 90° apart, plus a drift that brings the drone to the sign's side and height. The cruise is gated on true forward distance, so a slower simulation changes the duration, not the path. The camera sweeps in yaw and pitch: <b>commanded</b> ±8° yaw (<code>SIX_YAW_DEG</code>) and ±3° pitch (<code>SIX_PITCH_DEG</code>); <b>measured</b> ±7.1° yaw (352.9°–367.1°) and −2.6° to +2.3° pitch, because the angle controllers lag the command.</li>
+        <li><b>Approach:</b> a P controller (gain 0.8, speed limit 1.2 m/s, plus a sideways wiggle of 0.5 m/s at 1 rad/s) flies to the target point 3 m in front of the sign (<code>STANDOFF = 3.0</code>) with heading 0°. It stops when x and z are within 0.15 m, or after 25 s. It does not correct y: the stereo OpenGV run ended at (31.96, 3.44, 3.08), 0.52 m to the side of the target point.</li>
+      </ol>
+      Measured against the locked gates: camera within −4.5° to +9.7° of the bearing to the sign (G4 limit 15°), yaw rate at most about 3.4°/s (G6 limit 15°/s).</td></tr>
+    <tr><td>Run flags</td><td style="text-align:left;white-space:normal">Every run: <code>./run_slam_benchmark.sh &lt;slam&gt; &lt;tag&gt; --runs N --camera-yaw-offset-deg 0 --yaw-amp-deg 0 --init-axis lateral</code> plus the camera flags.
+      <ul style="margin:0;padding-left:1.3em">
+        <li><code>--camera-yaw-offset-deg 0</code>: no fixed camera turn. MATLAB (<code>hil_session_start_slam.m</code>) runs the unified probe; a non-zero offset would switch to the "wide view" script <code>slam_traj_probe_wide.m</code>, which turns the camera away from the sign.</li>
+        <li><code>--yaw-amp-deg 0</code>: sets <code>YAW_AMP_DEG</code>, which only the "gentle" mode uses. In <code>sixdof</code> mode the yaw sweep comes from <code>SIX_YAW_DEG = 8.0</code>, so this flag does <b>not</b> switch the sweep off. Describe the runs as "slow ±7° yaw sweep during the cruise", not "fixed yaw".</li>
+        <li><code>--init-axis lateral</code>: the start-up leg goes sideways (phase 2). The other value starts along the path and also switches MATLAB to the wide-view script.</li>
+        <li><code>--camera-mode stereo --baseline 0.61</code>: MATLAB loads <code>hil_closed_loop_baseline_061</code> (right camera at −0.61 m), the Pi starts the stereo stack, and each SLAM reads its 0.61 m stereo calibration.</li>
+        <li><code>--camera-mode rgbd</code>: MATLAB loads <code>hil_closed_loop_baseline_RGBD</code> (one camera, z-depth 16UC1 mm, same stamp as colour), and the Pi starts the RGB-D stack. ORB-SLAM2 and ORB-SLAM3 turn each depth value into a virtual stereo match with a 0.61 m virtual baseline (<code>Camera.bf 337.94</code> / <code>Stereo.b 0.61</code>); RTAB-Map uses the depth directly.</li>
+      </ul></td></tr>
+    <tr><td>Camera</td><td style="text-align:left;white-space:normal">fx 554, 640×480, mount (0.2, 0, 0.2) m, 5° down. Stereo: right camera at −0.61 m (models <code>hil_closed_loop_baseline_061</code>). RGB-D: one camera with z-depth, 16UC1 mm (model <code>hil_closed_loop_baseline_RGBD</code>).</td></tr>
+    <tr><td>Depth check</td><td style="text-align:left;white-space:normal">z-depth, within about 1 % of the image geometry (1764 stereo points; stop sign 20.35 m against 20.13 m expected), aligned to the pixel, same stamp as colour.</td></tr>
+    <tr><td>Scorer</td><td style="text-align:left;white-space:normal">harness scorer: Sim(3) fit (Umeyama) on the scored window; the same for every arm.</td></tr>
+  </table></div>
+</section>
+
+<section>
+  <div class="eyebrow">3 · RGB-D · campaign versoH · 10 healthy runs per SLAM</div>
+  <h2>RGB-D results</h2>
+  <div class="tw"><table>
+    <tr><th>Metric (mean ± sd over 10 healthy runs)</th><th>ORB-SLAM2</th><th>ORB-SLAM3</th><th>RTAB-Map</th></tr>
+    <tr><td>Healthy runs / attempts</td><td>10 / 10</td><td>10 / 10</td><td>10 / 32</td></tr>
+    <tr><td>ATE RMSE (m)</td><td class="best">0.119 ± 0.014</td><td>0.125 ± 0.021</td><td>0.235 ± 0.087</td></tr>
+    <tr><td>ATE median (m)</td><td>0.093 ± 0.010</td><td class="best">0.089 ± 0.015</td><td>0.190 ± 0.068</td></tr>
+    <tr><td>ATE max (m)</td><td class="best">0.416 ± 0.179</td><td>0.444 ± 0.121</td><td>0.626 ± 0.259</td></tr>
+    <tr><td>Scale (Sim3 fit) · <b>closer to 1.000 is better</b></td><td class="best">0.986 ± 0.004</td><td class="best">0.986 ± 0.005</td><td>0.952 ± 0.024</td></tr>
+    <tr><td>Scale drift (%)</td><td>5.6 ± 1.1</td><td class="best">4.8 ± 0.9</td><td>8.3 ± 2.9</td></tr>
+    <tr><td>Error per metre (%)</td><td class="best">0.66 ± 0.08</td><td>0.69 ± 0.12</td><td>1.50 ± 0.21</td></tr>
+    <tr><td>Path length error (%) = path_ratio_pct − 100 · <b>closer to 0 is better</b></td><td>+2.3 ± 1.7</td><td>+2.9 ± 0.8</td><td>+2.6 ± 1.8</td></tr>
+    <tr><td>Init time (s)</td><td>3.2 ± 1.2</td><td class="best">2.9 ± 1.4</td><td>6.1 ± 1.2</td></tr>
+    <tr><td>Front end (ms, mean)</td><td class="best">29.2 ± 0.7</td><td>29.3 ± 0.9</td><td>77.8 ± 2.4</td></tr>
+    <tr><td>Pose rate (Hz)</td><td>15.5 ± 1.5</td><td class="best">15.8 ± 0.3</td><td>10.0 ± 0.7</td></tr>
+    <tr><td>SLAM CPU mean (% of one core)</td><td>77.5 ± 3.8</td><td class="best">67.3 ± 3.6</td><td>128.0 ± 7.8</td></tr>
+    <tr><td>SLAM memory mean / max (MiB, PSS)</td><td>458 / 537</td><td>514 / 602</td><td class="best">380 / 441</td></tr>
+    <tr><td>SLAM memory peak (MiB, sum of VmHWM)</td><td class="best">548</td><td>660</td><td>592</td></tr>
+  </table></div>
+  <p class="note">Healthy = scorer outcome "valid" and ATE ≤ 1.0 m. Failed runs and blow-ups were repeated until 10 healthy runs. Combined reports keep the first 10 healthy runs in time order (no selection by result). Direction: lower is better for ATE, scale drift, error per metre, init time, front end, CPU and memory; higher is better for pose rate; scale is best near 1.000 and path length error near 0. RTAB-Map attempts: 14 healthy, 14 rig failures (9 × <code>evo_ape</code> "degenerate covariance", 5 × "no GT motion" = the drone did not fly), 4 backend failures (no map / no start-up). Bold = best value in the row.</p>
+</section>
+
+<section>
+  <div class="eyebrow">4 · Stereo · baseline 0.61 m · 10 attempts per SLAM (2026-10-18)</div>
+  <h2>Stereo results</h2>
+  <div class="tw"><table>
+    <tr><th>Metric</th><th>OV²SLAM-A</th><th>ORB-SLAM2</th><th>ORB-SLAM3</th><th>RTAB-Map</th></tr>
+    <tr><td>Valid runs / attempts</td><td>9 / 10</td><td>7 / 10</td><td>10 / 10</td><td>6 / 10</td></tr>
+    <tr><td>Blow-ups (valid, ATE &gt; 1 m)</td><td>1</td><td>2</td><td>3</td><td>0</td></tr>
+    <tr><td><b>Healthy runs</b> (valid and ATE ≤ 1 m)</td><td>8</td><td>5</td><td>7</td><td>6</td></tr>
+    <tr><td><b>ATE RMSE, healthy runs (m)</b></td><td class="best">0.075 ± 0.011</td><td>0.116 ± 0.022</td><td>0.108 ± 0.020</td><td>0.137 ± 0.012</td></tr>
+    <tr><td><b>ATE median of healthy runs (m)</b></td><td class="best">0.073</td><td>0.107</td><td>0.110</td><td>0.136</td></tr>
+    <tr><td>ATE RMSE, all valid runs (m), as in summary.md</td><td>0.749 ± 2.022</td><td>1.528 ± 2.456</td><td>1.259 ± 1.883</td><td>0.137 ± 0.012</td></tr>
+    <tr><td>Scale (Sim3), all valid runs · <b>closer to 1.000 is better</b></td><td>0.977 ± 0.068</td><td>0.953 ± 0.065</td><td>0.956 ± 0.064</td><td>1.013 ± 0.038</td></tr>
+    <tr><td>Init time (s), all valid runs</td><td>4.8 ± 2.9</td><td>3.7 ± 1.6</td><td>4.9 ± 1.4</td><td>6.4 ± 2.3</td></tr>
+    <tr><td>Front end (ms, mean)</td><td class="best">9.3 ± 0.2</td><td>43.6 ± 1.0</td><td>33.2 ± 1.0</td><td>95.2 ± 2.6</td></tr>
+    <tr><td>Pose rate (Hz)</td><td>11.7 ± 1.9</td><td>11.4 ± 0.4</td><td>10.9 ± 2.9</td><td>6.2 ± 1.9</td></tr>
+    <tr><td>SLAM CPU mean (% of one core)</td><td class="best">56.2 ± 9.6</td><td>91.1 ± 2.7</td><td>68.0 ± 13.9</td><td>112.4 ± 9.6</td></tr>
+    <tr><td>SLAM memory</td><td colspan="4" style="text-align:center">not measured (0 in these reports; fixed 2026-10-19, needs a re-run)</td></tr>
+  </table></div>
+  <p class="note">Healthy-run values are computed from each run's <code>score.log</code> with the same rule as RGB-D (valid and ATE ≤ 1.0 m). Per-run ATE of healthy runs (m): OV²SLAM-A 0.096, 0.071, 0.076, 0.078, 0.064, 0.069, 0.062, 0.081 · ORB-SLAM2 0.091, 0.133, 0.107, 0.107, 0.144 · ORB-SLAM3 0.083, 0.129, 0.110, 0.090, 0.090, 0.126, 0.127 · RTAB-Map 0.154, 0.138, 0.133, 0.147, 0.124, 0.125. Blow-ups: OV²SLAM-A 6.141; ORB-SLAM2 4.249, 5.867; ORB-SLAM3 4.111, 4.561, 3.159.</p>
+</section>
+
+<section>
+  <div class="eyebrow">5 · Protocol differences</div>
+  <h2>Why stereo and RGB-D are not yet directly comparable</h2>
+  <div class="tw"><table>
+    <tr><th>Item</th><th>Stereo 0.61 m (2026-10-18)</th><th>RGB-D versoH (2026-10-19/20)</th></tr>
+    <tr><td>Failed runs and blow-ups</td><td>kept, not repeated</td><td>repeated until 10 healthy runs</td></tr>
+    <tr><td>Healthy runs per arm</td><td class="bad">5–8</td><td class="good">10</td></tr>
+    <tr><td>SLAM memory</td><td class="bad">not measured (0)</td><td class="good">measured (PSS, VmHWM)</td></tr>
+    <tr><td>OpenGV in OV²SLAM</td><td>yes (from 2026-10-18 16:00)</td><td>not used (OV²SLAM has no RGB-D mode)</td></tr>
+    <tr><td>Tags</td><td><code>final_stereo_*</code></td><td><code>versoH</code>, <code>versoH_rep1..4</code></td></tr>
+  </table></div>
+  <p class="note">To compare the modes on equal terms, re-run stereo with the versoH protocol (10 healthy runs per arm, new memory sampler).</p>
+</section>
+
+<section>
+  <div class="eyebrow">6 · Changes behind these results</div>
+  <h2>What changed in the code and configs</h2>
+  <div class="tw"><table>
+    <tr><th>Change</th><th style="text-align:left">Files</th><th style="text-align:left">Effect</th></tr>
+    <tr><td>OpenGV built into OV²SLAM</td><td style="text-align:left;white-space:normal"><code>src/ov2slam_ros/Thirdparty/opengv</code> (cloned, commit 91f4b19, built in Docker; not in git); <code>ov2slam</code> rebuilt with <code>--cmake-force-configure</code></td><td style="text-align:left;white-space:normal">stereo OV²SLAM: from 10⁶ m runaway to ~0.07 m</td></tr>
+    <tr><td>ORB RGB-D virtual baseline 0.61 m</td><td style="text-align:left;white-space:normal"><code>src/orbslam2/…/rgbd/hil_sim_rgbd.yaml</code>: <code>Camera.bf 337.94</code>, <code>ThDepth 72.1</code> · <code>src/orbslam3/…/RGB-D/HIL_SIM_RGBD.yaml</code>: <code>Stereo.b 0.61</code>, <code>Stereo.ThDepth 72.1</code></td><td style="text-align:left;white-space:normal">ORB-SLAM2 RGB-D: 0.41 m → 0.12 m</td></tr>
+    <tr><td>Stereo calibration 0.61 m</td><td style="text-align:left;white-space:normal"><code>camera_calib/hil_sim_ov2slam_stereo.yaml</code></td><td style="text-align:left;white-space:normal">matches the 0.61 m rig</td></tr>
+    <tr><td>SLAM memory measured</td><td style="text-align:left;white-space:normal"><code>benchmarks/slam_cpu_sampler.sh</code> (reads /proc; kernel has <code>cgroup_disable=memory</code>) · <code>scripts/hil_matrix/aggregate_matrix.py</code> · <code>benchmarks/slam_session_summary.py</code></td><td style="text-align:left;white-space:normal">memory max / mean / peak in every report</td></tr>
+  </table></div>
+</section>
+
+<section>
+  <div class="eyebrow">7 · Open issues</div>
+  <h2>What is still unresolved</h2>
+  <ul>
+    <li>No mode reaches ≤ 0.10 m with 10 healthy runs.</li>
+    <li><b>"No GT motion" failures:</b> the drone did not fly (5 RTAB-Map RGB-D attempts, 3 ORB-SLAM2 stereo attempts). This is a harness fault, not a SLAM fault. Cause not found.</li>
+    <li><b><code>evo_ape</code> "degenerate covariance" failures</b> (9 RTAB-Map RGB-D attempts, 1 OV²SLAM stereo attempt): the scorer cannot fit the trajectory. Cause not found.</li>
+    <li>Stereo blow-ups (3–6 m) in OV²SLAM-A, ORB-SLAM2 and ORB-SLAM3. Cause not found.</li>
+    <li><code>d_target_m</code> ("end distance to sign") measures to the old sign (35.5, 23.7): known bug, not reported.</li>
+    <li>The OpenGV build lives only on the Pi (clone + Docker build); it is not reproducible from the repository yet.</li>
+    <li>The locked gate script <code>benchmarks/acceptance_gates.py</code> reads only <code>reports/slam_final_*</code>, so it does not see the <code>versoH</code> reports.</li>
+  </ul>
+</section>
+
+<section>
+  <div class="eyebrow">8 · Sources (on the Pi, ~/ROS2-sim-unified-start)</div>
+  <h2>Report folders</h2>
+  <ul>
+    <li>RGB-D: <code>reports/slam_versoH_orb2_N10_20261020_000253</code>, <code>reports/slam_versoH_orb3_N10_20261020_001800</code>, <code>reports/slam_versoH_rtab_N10_20261020_081401</code> (each with <code>runs.csv</code>, <code>attempts.csv</code>, <code>summary.md</code>)</li>
+    <li>Stereo: <code>reports/slam_final_stereo_opengv_20261018_160542</code>, <code>reports/slam_final_stereo_orb2_20261018_211153</code>, <code>reports/slam_final_stereo_orb3_20261018_223450</code>, <code>reports/slam_final_stereo_rtab_20261018_221148</code></li>
+    <li>Config sha256 (first 16) at the RGB-D runs: ORB-SLAM2 <code>577203a378a5cd46</code>, ORB-SLAM3 <code>c708d72a3e36f6be</code>, RTAB-Map launch <code>4dac46fd302224df</code></li>
+  </ul>
+</section>
+
+</div>
+</body>
+</html>

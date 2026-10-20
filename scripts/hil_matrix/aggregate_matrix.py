@@ -129,6 +129,17 @@ def read_frontend_timing(run_dir):
     return None, None, {}
 
 
+def read_hwm_samples(run_dir):
+    """Peak-RSS samples (hwm_mb column, sampler 2026-10-19 onward), or None for older runs."""
+    path = run_dir / 'slam_process_cpu.csv'
+    if not path.exists():
+        return None
+    rows = list(csv.DictReader(open(path)))
+    if not rows or 'hwm_mb' not in rows[0]:
+        return None
+    return np.array([float(r['hwm_mb']) for r in rows])
+
+
 def read_cpu_samples(run_dir):
     """Return (cpu_percent, mem_mb, thread_count) sample arrays, or None."""
     path = run_dir / 'slam_process_cpu.csv'
@@ -505,6 +516,10 @@ def _add_cost_metrics(out, run_dir, estimate, score_start, window_end):
         out['cpu_mean_pct'] = float(cpu_percent.mean())
         out['cpu_max_pct'] = float(cpu_percent.max())
         out['mem_max_mb'] = float(mem_mb.max())
+        out['mem_mean_mb'] = float(mem_mb.mean())
+        hwm = read_hwm_samples(run_dir)
+        if hwm is not None:
+            out['mem_peak_mb'] = float(hwm.max())
         out['threads_max'] = float(thread_count.max())
 
     threads = read_thread_cpu(run_dir)

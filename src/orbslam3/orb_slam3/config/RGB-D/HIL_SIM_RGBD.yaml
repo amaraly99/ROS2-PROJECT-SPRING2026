@@ -44,8 +44,8 @@ Camera.fps: 20
 
 Camera.RGB: 0
 
-Stereo.b: 0.11
-Stereo.ThDepth: 400.0
+Stereo.b: 0.61
+Stereo.ThDepth: 72.1
 RGBD.DepthMapFactor: 1000.0
 
 #--------------------------------------------------------------------------------------------
